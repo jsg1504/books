@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>도구 호출 · LoopBook</title>
+<meta name="description" content="도구는 이름, 설명, 입력 스키마를 가진 함수다. 도구 호출 검증, 병렬 호출, 긴 출력 자르기를 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .wb { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { .wb { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .wb h4 { margin: 0 0 6px; font-size: 13px; color: var(--text-dim); font-weight: 600; }
+  #wb-schema, #wb-result { height: 230px; }
+  #wb-json { height: 170px; }
+  .verdict { font-family: var(--mono); font-size: 13px; padding: 6px 10px; border-radius: 7px; margin-top: 8px; }
+  .verdict.ok { background: color-mix(in srgb, var(--run) 14%, transparent); color: var(--run); }
+  .verdict.err { background: color-mix(in srgb, var(--fail) 12%, transparent); color: var(--fail); }
+  .tr-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { .tr-grid { grid-template-columns: 120px minmax(0, 1fr); } }
+  #tc-pane { height: 300px; font-size: 12px; }
+</style>
+</head>
+<body data-root="../" data-chapter="tools">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>도구 호출</h1>
+    <p class="lead">모델은 텍스트만 만든다. 파일을 읽거나 테스트를 돌리려면 <span class="term">도구 호출</span><span class="en">tool use, function calling</span>이라는 약속이 필요하다. 하네스가 “이런 함수들이 있다”고 알려 주면, 모델은 그중 하나를 골라 인자를 채운 구조화된 요청을 만든다. 이 장에서는 그 요청이 어떻게 생겼는지, 잘못된 요청을 어떻게 걸러내는지, 여러 호출을 한 번에 보내면 무엇이 빨라지는지, 그리고 긴 결과를 어떻게 줄여 돌려줄지를 다룬다.</p>
+    <ul class="objectives">
+      <li>도구 정의(이름, 설명, 입력 스키마)와 도구 호출·도구 결과 메시지의 구조를 설명할 수 있다.</li>
+      <li>스키마 검증으로 잡을 수 있는 오류와 잡을 수 없는 오류를 구분할 수 있다.</li>
+      <li>독립적인 호출을 병렬로 보낼 때 줄어드는 시간과 모델 호출 수를 계산할 수 있다.</li>
+      <li>긴 도구 출력을 자르는 전략(앞, 뒤, 앞+뒤, 관련 줄)의 장단점을 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="schema">
+    <h2>도구는 함수 시그니처다</h2>
+    <p>도구 정의는 세 부분으로 이루어진다. <b>이름</b>은 모델이 호출할 때 쓰는 식별자, <b>설명</b>은 언제 어떻게 쓰는지에 대한 자연어 안내, <b>입력 스키마</b>는 JSON Schema로 적은 인자 형식이다. 모델은 설명을 읽고 도구를 고르며, 스키마를 보고 인자를 채운다. 설명이 곧 사용 설명서다.</p>
+    <div class="code"><div class="bar"><span>도구 정의 — 하네스가 모델에게 보내는 것</span><span>JSON</span></div><pre>{
+  <span class="s">"name"</span>: <span class="s">"read_file"</span>,
+  <span class="s">"description"</span>: <span class="s">"저장소의 텍스트 파일을 읽는다. 큰 파일은 offset/limit으로 필요한 줄만 읽을 것.
+                  결과의 각 줄 앞에는 줄 번호가 붙는다."</span>,
+  <span class="s">"input_schema"</span>: {
+    <span class="s">"type"</span>: <span class="s">"object"</span>,
+    <span class="s">"properties"</span>: {
+      <span class="s">"path"</span>:   { <span class="s">"type"</span>: <span class="s">"string"</span>,  <span class="s">"description"</span>: <span class="s">"저장소 루트 기준 경로"</span> },
+      <span class="s">"offset"</span>: { <span class="s">"type"</span>: <span class="s">"integer"</span>, <span class="s">"minimum"</span>: <span class="n">1</span> },
+      <span class="s">"limit"</span>:  { <span class="s">"type"</span>: <span class="s">"integer"</span>, <span class="s">"minimum"</span>: <span class="n">1</span>, <span class="s">"maximum"</span>: <span class="n">2000</span> }
+    },
+    <span class="s">"required"</span>: [<span class="s">"path"</span>]
+  }
+}</pre></div>
+    <p>한 번의 호출은 모델 응답 안의 <code>tool_use</code> 블록으로 나타나고, 하네스는 실행 결과를 같은 <code>id</code>를 가진 <code>tool_result</code> 블록으로 돌려준다. 실행이 실패하면 오류 메시지를 결과로 돌려주어 모델이 스스로 고치게 한다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 330" role="img" aria-label="도구 호출 메시지 순서도">
+        <defs><marker id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--axis)"/></marker></defs>
+        <g text-anchor="middle">
+          <rect x="30" y="14" width="120" height="34" rx="8" class="soft-user"/><text x="90" y="36" class="t-b">사용자</text>
+          <rect x="230" y="14" width="120" height="34" rx="8" class="f-surface"/><text x="290" y="36" class="t-b">하네스</text>
+          <rect x="430" y="14" width="120" height="34" rx="8" class="soft-think"/><text x="490" y="36" class="t-b">모델</text>
+          <rect x="610" y="14" width="120" height="34" rx="8" class="soft-run"/><text x="670" y="36" class="t-b">도구 · 환경</text>
+        </g>
+        <g class="s-dash"><path d="M90 50V320"/><path d="M290 50V320"/><path d="M490 50V320"/><path d="M670 50V320"/></g>
+        <path d="M92 76H286" class="s-line" marker-end="url(#sa)"/><text x="190" y="70" text-anchor="middle" class="t-mono">"테스트 고쳐 줘"</text>
+        <path d="M292 104H486" class="s-line" marker-end="url(#sa)"/><text x="390" y="98" text-anchor="middle" class="t-mono">system + tools + messages</text>
+        <path d="M488 136H294" class="sc-think" stroke-width="2" fill="none" marker-end="url(#sa)"/><text x="390" y="130" text-anchor="middle" class="t-mono" style="fill:var(--think)">tool_use{id:1, read_file}</text>
+        <rect x="262" y="146" width="56" height="22" rx="5" class="soft-fail"/><text x="290" y="161" text-anchor="middle" class="t-mono">권한?</text>
+        <path d="M292 182H666" class="s-line" marker-end="url(#sa)"/><text x="480" y="176" text-anchor="middle" class="t-mono">실행</text>
+        <path d="M668 208H294" class="sc-run" stroke-width="2" fill="none" marker-end="url(#sa)"/><text x="480" y="202" text-anchor="middle" class="t-mono" style="fill:var(--run)">출력 (자르기)</text>
+        <path d="M292 236H486" class="s-line" marker-end="url(#sa)"/><text x="390" y="230" text-anchor="middle" class="t-mono">… + tool_result{id:1}</text>
+        <path d="M488 268H294" class="sc-think" stroke-width="2" fill="none" marker-end="url(#sa)"/><text x="390" y="262" text-anchor="middle" class="t-mono" style="fill:var(--think)">텍스트 답 (도구 호출 없음)</text>
+        <path d="M288 298H94" class="s-line" marker-end="url(#sa)"/><text x="190" y="292" text-anchor="middle" class="t-mono">완료 보고</text>
+      </svg>
+      <figcaption><b>그림 3-1.</b> 한 번의 도구 호출 왕복. 모델은 실행 결과를 직접 보지 못하고, 하네스가 붙여 준 <code>tool_result</code>를 다음 입력에서 읽는다. 권한 확인(8장)과 출력 자르기(이 장 마지막 절)는 모두 하네스의 일이다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="workbench">
+    <h2>호출을 검증하기</h2>
+    <p>모델이 만든 호출이 항상 올바르지는 않다. 없는 도구 이름, 빠진 필수 인자, 문자열로 쓴 숫자, 허용 범위를 넘는 값이 나올 수 있다. 하네스는 실행 전에 스키마로 검증하고, 실패하면 <code>is_error</code>가 표시된 결과로 <em>무엇이 틀렸는지</em> 알려 준다. 좋은 오류 메시지는 모델이 다음 턴에 바로 고칠 수 있게 한다.</p>
+    <p>아래 작업대에서 직접 모델 역할을 해 보자. 왼쪽 JSON을 고치고 <b>실행</b>을 누르면 하네스가 검증하고 가상의 저장소에서 실행한다.</p>
+
+    <div class="sim" id="sim-wb">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>도구 호출 작업대</h3></div>
+      <div class="sim-body">
+        <div class="btns" id="wb-tools"></div>
+        <div class="btns" id="wb-mistakes" aria-label="흔한 실수 불러오기"></div>
+        <div class="wb">
+          <div>
+            <h4>모델의 tool_use (편집 가능)</h4>
+            <textarea id="wb-json" spellcheck="false" aria-label="도구 호출 JSON"></textarea>
+            <div class="btns" style="margin-top:8px"><button class="btn primary" id="wb-run">실행</button><button class="btn" id="wb-reset">저장소 초기화</button></div>
+            <div id="wb-verdict" class="verdict"></div>
+          </div>
+          <div>
+            <h4>선택한 도구의 스키마</h4>
+            <div class="pane" id="wb-schema"></div>
+          </div>
+        </div>
+        <div>
+          <h4 style="margin:0 0 6px;font-size:13px;color:var(--text-dim)">하네스가 모델에게 돌려줄 tool_result</h4>
+          <div class="pane" id="wb-result"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">호출 수</span><span class="v" id="wb-o1">0</span></div>
+        <div class="stat"><span class="k">검증 실패</span><span class="v bad" id="wb-o2">0</span></div>
+        <div class="stat"><span class="k">실행 오류</span><span class="v warn" id="wb-o3">0</span></div>
+        <div class="stat"><span class="k">결과 토큰 (근사)</span><span class="v" id="wb-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “흔한 실수” 버튼을 하나씩 눌러 검증 오류 메시지를 읽어 보라. ② 스키마 검증을 통과해도 <b>실행 오류</b>는 날 수 있다 — 없는 파일 경로, 두 곳에 일치하는 <code>old_string</code>. 스키마는 형식만 보장하고 의미는 보장하지 않는다. ③ <code>edit_file</code>로 버그를 고친 뒤 <code>run_command</code>로 <code>npm test</code>를 돌려 보라.</div>
+    </div>
+  </section>
+
+  <section id="parallel">
+    <h2>병렬 도구 호출</h2>
+    <p>세 파일을 읽어야 하는데 각 읽기가 서로 독립적이라면, 한 턴에 하나씩 세 턴에 걸쳐 읽을 이유가 없다. 모델은 한 응답 안에 여러 <code>tool_use</code> 블록을 담을 수 있고, 하네스는 이들을 동시에 실행할 수 있다. 줄어드는 것은 두 가지다. <b>벽시계 시간</b>(도구 지연이 겹친다)과 <b>모델 호출 수</b>(매 호출마다 전체 컨텍스트를 다시 읽는 비용).</p>
+    <div class="formula"><div class="eq"><var>T</var><sub>순차</sub> = <var>k</var>(<var>t</var><sub>m</sub> + <var>t̄</var><sub>tool</sub>) + <var>t</var><sub>m</sub> &nbsp;&nbsp;vs&nbsp;&nbsp; <var>T</var><sub>병렬</sub> = <var>t</var><sub>m</sub> + max<sub><var>i</var></sub> <var>t</var><sub>tool,<var>i</var></sub> + <var>t</var><sub>m</sub></div>
+      <div class="where"><var>k</var>: 독립 호출 수, <var>t</var><sub>m</sub>: 모델 한 번의 응답 시간, <var>t</var><sub>tool</sub>: 도구 실행 시간. 마지막 <var>t</var><sub>m</sub>은 결과를 읽고 다음 행동을 정하는 턴이다.</div></div>
+
+    <div class="sim" id="sim-par">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>순차 vs 병렬 — 타임라인</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="pa-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>독립 호출 수 k <output id="pa-k-out"></output></span><input type="range" id="pa-k" min="1" max="8" step="1" value="4"></label>
+          <label class="ctrl"><span>모델 응답 시간 t<sub>m</sub> <output id="pa-m-out"></output></span><input type="range" id="pa-m" min="0.5" max="12" step="0.5" value="4"></label>
+          <label class="ctrl"><span>도구 지연 평균 <output id="pa-t-out"></output></span><input type="range" id="pa-t" min="0.1" max="10" step="0.1" value="1.5"></label>
+          <label class="ctrl"><span>동시 실행 한도 <output id="pa-c-out"></output></span><input type="range" id="pa-c" min="1" max="8" step="1" value="8"></label>
+          <div class="legend"><span><i style="background:var(--think)"></i>모델 추론</span><span><i style="background:var(--read)"></i>도구 실행</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">순차 총 시간</span><span class="v" id="pa-o1">—</span></div>
+        <div class="stat"><span class="k">병렬 총 시간</span><span class="v good" id="pa-o2">—</span></div>
+        <div class="stat"><span class="k">속도 향상</span><span class="v" id="pa-o3">—</span></div>
+        <div class="stat"><span class="k">모델 호출 수</span><span class="v" id="pa-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 모델 응답 시간이 도구 지연보다 길 때(대부분의 읽기 도구) 병렬화의 이득은 주로 <b>모델 호출 수를 줄이는 데서</b> 온다. ② 동시 실행 한도를 1로 두면 도구는 줄 서서 돌지만 모델 호출 수의 이득은 남는다. ③ 단, 호출 B가 호출 A의 결과에 의존하면 병렬로 보낼 수 없다 — 7장의 작업 그래프에서 다시 본다.</div>
+    </div>
+  </section>
+
+  <section id="truncate">
+    <h2>긴 출력을 돌려주는 법</h2>
+    <p>테스트 스위트를 돌리면 수천 줄의 로그가 나온다. 이것을 그대로 컨텍스트에 넣으면 윈도우를 순식간에 채우고(2장), 정작 중요한 실패 메시지는 중간에 묻힌다. 하네스는 결과에 <b>토큰 한도</b>를 두고 넘치는 부분을 자른다. 어떻게 자르느냐에 따라 모델이 원인을 볼 수 있는지가 갈린다.</p>
+
+    <div class="sim" id="sim-trunc">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>출력 자르기 전략</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row">
+          <div class="seg" id="tc-mode">
+            <button data-v="head" class="on">앞부분</button><button data-v="tail">뒷부분</button><button data-v="both">앞 + 뒤</button><button data-v="grep">관련 줄 + 요약</button>
+          </div>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>결과 토큰 한도 <output id="tc-lim-out"></output></span><input type="range" id="tc-lim" min="300" max="12000" step="100" value="2000"></label>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>실패가 찍힌 위치 <output id="tc-pos-out"></output></span><input type="range" id="tc-pos" min="0.02" max="0.98" step="0.01" value="0.55"></label>
+        </div>
+        <div class="tr-grid">
+          <div class="sim-view"><canvas id="tc-cv"></canvas></div>
+          <div class="pane" id="tc-pane" aria-label="모델에게 전달될 잘린 출력"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">원본</span><span class="v" id="tc-o1">—</span></div>
+        <div class="stat"><span class="k">전달 줄 수</span><span class="v" id="tc-o2">—</span></div>
+        <div class="stat"><span class="k">실패 메시지 포함?</span><span class="v" id="tc-o3">—</span></div>
+        <div class="stat"><span class="k">요약 줄(통과/실패 수) 포함?</span><span class="v" id="tc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: 왼쪽 막대는 로그 전체의 축소판이다. 밝은 부분이 모델에게 전달된다. <b>앞부분</b>은 실패가 뒤에 있으면 놓치고, <b>뒷부분</b>은 요약은 보지만 중간의 스택 트레이스를 놓친다. <b>앞+뒤</b>는 실무 하네스에서 흔한 절충이고, <b>관련 줄</b>은 가장 효율적이지만 무엇이 “관련”인지 미리 알아야 한다(예: <code>FAIL</code>, <code>Error</code> 패턴). 그래서 좋은 에이전트는 애초에 <code>npm test -- session</code>처럼 범위를 좁혀 실행한다.</div>
+    </div>
+  </section>
+
+  <section id="design">
+    <h2>좋은 도구의 조건</h2>
+    <p>도구는 모델이 쓰는 API다. 사람이 쓰는 API와 같은 원칙이 적용되지만, 사용자가 문서를 <em>매번 처음부터</em> 읽는다는 점이 다르다.</p>
+    <table class="tbl">
+      <tr><th>원칙</th><th>나쁜 예</th><th>좋은 예</th></tr>
+      <tr><td>목적이 분명한 이름과 설명</td><td><code>do(action, args)</code> 하나로 모든 일</td><td><code>read_file</code>, <code>grep</code>, <code>edit_file</code>처럼 동사가 드러나는 작은 도구들</td></tr>
+      <tr><td>실패를 고칠 수 있게 알리기</td><td><code>Error: invalid input</code></td><td><code>old_string이 2곳에서 일치함 (12행, 48행). 앞뒤 줄을 포함해 고유하게 만드세요</code></td></tr>
+      <tr><td>출력은 작고 구조적으로</td><td>로그 전체, 바이너리 덤프</td><td>줄 번호가 붙은 범위, 잘림 표시, 요약 줄</td></tr>
+      <tr><td>도구 수는 필요한 만큼만</td><td>비슷한 도구 40개 연결</td><td>겹치지 않는 핵심 도구 + 필요할 때만 추가</td></tr>
+    </table>
+    <p>외부 서비스(이슈 트래커, 데이터베이스, 브라우저)의 도구를 표준 방식으로 붙이기 위한 규약도 있다. <span class="term">MCP</span><span class="en">Model Context Protocol</span>는 도구를 제공하는 서버와 그것을 쓰는 하네스 사이의 공통 인터페이스를 정한다. 하네스는 MCP 서버에서 도구 목록을 받아 모델에게 보여 주고, 호출을 서버로 중계한다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 200" role="img" aria-label="MCP 구조">
+        <defs><marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--accent)"/></marker></defs>
+        <rect x="20" y="70" width="120" height="60" rx="10" class="soft-think"/><text x="80" y="105" text-anchor="middle" class="t-b">모델</text>
+        <rect x="210" y="40" width="170" height="120" rx="12" class="f-surface"/><text x="295" y="66" text-anchor="middle" class="t-b">하네스</text>
+        <text x="295" y="90" text-anchor="middle" class="t-dim">내장 도구: 읽기·편집·셸</text><text x="295" y="110" text-anchor="middle" class="t-dim">MCP 클라이언트</text><text x="295" y="130" text-anchor="middle" class="t-dim">권한 · 출력 자르기</text>
+        <path d="M142 100H206" class="s-acc" marker-end="url(#ma)"/>
+        <g>
+          <rect x="470" y="14" width="270" height="44" rx="9" class="soft-read"/><text x="605" y="41" text-anchor="middle" class="t">MCP 서버: 이슈 트래커 (search_issues …)</text>
+          <rect x="470" y="78" width="270" height="44" rx="9" class="soft-run"/><text x="605" y="105" text-anchor="middle" class="t">MCP 서버: 데이터베이스 (query …)</text>
+          <rect x="470" y="142" width="270" height="44" rx="9" class="soft-edit"/><text x="605" y="169" text-anchor="middle" class="t">MCP 서버: 브라우저 (navigate …)</text>
+        </g>
+        <path d="M384 80 C420 70, 430 40, 466 38" class="s-acc flow"/><path d="M384 100H466" class="s-acc flow"/><path d="M384 120 C420 130, 430 162, 466 164" class="s-acc flow"/>
+      </svg>
+      <figcaption><b>그림 3-2.</b> MCP로 연결된 외부 도구. 연결하는 서버가 늘수록 도구 정의가 컨텍스트의 고정 부분을 키운다는 점(2장)도 함께 기억하자.</figcaption>
+    </figure>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>도구 = 이름 + 설명 + JSON 스키마. 모델은 <code>tool_use</code>로 호출을 요청하고, 하네스가 실행해 같은 id의 <code>tool_result</code>로 돌려준다.</li>
+      <li>스키마 검증은 형식 오류(누락, 타입, 범위)를 잡는다. 의미 오류(없는 파일, 모호한 편집)는 실행 단계에서 구체적인 오류 메시지로 알려야 한다.</li>
+      <li>독립적인 호출은 한 응답에 묶어 병렬로. 벽시계 시간과 모델 호출 수가 모두 준다.</li>
+      <li>긴 출력은 반드시 자른다. 앞+뒤 또는 관련 줄 추출이 실패 정보를 보존하는 데 유리하고, 가장 좋은 방법은 애초에 범위를 좁혀 실행하는 것이다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. <code>{"name":"read_file","input":{"limit":"50"}}</code>에서 스키마 검증이 잡아내는 문제를 모두 고르면?</p><div class="opts">
+        <button class="opt">limit의 타입 오류만</button>
+        <button class="opt" data-correct>필수 인자 path 누락과 limit의 타입 오류</button>
+        <button class="opt">문제없음</button>
+      </div><div class="quiz-exp">path는 required이고 limit은 integer여야 한다. 문자열 "50"은 타입 오류다.</div></div>
+      <div class="quiz-q"><p>2. 스키마 검증을 통과했는데 실행에서 실패할 수 있는 경우는?</p><div class="opts">
+        <button class="opt" data-correct>형식은 맞지만 존재하지 않는 파일 경로</button>
+        <button class="opt">정의되지 않은 도구 이름</button>
+        <button class="opt">integer 자리에 문자열</button>
+      </div><div class="quiz-exp">나머지 둘은 검증 단계에서 걸린다. 경로의 존재 여부는 실행해 봐야 안다.</div></div>
+      <div class="quiz-q"><p>3. 모델 응답 4초, 도구 지연 1초, 독립 호출 4개. 병렬로 보내면 순차 대비 대략 몇 배 빠른가?</p><div class="opts">
+        <button class="opt">1.2배</button>
+        <button class="opt" data-correct>약 2.7배</button>
+        <button class="opt">4배</button>
+      </div><div class="quiz-exp">순차 4×(4+1)+4 = 24초, 병렬 4+1+4 = 9초. 24/9 ≈ 2.7.</div></div>
+      <div class="quiz-q"><p>4. 실패 메시지가 로그의 한가운데에 있고 끝에 요약 줄이 있다. “앞부분만” 전략의 문제는?</p><div class="opts">
+        <button class="opt">토큰을 너무 많이 쓴다</button>
+        <button class="opt" data-correct>실패 메시지와 요약 줄을 모두 놓칠 수 있다</button>
+        <button class="opt">문제없다</button>
+      </div><div class="quiz-exp">앞부분에는 보통 설치·수집 메시지가 있다. 한도가 작으면 실패 위치와 요약까지 닿지 못한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 도구 호출 작업대 ---------------- */
+(function () {
+  const INITIAL = {
+    "src/auth/session.ts": "import { loadToken } from \"./token\";\n\nexport function isActive(session) {\n  const now = Date.now();\n  // expires는 초 단위로 저장되어 있다\n  return session.expires > now;\n}\n\nexport function refresh(session, ttl) {\n  session.expires = Date.now() / 1000 + ttl;\n  return session;\n}\n",
+    "src/auth/token.ts": "export function loadToken(raw) {\n  const [id, exp] = raw.split(\".\");\n  return { id, expires: Number(exp) };\n}\n",
+    "tests/session.test.ts": "import { isActive } from \"../src/auth/session\";\n\ntest(\"expired session is inactive\", () => {\n  const s = { expires: Date.now() / 1000 - 60 };\n  expect(isActive(s)).toBe(false);\n});\n\ntest(\"fresh session is active\", () => {\n  const s = { expires: Date.now() / 1000 + 60 };\n  expect(isActive(s)).toBe(true);\n});\n",
+    "package.json": "{\n  \"name\": \"demo-app\",\n  \"scripts\": { \"test\": \"jest\" }\n}\n",
+  };
+  let fs = {};
+  const TOOLS = {
+    read_file: { desc: "파일을 읽는다. 큰 파일은 offset/limit 사용.", props: { path: { type: "string" }, offset: { type: "integer", minimum: 1 }, limit: { type: "integer", minimum: 1, maximum: 2000 } }, required: ["path"], ex: { path: "src/auth/session.ts" } },
+    grep: { desc: "정규식으로 파일 내용을 검색한다.", props: { pattern: { type: "string" }, path: { type: "string" }, case_insensitive: { type: "boolean" } }, required: ["pattern"], ex: { pattern: "expires", path: "src" } },
+    edit_file: { desc: "old_string을 new_string으로 바꾼다. old_string은 파일에서 고유해야 한다.", props: { path: { type: "string" }, old_string: { type: "string" }, new_string: { type: "string" } }, required: ["path", "old_string", "new_string"], ex: { path: "src/auth/session.ts", old_string: "return session.expires > now;", new_string: "return session.expires * 1000 > now;" } },
+    run_command: { desc: "셸 명령을 실행한다.", props: { command: { type: "string" }, timeout_ms: { type: "integer", minimum: 1, maximum: 600000 } }, required: ["command"], ex: { command: "npm test" } },
+  };
+  const MISTAKES = [
+    ["필수 인자 누락", { name: "read_file", input: { offset: 1 } }],
+    ["타입 오류", { name: "read_file", input: { path: "src/auth/session.ts", limit: "50" } }],
+    ["범위 초과", { name: "read_file", input: { path: "src/auth/session.ts", limit: 50000 } }],
+    ["없는 도구", { name: "open_file", input: { path: "src/auth/session.ts" } }],
+    ["없는 파일", { name: "read_file", input: { path: "src/auth/sessions.ts" } }],
+    ["모호한 편집", { name: "edit_file", input: { path: "src/auth/session.ts", old_string: "session", new_string: "sess" } }],
+    ["정의 밖 인자", { name: "grep", input: { pattern: "TODO", recursive: true } }],
+  ];
+  let cur = "read_file", n = 0, nv = 0, ne = 0, id = 1;
+  const json = CA.el("wb-json");
+  function show(name, input) {
+    cur = name;
+    json.value = JSON.stringify({ type: "tool_use", id: "toolu_" + String(id).padStart(2, "0"), name, input }, null, 2);
+    const t = TOOLS[name];
+    CA.el("wb-schema").innerHTML = t ? `<div class="ln k-think">${CA.esc(name)} — ${CA.esc(t.desc)}</div><div class="ln">${CA.esc(JSON.stringify({ type: "object", properties: t.props, required: t.required }, null, 2))}</div>` : `<div class="ln k-fail">정의되지 않은 도구</div>`;
+    CA.$$("#wb-tools button").forEach((b) => b.classList.toggle("primary", b.dataset.t === name));
+  }
+  CA.el("wb-tools").innerHTML = Object.keys(TOOLS).map((k) => `<button class="btn" data-t="${k}">${k}</button>`).join("");
+  CA.el("wb-mistakes").innerHTML = `<span style="font-size:13px;color:var(--text-dim);align-self:center">흔한 실수:</span>` + MISTAKES.map((m, i) => `<button class="btn" data-m="${i}" style="font-weight:500">${m[0]}</button>`).join("");
+  CA.$$("#wb-tools button").forEach((b) => b.addEventListener("click", () => show(b.dataset.t, TOOLS[b.dataset.t].ex)));
+  CA.$$("#wb-mistakes button").forEach((b) => b.addEventListener("click", () => { const m = MISTAKES[b.dataset.m][1]; show(m.name, m.input); }));
+
+  function validate(call) {
+    const errs = [];
+    const t = TOOLS[call.name];
+    if (!t) return [`알 수 없는 도구 "${call.name}". 사용 가능: ${Object.keys(TOOLS).join(", ")}`];
+    const inp = call.input || {};
+    if (typeof inp !== "object" || Array.isArray(inp)) return ["input은 객체여야 합니다"];
+    t.required.forEach((r) => { if (!(r in inp)) errs.push(`필수 인자 "${r}" 누락`); });
+    Object.entries(inp).forEach(([k, v]) => {
+      const p = t.props[k];
+      if (!p) { errs.push(`정의되지 않은 인자 "${k}" (허용: ${Object.keys(t.props).join(", ")})`); return; }
+      const ty = p.type === "integer" ? Number.isInteger(v) : p.type === "boolean" ? typeof v === "boolean" : typeof v === p.type;
+      if (!ty) { errs.push(`"${k}"는 ${p.type}이어야 하는데 ${JSON.stringify(v)}(${typeof v})가 왔습니다`); return; }
+      if (p.minimum !== undefined && v < p.minimum) errs.push(`"${k}" ≥ ${p.minimum}이어야 합니다`);
+      if (p.maximum !== undefined && v > p.maximum) errs.push(`"${k}" ≤ ${p.maximum}이어야 합니다 (받은 값 ${v})`);
+    });
+    return errs;
+  }
+  function numbered(text, off = 1, lim = 2000) {
+    return text.split("\n").slice(off - 1, off - 1 + lim).map((l, i) => String(off + i).padStart(4) + "  " + l).join("\n");
+  }
+  function exec(call) {
+    const a = call.input;
+    if (call.name === "read_file") {
+      if (!(a.path in fs)) {
+        const near = Object.keys(fs).filter((p) => p.split("/").pop().slice(0, 5) === a.path.split("/").pop().slice(0, 5));
+        throw new Error(`파일이 없습니다: ${a.path}` + (near.length ? `\n혹시: ${near.join(", ")}` : ""));
+      }
+      return numbered(fs[a.path], a.offset || 1, a.limit || 2000);
+    }
+    if (call.name === "grep") {
+      let re;
+      try { re = new RegExp(a.pattern, a.case_insensitive ? "i" : ""); } catch (e) { throw new Error("정규식 오류: " + e.message); }
+      const out = [];
+      Object.entries(fs).forEach(([p, txt]) => { if (a.path && !p.startsWith(a.path)) return; txt.split("\n").forEach((l, i) => { if (re.test(l)) out.push(`${p}:${i + 1}: ${l.trim()}`); }); });
+      return out.length ? out.join("\n") : "일치 없음";
+    }
+    if (call.name === "edit_file") {
+      if (!(a.path in fs)) throw new Error(`파일이 없습니다: ${a.path}`);
+      const txt = fs[a.path];
+      const hits = [];
+      let k = txt.indexOf(a.old_string);
+      while (k >= 0 && a.old_string) { hits.push(txt.slice(0, k).split("\n").length); k = txt.indexOf(a.old_string, k + 1); }
+      if (!hits.length) throw new Error("old_string을 찾을 수 없습니다. 공백과 들여쓰기까지 정확히 일치해야 합니다.");
+      if (hits.length > 1) throw new Error(`old_string이 ${hits.length}곳에서 일치합니다 (${hits.join(", ")}행). 앞뒤 맥락을 포함해 고유하게 만드세요.`);
+      fs[a.path] = txt.replace(a.old_string, a.new_string);
+      return `${a.path} 수정됨 (${hits[0]}행)`;
+    }
+    if (call.name === "run_command") {
+      const c = a.command.trim();
+      if (/^ls\b/.test(c)) return Object.keys(fs).join("\n");
+      if (/^cat\s+/.test(c)) { const p = c.split(/\s+/)[1]; if (!(p in fs)) throw new Error(`cat: ${p}: 그런 파일이 없습니다`); return fs[p]; }
+      if (/^(npm test|npx jest|jest)/.test(c)) {
+        const src = fs["src/auth/session.ts"];
+        const fixed = /expires\s*\*\s*1000\s*>\s*now/.test(src) || /expires\s*>\s*now\s*\/\s*1000/.test(src) || /expires\s*>\s*Date\.now\(\)\s*\/\s*1000/.test(src);
+        return fixed ? "PASS tests/session.test.ts\n  ✓ expired session is inactive\n  ✓ fresh session is active\n\nTests: 2 passed, 2 total" :
+          "FAIL tests/session.test.ts\n  ✓ expired session is inactive\n  ✗ fresh session is active\n    expect(received).toBe(expected)\n    Expected: true\n    Received: false\n      at tests/session.test.ts:10\n\nTests: 1 failed, 1 passed, 2 total";
+      }
+      if (/rm\s+-rf/.test(c)) throw new Error("하네스 정책에 의해 차단됨: 파괴적 명령 (8장 참고)");
+      throw new Error(`${c.split(" ")[0]}: 명령을 찾을 수 없습니다`);
+    }
+  }
+  function run() {
+    n++;
+    let call;
+    const res = CA.el("wb-result"), ver = CA.el("wb-verdict");
+    try { call = JSON.parse(json.value); } catch (e) {
+      nv++; ver.className = "verdict err"; ver.textContent = "JSON 파싱 실패: " + e.message;
+      res.innerHTML = `<div class="ln k-fail">{"type":"tool_result","is_error":true,"content":"모델 출력이 올바른 JSON이 아닙니다"}</div>`; stats(); return;
+    }
+    const errs = validate(call);
+    const tid = call.id || "toolu_??";
+    if (errs.length) {
+      nv++; ver.className = "verdict err"; ver.textContent = "✗ 스키마 검증 실패 — 실행하지 않음";
+      res.innerHTML = `<div class="ln k-fail">tool_result  id=${CA.esc(tid)}  is_error=true\n${CA.esc(errs.map((e) => "• " + e).join("\n"))}</div>`;
+      stats(errs.join(" ")); return;
+    }
+    try {
+      const out = exec(call);
+      ver.className = "verdict ok"; ver.textContent = "✓ 검증 통과 → 실행 성공";
+      res.innerHTML = `<div class="ln k-run">tool_result  id=${CA.esc(tid)}\n${CA.esc(out)}</div>`;
+      stats(out);
+    } catch (e) {
+      ne++; ver.className = "verdict err"; ver.textContent = "✓ 검증 통과 → ✗ 실행 오류";
+      res.innerHTML = `<div class="ln k-edit">tool_result  id=${CA.esc(tid)}  is_error=true\n${CA.esc(e.message)}</div>`;
+      stats(e.message);
+    }
+    id++;
+  }
+  function stats(out) { CA.set("wb-o1", n); CA.set("wb-o2", nv); CA.set("wb-o3", ne); if (out !== undefined) CA.set("wb-o4", CA.estTokens(out)); }
+  CA.el("wb-run").addEventListener("click", run);
+  CA.el("wb-reset").addEventListener("click", () => { fs = JSON.parse(JSON.stringify(INITIAL)); CA.el("wb-result").innerHTML = '<div class="ln dim">저장소를 초기 상태로 되돌렸습니다.</div>'; });
+  fs = JSON.parse(JSON.stringify(INITIAL));
+  show("read_file", TOOLS.read_file.ex);
+  CA.el("wb-result").innerHTML = '<div class="ln dim">아직 실행하지 않았습니다. 위의 “실행”을 누르세요.</div>';
+})();
+
+/* ---------------- 2. 순차 vs 병렬 ---------------- */
+(function () {
+  const cv = CA.canvas("pa-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const k = CA.val("pa-k"), tm = CA.val("pa-m"), tt = CA.val("pa-t"), cap = CA.val("pa-c");
+    const rnd = CA.rng(7 + k);
+    const lat = Array.from({ length: k }, () => tt * (0.4 + rnd() * 1.4));
+    // 순차: 턴마다 모델 → 도구 1개
+    const seq = []; let t = 0;
+    lat.forEach((L, i) => { seq.push({ k: "think", s: t, e: t + tm, row: 0, lbl: "M" }); t += tm; seq.push({ k: "read", s: t, e: t + L, row: 0, lbl: "T" + (i + 1) }); t += L; });
+    seq.push({ k: "think", s: t, e: t + tm, row: 0, lbl: "M" }); const Tseq = t + tm;
+    // 병렬: 모델 1번 → 도구 k개 (동시 한도 cap) → 모델 1번
+    const par = [{ k: "think", s: 0, e: tm, row: 0, lbl: "M" }];
+    const slots = Array(cap).fill(tm);
+    lat.forEach((L, i) => { let j = slots.indexOf(Math.min(...slots)); const s = slots[j]; par.push({ k: "read", s, e: s + L, row: 1 + i, lbl: "T" + (i + 1) }); slots[j] = s + L; });
+    const tEnd = Math.max(...par.map((b) => b.e));
+    par.push({ k: "think", s: tEnd, e: tEnd + tm, row: 0, lbl: "M" }); const Tpar = tEnd + tm;
+    const tmax = Math.max(Tseq, 1) * 1.04;
+    const l = 70, r = w - 12, top1 = 24, rowH = Math.min(18, (h - 110) / (k + 3));
+    const X = (v) => l + (v / tmax) * (r - l);
+    const top2 = top1 + rowH + 46;
+    CA.text(c, "순차", 8, top1 + rowH / 2, { size: 12, weight: 700 });
+    CA.text(c, `${k + 1}턴`, 8, top1 + rowH / 2 + 15, { size: 11, mono: true, color: CA.col("text-faint") });
+    CA.text(c, "병렬", 8, top2 + rowH / 2, { size: 12, weight: 700 });
+    CA.text(c, "2턴", 8, top2 + rowH / 2 + 15, { size: 11, mono: true, color: CA.col("text-faint") });
+    const bar = (b, y) => {
+      c.fillStyle = CA.col(b.k); c.globalAlpha = b.k === "think" ? 0.85 : 0.75;
+      CA.rrect(c, X(b.s), y, Math.max(2, X(b.e) - X(b.s) - 1), rowH - 3, 3); c.fill(); c.globalAlpha = 1;
+      if (X(b.e) - X(b.s) > 18) CA.text(c, b.lbl, (X(b.s) + X(b.e)) / 2, y + rowH / 2 - 1, { size: 10, mono: true, align: "center", color: "#fff" });
+    };
+    seq.forEach((b) => bar(b, top1));
+    par.forEach((b) => bar(b, top2 + b.row * rowH));
+    const yb = top2 + (k + 1) * rowH + 12;
+    CA.axes(c, { box: { l, t: yb, r, b: yb }, x: [0, tmax], y: [0, 1], xt: niceTicks(tmax), xf: (v) => v + "s" });
+    CA.line(c, [[X(Tpar), top2 - 8], [X(Tpar), yb]], CA.col("run"), 1.5, [4, 3]);
+    CA.text(c, Tpar.toFixed(1) + "s", X(Tpar) + 4, top2 - 10, { size: 11, mono: true, color: CA.col("run") });
+    CA.line(c, [[X(Tseq), top1 - 6], [X(Tseq), top1 + rowH]], CA.col("fail"), 1.5, [4, 3]);
+    CA.text(c, Tseq.toFixed(1) + "s", Math.min(X(Tseq) - 4, r - 4), top1 - 10, { size: 11, mono: true, color: CA.col("fail"), align: "right" });
+    CA.set("pa-o1", Tseq.toFixed(1) + " s"); CA.set("pa-o2", Tpar.toFixed(1) + " s"); CA.set("pa-o3", (Tseq / Tpar).toFixed(2) + "×"); CA.set("pa-o4", `${k + 1} → 2`);
+  }
+  function niceTicks(max) { const step = max > 60 ? 20 : max > 30 ? 10 : max > 12 ? 5 : 2; const a = []; for (let v = 0; v <= max; v += step) a.push(v); return a; }
+  CA.wire(["pa-k", "pa-m", "pa-t", "pa-c"], cv.redraw, { "pa-m": (v) => v + " s", "pa-t": (v) => v + " s" });
+})();
+
+/* ---------------- 3. 출력 자르기 ---------------- */
+(function () {
+  const TOTAL = 2400, TOK = 11; // 줄 수, 줄당 평균 토큰
+  let lines = [], errAt = 0;
+  function makeLog(pos) {
+    const rnd = CA.rng(5);
+    lines = [];
+    errAt = Math.floor(pos * (TOTAL - 40)) + 10;
+    lines.push("> demo-app@1.4.0 test", "> jest --ci", "");
+    for (let i = 3; i < TOTAL - 4; i++) {
+      if (i === errAt) {
+        lines.push("FAIL tests/session.test.ts", "  ● fresh session is active", "    expect(received).toBe(expected)", "    Expected: true", "    Received: false", "      at Object.<anonymous> (tests/session.test.ts:10:28)");
+        i += 5; continue;
+      }
+      const u = rnd();
+      lines.push(u < 0.7 ? `PASS tests/unit/mod${(i * 7) % 311}.test.ts (${(rnd() * 900 + 40).toFixed(0)} ms)` : u < 0.9 ? `  console.log  debug: cache warm key=${Math.floor(rnd() * 1e8).toString(16)}` : `    ✓ case ${i} (${Math.floor(rnd() * 30)} ms)`);
+    }
+    lines.push("", "Test Suites: 1 failed, 311 passed, 312 total", "Tests:       1 failed, 2209 passed, 2210 total", "Time:        48.2 s");
+  }
+  function pick(mode, lim) {
+    const n = Math.max(4, Math.floor(lim / TOK));
+    const keep = new Set();
+    if (n >= lines.length) { lines.forEach((_, i) => keep.add(i)); return keep; }
+    if (mode === "head") for (let i = 0; i < n; i++) keep.add(i);
+    if (mode === "tail") for (let i = lines.length - n; i < lines.length; i++) keep.add(i);
+    if (mode === "both") { const a = Math.floor(n / 2); for (let i = 0; i < a; i++) keep.add(i); for (let i = lines.length - (n - a); i < lines.length; i++) keep.add(i); }
+    if (mode === "grep") {
+      const re = /FAIL|●|Expected|Received|at |Tests:|Test Suites:/;
+      lines.forEach((l, i) => { if (re.test(l)) for (let j = Math.max(0, i - 1); j <= Math.min(lines.length - 1, i + 1); j++) if (keep.size < n) keep.add(j); });
+      for (let i = lines.length - 3; i < lines.length; i++) keep.add(i);
+    }
+    return keep;
+  }
+  const getMode = CA.seg("tc-mode", () => render());
+  const cv = CA.canvas("tc-cv", { height: 300, draw });
+  let keep = new Set();
+  function draw(c, w, h) {
+    const x = Math.max(10, w / 2 - 30), bw = 60;
+    const n = lines.length;
+    for (let i = 0; i < n; i++) {
+      const y = 6 + (i / n) * (h - 12);
+      c.fillStyle = keep.has(i) ? CA.col("accent") : CA.col("surface-2");
+      c.globalAlpha = keep.has(i) ? 0.85 : 1;
+      c.fillRect(x, y, bw, Math.max(1, (h - 12) / n + 0.3));
+    }
+    c.globalAlpha = 1;
+    const ye = 6 + (errAt / n) * (h - 12);
+    c.fillStyle = CA.col("fail"); c.fillRect(x - 8, ye - 2, bw + 16, 5);
+    CA.text(c, "실패", x - 10, ye, { size: 11, align: "right", color: CA.col("fail"), weight: 700 });
+    CA.text(c, "요약", x - 10, h - 10, { size: 11, align: "right", color: CA.col("text-dim") });
+    CA.text(c, "시작", x - 10, 10, { size: 11, align: "right", color: CA.col("text-dim") });
+  }
+  function render() {
+    makeLog(CA.val("tc-pos"));
+    keep = pick(getMode(), CA.val("tc-lim"));
+    cv.redraw();
+    const pane = CA.el("tc-pane");
+    const out = []; let gap = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (keep.has(i)) {
+        if (gap) { out.push(`<div class="ln dim">… [${gap}줄 생략] …</div>`); gap = 0; }
+        const l = lines[i];
+        const k = /FAIL|●|Expected|Received/.test(l) ? "k-fail" : /Tests:|Suites:/.test(l) ? "k-run" : "";
+        out.push(`<div class="ln ${k}">${CA.esc(l) || "&nbsp;"}</div>`);
+      } else gap++;
+    }
+    if (gap) out.push(`<div class="ln dim">… [${gap}줄 생략] …</div>`);
+    pane.innerHTML = out.join("");
+    const hasErr = [0, 1, 3, 4].every((d) => keep.has(errAt + d));
+    const hasSum = keep.has(lines.length - 2);
+    CA.set("tc-o1", `${CA.fmt(lines.length)}줄 · ${CA.si(lines.length * TOK)}`);
+    CA.set("tc-o2", `${CA.fmt(keep.size)}줄 (${CA.pct(keep.size / lines.length, 1)})`);
+    CA.set("tc-o3", hasErr ? "예" : "아니오", hasErr ? "good" : "bad");
+    CA.set("tc-o4", hasSum ? "예" : "아니오", hasSum ? "good" : "bad");
+  }
+  CA.wire(["tc-lim", "tc-pos"], render, { "tc-lim": (v) => CA.si(v) + " 토큰", "tc-pos": (v) => CA.pct(v) });
+})();
+</script>
+</body>
+</html>

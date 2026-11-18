@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>토큰과 컨텍스트 윈도우 · LoopBook</title>
+<meta name="description" content="모델이 한 번에 보는 작업 기억, 컨텍스트 윈도우. 토큰화, 턴마다 커지는 컨텍스트, 압축, 긴 맥락에서 정보를 놓치는 현상을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #tk-out { min-height: 120px; max-height: 260px; font-size: 13.5px; line-height: 2; white-space: pre-wrap; word-break: break-all; }
+  #tk-out span { border-radius: 3px; padding: 1px 0; }
+  #tk-out .ws { color: var(--text-faint); }
+  .tk0 { background: color-mix(in srgb, var(--think) 22%, transparent); }
+  .tk1 { background: color-mix(in srgb, var(--read) 22%, transparent); }
+  .tk2 { background: color-mix(in srgb, var(--run) 22%, transparent); }
+  .tk3 { background: color-mix(in srgb, var(--edit) 26%, transparent); }
+  .tk4 { background: color-mix(in srgb, var(--fail) 18%, transparent); }
+</style>
+</head>
+<body data-root="../" data-chapter="context">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 02</div>
+    <h1>토큰과 컨텍스트 윈도우</h1>
+    <p class="lead">모델이 다음 행동을 고를 때 볼 수 있는 것은 <span class="term">컨텍스트 윈도우</span><span class="en">context window</span> 안에 든 것뿐이다. 저장소 전체도, 어제의 대화도, 윈도우 밖에 있으면 모르는 것과 같다. 이 장에서는 윈도우를 재는 단위인 토큰부터, 작업이 길어질수록 윈도우가 차오르는 모습과 그것을 비우는 압축, 그리고 윈도우가 크다고 다 기억하지는 않는다는 사실을 실험한다.</p>
+    <ul class="objectives">
+      <li>토큰이 글자나 단어와 어떻게 다른지, 코드·한국어·영어에서 토큰 밀도가 왜 다른지 설명할 수 있다.</li>
+      <li>컨텍스트를 채우는 구성 요소를 나열하고 어떤 것이 가장 빨리 자라는지 말할 수 있다.</li>
+      <li>압축(compaction) 임계와 요약 비율이 컨텍스트 곡선과 누적 토큰에 미치는 영향을 예측할 수 있다.</li>
+      <li>긴 컨텍스트의 중간에 놓인 정보가 덜 활용되는 현상과 그 대응책을 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="tokens">
+    <h2>토큰: 모델이 세는 단위</h2>
+    <p>언어 모델은 글자를 직접 읽지 않는다. 텍스트는 먼저 <span class="term">토크나이저</span><span class="en">tokenizer</span>를 거쳐 정수 ID의 나열이 된다. 자주 나오는 문자열은 한 덩어리로, 드문 문자열은 여러 조각으로 쪼개는 방식(BPE 등)이 일반적이다. 그래서 영어의 흔한 단어는 토큰 하나, 긴 변수명이나 해시는 여러 토큰이 된다. 컨텍스트 한도, 응답 길이, 요금이 모두 토큰으로 매겨진다.</p>
+    <p>아래 실험의 토크나이저는 실제 모델의 것이 아니라 <b>경향을 보이기 위한 근사</b>다. 그래도 어떤 텍스트가 “비싼지”에 대한 감각은 충분히 얻을 수 있다.</p>
+
+    <div class="sim" id="sim-tok">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>토크나이저 돋보기</h3></div>
+      <div class="sim-body">
+        <div class="btns" id="tk-presets">
+          <button class="btn" data-p="en">영어 문장</button><button class="btn" data-p="ko">한국어 문장</button><button class="btn" data-p="py">Python 코드</button><button class="btn" data-p="json">JSON</button><button class="btn" data-p="log">로그 · 해시</button>
+        </div>
+        <textarea id="tk-in" rows="5" spellcheck="false" aria-label="토큰화할 텍스트"></textarea>
+        <div class="pane" id="tk-out" aria-label="토큰 분할 결과"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">글자 수</span><span class="v" id="tk-o1">—</span></div>
+        <div class="stat"><span class="k">토큰 수 (근사)</span><span class="v" id="tk-o2">—</span></div>
+        <div class="stat"><span class="k">글자 / 토큰</span><span class="v" id="tk-o3">—</span></div>
+        <div class="stat"><span class="k">200K 윈도우에 들어가는 양</span><span class="v" id="tk-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 영어 문장은 글자/토큰이 4 안팎이다. ② 한국어는 음절 하나가 토큰 하나 이상이 되기 쉬워 같은 내용이 더 많은 토큰을 쓴다. ③ 코드의 들여쓰기, 괄호, camelCase 이름, 그리고 특히 <b>UUID·해시처럼 무작위한 문자열</b>은 토큰 밀도가 낮다 — 긴 로그를 통째로 읽히면 비싼 이유다.</div>
+    </div>
+  </section>
+
+  <section id="window">
+    <h2>무엇이 윈도우를 채우는가</h2>
+    <p>코딩 에이전트의 컨텍스트에는 사용자가 친 메시지보다 훨씬 많은 것이 들어 있다. 매 턴 모델에게 전달되는 입력을 분해하면 대략 다음과 같다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 300" role="img" aria-label="컨텍스트 윈도우 구성">
+        <text x="20" y="24" class="t-b">한 턴의 입력 (작업 중반의 예)</text>
+        <rect x="20" y="40" width="720" height="56" rx="8" class="f-surface"/>
+        <rect x="20" y="40" width="58" height="56" rx="8" class="c-user" opacity=".85"/>
+        <rect x="78" y="40" width="64" height="56" class="c-think" opacity=".55"/>
+        <rect x="142" y="40" width="40" height="56" class="c-user" opacity=".45"/>
+        <rect x="182" y="40" width="96" height="56" class="c-think" opacity=".85"/>
+        <rect x="278" y="40" width="250" height="56" class="c-read" opacity=".8"/>
+        <rect x="528" y="40" width="96" height="56" class="c-run" opacity=".8"/>
+        <rect x="624" y="40" width="116" height="56" rx="8" fill="none" stroke="var(--text-faint)" stroke-dasharray="5 4"/>
+        <text x="682" y="73" text-anchor="middle" class="t-dim">남은 공간</text>
+        <g class="t-mono">
+          <path d="M49 100v28" class="s-line"/><text x="20" y="144" class="t-mono">시스템 프롬프트</text>
+          <path d="M110 100v58" class="s-line"/><text x="84" y="174" class="t-mono">도구 정의</text>
+          <path d="M162 100v88" class="s-line"/><text x="132" y="204" class="t-mono">프로젝트 메모</text>
+          <path d="M230 100v118" class="s-line"/><text x="190" y="234" class="t-mono">모델의 이전 응답</text>
+          <path d="M403 100v28" class="s-line"/><text x="350" y="144" class="t-mono">파일 읽기 결과</text>
+          <path d="M576 100v58" class="s-line"/><text x="530" y="174" class="t-mono">명령 실행 출력</text>
+        </g>
+        <text x="20" y="270" class="t-dim">고정 부분(왼쪽 세 칸)은 매 턴 같다 → 프롬프트 캐시 대상(9장). 오른쪽으로 갈수록 턴마다 자라는 부분이다.</text>
+        <text x="20" y="290" class="t-dim">가장 빨리 자라는 것은 대개 <tspan class="t-acc">도구 결과</tspan>다. 파일 하나를 통째로 읽으면 수천 토큰이 한 번에 들어온다.</text>
+      </svg>
+      <figcaption><b>그림 2-1.</b> 컨텍스트 윈도우의 해부. 파랑(읽기)과 초록(실행) 결과가 대부분을 차지하는 것이 코딩 에이전트의 특징이다. 프로젝트 메모는 저장소 루트의 지침 파일처럼 하네스가 자동으로 넣어 주는 문서다.</figcaption>
+    </figure>
+    <table class="tbl">
+      <tr><th>구성 요소</th><th>크기 감각</th><th>특징</th></tr>
+      <tr><td>시스템 프롬프트</td><td>수천 토큰</td><td>하네스가 정한 행동 규칙. 매 턴 동일.</td></tr>
+      <tr><td>도구 정의</td><td>도구당 수백 토큰</td><td>이름·설명·JSON 스키마. 도구를 많이 연결할수록 커진다(3장).</td></tr>
+      <tr><td>프로젝트 메모</td><td>수백~수천 토큰</td><td>빌드 명령, 코딩 규칙 등 저장소별 지침. 짧고 정확할수록 좋다.</td></tr>
+      <tr><td>대화 기록</td><td>턴마다 증가</td><td>사용자 메시지, 모델의 추론과 도구 호출.</td></tr>
+      <tr><td>도구 결과</td><td>호출당 수십~수만</td><td>파일 내용, 검색 결과, 테스트 로그. 가장 변동이 크다.</td></tr>
+    </table>
+  </section>
+
+  <section id="growth">
+    <h2>턴이 쌓이면: 성장과 압축</h2>
+    <p>도구 결과는 지워지지 않고 계속 쌓인다. 작업이 길어지면 언젠가 윈도우가 가득 찬다. 하네스는 보통 윈도우의 일정 비율(임계)에 도달하면 지금까지의 대화를 요약해 짧게 바꾸는 <span class="term">압축</span><span class="en">compaction</span>을 한다. 요약은 공간을 되찾아 주지만 세부 정보를 잃는다. 파일 내용 그 자체는 요약에서 빠지고 “session.ts를 고쳤다”는 사실만 남는 식이다.</p>
+
+    <div class="sim" id="sim-grow">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>컨텍스트 성장과 압축</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="gr-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>윈도우 크기 <output id="gr-win-out"></output></span><input type="range" id="gr-win" min="32000" max="1000000" step="8000" value="200000"></label>
+          <label class="ctrl"><span>턴당 도구 결과 평균 <output id="gr-tool-out"></output></span><input type="range" id="gr-tool" min="200" max="12000" step="100" value="2500"></label>
+          <label class="ctrl"><span>고정 부분 (시스템+도구+메모) <output id="gr-base-out"></output></span><input type="range" id="gr-base" min="2000" max="40000" step="500" value="12000"></label>
+          <label class="ctrl"><span>압축 임계 <output id="gr-th-out"></output></span><input type="range" id="gr-th" min="0.5" max="0.98" step="0.01" value="0.8"></label>
+          <label class="ctrl"><span>요약 크기 (압축 전 대비) <output id="gr-sum-out"></output></span><input type="range" id="gr-sum" min="0.03" max="0.4" step="0.01" value="0.1"></label>
+          <label class="check"><input type="checkbox" id="gr-on" checked> 자동 압축 켜기</label>
+          <div class="legend"><span><i style="background:var(--user)"></i>고정</span><span><i style="background:var(--think)"></i>대화</span><span><i style="background:var(--read)"></i>도구 결과</span><span><i style="background:var(--edit)"></i>요약</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">압축 횟수 (150턴)</span><span class="v" id="gr-o1">—</span></div>
+        <div class="stat"><span class="k">최대 사용률</span><span class="v" id="gr-o2">—</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="gr-o3">—</span></div>
+        <div class="stat"><span class="k">압축 없이 넘치는 턴</span><span class="v" id="gr-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 자동 압축을 끄면 곡선이 윈도우 선을 뚫는 턴이 표시된다 — 실제로는 그 턴에서 요청이 거절된다. ② 임계를 0.5로 낮추면 압축이 잦아지고(정보 손실 ↑), 0.95로 올리면 드물지만 <b>누적 입력 토큰</b>이 커진다(비용 ↑). ③ 도구 결과 평균을 줄이는 것(필요한 줄만 읽기)이 윈도우를 키우는 것보다 누적 토큰을 더 크게 줄인다.</div>
+    </div>
+    <div class="callout warn"><b class="h">압축은 공짜가 아니다</b>요약은 그 자체로 모델 호출이며, 무엇을 남길지 판단을 잘못하면 압축 직후 에이전트가 이미 읽은 파일을 다시 읽거나, 사용자가 초반에 말한 제약을 잊는다. 중요한 결정과 제약은 할 일 목록이나 메모 파일처럼 <em>압축에서 살아남는 곳</em>에 적어 두는 것이 좋다(7장).</div>
+  </section>
+
+  <section id="lost">
+    <h2>긴 컨텍스트의 함정: 중간에서 길을 잃다</h2>
+    <p>윈도우가 크다고 그 안의 모든 내용을 똑같이 잘 쓰는 것은 아니다. 긴 입력의 <b>처음과 끝</b>에 있는 정보는 잘 활용되지만 <b>중간</b>에 있는 정보는 덜 활용되는 경향이 여러 연구에서 관찰되었다(“lost in the middle”). 긴 문서 속에 사실 하나를 숨겨 두고 찾게 하는 <span class="term">건초더미 속 바늘</span><span class="en">needle in a haystack</span> 시험이 이를 재는 대표적인 방법이다.</p>
+    <p>아래 열지도는 그런 시험 결과의 <b>모양</b>을 흉내 낸 모델이다. 가로축은 전체 컨텍스트 길이, 세로축은 바늘이 놓인 깊이(0% = 맨 앞, 100% = 맨 끝)다. 실제 수치는 모델마다 크게 다르며, 최신 모델일수록 이 패턴이 약해지는 추세다.</p>
+
+    <div class="sim" id="sim-needle">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>건초더미 속 바늘 — 위치별 회수율</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="nd-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>장문 견고성 <output id="nd-rob-out"></output></span><input type="range" id="nd-rob" min="0" max="1" step="0.05" value="0.55"></label>
+          <label class="ctrl"><span>바늘과 비슷한 방해 문장 <output id="nd-dis-out"></output></span><input type="range" id="nd-dis" min="0" max="1" step="0.05" value="0.3"></label>
+          <label class="ctrl"><span>선택한 길이 <output id="nd-len-out"></output></span><input type="range" id="nd-len" min="0" max="11" step="1" value="8"></label>
+          <p style="font-size:13.5px;color:var(--text-dim);margin:0">열지도의 열을 눌러도 길이를 고를 수 있다. 오른쪽 작은 그래프가 그 길이에서의 깊이별 회수율이다.</p>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">선택 길이 평균 회수율</span><span class="v" id="nd-o1">—</span></div>
+        <div class="stat"><span class="k">맨 앞 (0%)</span><span class="v" id="nd-o2">—</span></div>
+        <div class="stat"><span class="k">한가운데 (50%)</span><span class="v" id="nd-o3">—</span></div>
+        <div class="stat"><span class="k">맨 끝 (100%)</span><span class="v" id="nd-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: 견고성을 낮추고 길이를 늘리면 열지도 가운데에 어두운 띠가 생긴다 — U자 곡선이다. 에이전트 입장에서 대응책은 ① 지금 필요한 정보를 <b>최근 메시지로 다시 가져오기</b>(필요할 때 파일을 다시 읽기), ② 무관한 출력으로 컨텍스트를 채우지 않기, ③ 긴 탐색은 하위 에이전트에 맡기고 결론만 받기(7장)다.</div>
+    </div>
+  </section>
+
+  <section id="engineering">
+    <h2>컨텍스트 엔지니어링의 원칙</h2>
+    <p>좋은 프롬프트 한 줄보다 <b>매 턴 윈도우에 무엇을 두는가</b>가 결과를 더 크게 좌우한다. 이를 컨텍스트 엔지니어링이라 부르기도 한다.</p>
+    <div class="code"><div class="bar"><span>같은 정보, 다른 비용</span><span>도구 호출 비교</span></div><pre><span class="c"># ✗ 4,000줄 파일 전체를 읽는다 — 약 40K 토큰이 매 턴 따라다닌다</span>
+<span class="f">Read</span>(<span class="s">"src/billing/invoice.py"</span>)
+
+<span class="c"># ✓ 먼저 위치를 찾고, 필요한 범위만 읽는다 — 약 1K 토큰</span>
+<span class="f">Grep</span>(pattern=<span class="s">"def apply_discount"</span>, path=<span class="s">"src/billing"</span>)   <span class="c"># → invoice.py:1812</span>
+<span class="f">Read</span>(<span class="s">"src/billing/invoice.py"</span>, offset=<span class="n">1800</span>, limit=<span class="n">60</span>)</pre></div>
+    <ol>
+      <li><b>필요한 만큼만 읽는다.</b> 검색으로 위치를 찾고 범위를 지정해 읽는다(4장).</li>
+      <li><b>큰 출력은 자른다.</b> 테스트 로그 수만 줄 중 실패 부분만 보이게 한다(3장).</li>
+      <li><b>탐색은 격리한다.</b> 넓게 뒤지는 일은 별도 컨텍스트의 하위 에이전트에 맡긴다(7장).</li>
+      <li><b>살아남아야 할 것은 적어 둔다.</b> 결정 사항과 남은 일은 할 일 목록·메모 파일에.</li>
+      <li><b>고정 부분은 앞에, 변하는 부분은 뒤에.</b> 프롬프트 캐시가 앞부분을 재사용할 수 있게 한다(9장).</li>
+    </ol>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>컨텍스트 한도·응답 길이·요금은 토큰으로 잰다. 영어는 토큰당 4글자 안팎이지만 한국어, 코드, 무작위 문자열은 토큰 밀도가 낮다.</li>
+      <li>코딩 에이전트의 컨텍스트는 도구 결과가 지배한다. 고정 부분(시스템·도구·메모)과 자라는 부분(대화·결과)을 구분하자.</li>
+      <li>압축은 윈도우를 되찾는 대신 세부를 잃는다. 임계가 낮으면 손실이 잦고, 높으면 누적 비용이 커진다. 출력을 줄이는 편이 근본 대책이다.</li>
+      <li>긴 컨텍스트의 중간 정보는 덜 활용될 수 있다. 필요한 정보를 최근으로 다시 가져오고, 무관한 내용을 덜 넣는다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 같은 길이(글자 수)라면 일반적으로 토큰을 가장 많이 쓰는 것은?</p><div class="opts">
+        <button class="opt">평범한 영어 문장</button>
+        <button class="opt" data-correct>16진수 해시가 가득한 로그</button>
+        <button class="opt">흔한 영어 단어 목록</button>
+      </div><div class="quiz-exp">무작위 문자열은 토크나이저 어휘에 긴 조각으로 존재하지 않아 짧은 조각 여럿으로 쪼개진다.</div></div>
+      <div class="quiz-q"><p>2. 코딩 에이전트의 컨텍스트에서 보통 가장 빨리 자라는 부분은?</p><div class="opts">
+        <button class="opt">시스템 프롬프트</button>
+        <button class="opt">도구 정의</button>
+        <button class="opt" data-correct>파일 읽기·명령 실행 같은 도구 결과</button>
+      </div><div class="quiz-exp">시스템 프롬프트와 도구 정의는 매 턴 같다. 도구 결과는 호출마다 수천 토큰씩 더해진다.</div></div>
+      <div class="quiz-q"><p>3. 압축 임계를 0.95로 매우 높게 잡을 때 생기는 변화로 옳은 것은?</p><div class="opts">
+        <button class="opt">압축이 더 자주 일어난다</button>
+        <button class="opt" data-correct>압축은 드물어지지만 누적 입력 토큰이 커진다</button>
+        <button class="opt">누적 입력 토큰이 0이 된다</button>
+      </div><div class="quiz-exp">윈도우를 거의 가득 채운 채 오래 일하므로 매 턴 입력이 크다. 누적 입력 토큰은 턴별 컨텍스트 크기의 합이다.</div></div>
+      <div class="quiz-q"><p>4. 긴 작업 중반에 처음 읽었던 설정 파일의 세부 값이 필요해졌다. 가장 좋은 행동은?</p><div class="opts">
+        <button class="opt">기억에 의존해 값을 추측한다</button>
+        <button class="opt" data-correct>필요한 범위를 다시 읽어 최근 컨텍스트로 가져온다</button>
+        <button class="opt">윈도우가 크므로 아무것도 할 필요 없다</button>
+      </div><div class="quiz-exp">압축됐거나 중간에 묻힌 정보는 활용도가 떨어진다. 짧은 범위 읽기는 싸고 확실하다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 토크나이저 ---------------- */
+(function () {
+  const PRESETS = {
+    en: "The agent reads the failing test, finds the root cause in the session module, and writes a minimal patch.",
+    ko: "에이전트는 실패한 테스트를 읽고, 세션 모듈에서 근본 원인을 찾은 뒤, 최소한의 패치를 작성한다.",
+    py: "def getUserSessionToken(user_id: int) -> str:\n    if user_id is None:\n        raise ValueError(\"missing user\")\n    return f\"{PREFIX}_{user_id:08d}\"",
+    json: '{"type": "tool_use", "name": "read_file", "input": {"path": "src/auth/session.ts", "offset": 120, "limit": 40}}',
+    log: "2026-11-19T03:21:07Z ERROR req=9f3c2a71-4b6e-4d0e-a1f2-7c8b9d0e1f23 sha=4e1d7a9b0c3f2e8d hash mismatch at 0x7ffd3a2c",
+  };
+  const COMMON = new Set("the a an and or of to in is it for on with as at by from that this be are was not but all can has have if then else return def class import true false null none function const let var new int str self while try except raise async await test file path name type read write agent model user session token error value input output data list map get set run code patch root cause module minimal finds writes reads failing".split(" "));
+  const KO_MERGE = ["에이", "전트", "니다", "에서", "으로", "하는", "있다", "한다", "테스", "트를", "읽고", "모듈"];
+  function splitWord(w) {
+    const lead = w.startsWith(" ") ? " " : "";
+    const core = lead ? w.slice(1) : w;
+    const parts = core.split(/(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/);
+    const out = [];
+    parts.forEach((p, i) => {
+      const pre = i === 0 ? lead : "";
+      if (p.length <= 3 || COMMON.has(p.toLowerCase())) { out.push(pre + p); return; }
+      if (/^[a-f0-9]+$/i.test(p) && /\d/.test(p)) { for (let k = 0; k < p.length; k += 2) out.push((k === 0 ? pre : "") + p.slice(k, k + 2)); return; }
+      if (p.length <= 7 && /^[a-z]+$/i.test(p) && /[aeiou]/i.test(p)) { out.push(pre + p); return; }
+      for (let k = 0; k < p.length; k += 4) out.push((k === 0 ? pre : "") + p.slice(k, k + 4));
+    });
+    return out;
+  }
+  function tokenize(s) {
+    const out = [];
+    const re = / ?[A-Za-z]+| ?[0-9]+| ?[가-힣]+|\n|[ \t]+|==|=>|->|!=|<=|>=|\/\/|::|[^\sA-Za-z0-9가-힣]/g;
+    let m;
+    while ((m = re.exec(s))) {
+      const t = m[0];
+      if (/[A-Za-z]/.test(t) && /^ ?[A-Za-z]+$/.test(t)) out.push(...splitWord(t));
+      else if (/^ ?[0-9]+$/.test(t)) { const lead = t[0] === " " ? " " : ""; const d = t.trim(); for (let k = 0; k < d.length; k += 3) out.push((k === 0 ? lead : "") + d.slice(k, k + 3)); }
+      else if (/[가-힣]/.test(t)) {
+        const lead = t[0] === " " ? " " : ""; const d = t.trim(); let k = 0, first = true;
+        while (k < d.length) {
+          const two = d.slice(k, k + 2);
+          const piece = KO_MERGE.includes(two) ? two : d[k];
+          out.push((first ? lead : "") + piece); first = false; k += piece.length;
+        }
+      } else if (/^[ \t]+$/.test(t)) { for (let k = 0; k < t.length; k += 4) out.push(t.slice(k, k + 4)); }
+      else out.push(t);
+    }
+    return out;
+  }
+  const inp = CA.el("tk-in"), outEl = CA.el("tk-out");
+  function render() {
+    const s = inp.value;
+    const toks = tokenize(s);
+    outEl.innerHTML = toks.map((t, i) => {
+      const vis = CA.esc(t).replace(/ /g, "·").replace(/\n/g, "↵\n").replace(/\t/g, "→");
+      return `<span class="tk${i % 5}${/^\s+$/.test(t) ? " ws" : ""}" title="토큰 #${i + 1}">${vis}</span>`;
+    }).join("");
+    const chars = [...s].length;
+    CA.set("tk-o1", CA.fmt(chars)); CA.set("tk-o2", CA.fmt(toks.length));
+    CA.set("tk-o3", toks.length ? (chars / toks.length).toFixed(2) : "—");
+    const per = toks.length ? 200000 / toks.length : 0;
+    CA.set("tk-o4", toks.length ? `이 글 × ${CA.si(per)}` : "—");
+  }
+  inp.addEventListener("input", render);
+  CA.$$("#tk-presets button").forEach((b) => b.addEventListener("click", () => { inp.value = PRESETS[b.dataset.p]; render(); }));
+  inp.value = PRESETS.en; render();
+})();
+
+/* ---------------- 2. 컨텍스트 성장과 압축 ---------------- */
+(function () {
+  const TURNS = 150;
+  function simulate(compact) {
+    const W = CA.val("gr-win"), tool = CA.val("gr-tool"), base = CA.val("gr-base"), th = CA.val("gr-th"), sum = CA.val("gr-sum");
+    const rnd = CA.rng(42);
+    let conv = 200, res = 0, summ = 0, comps = [], series = [], cum = 0, overflow = -1, peak = 0;
+    for (let t = 1; t <= TURNS; t++) {
+      // 모델 출력 + 도구 결과(가끔 큰 파일이나 긴 로그)
+      conv += 80 + rnd() * 220;
+      const u = rnd();
+      res += tool * (u < 0.12 ? 3 + rnd() * 3 : 0.2 + rnd() * 1.1);
+      let total = base + conv + res + summ;
+      if (compact && total > th * W) {
+        const before = conv + res + summ;
+        summ = Math.max(800, before * sum); conv = 0; res = 0;
+        comps.push(t);
+        total = base + summ;
+      }
+      if (!compact && overflow < 0 && total > W) overflow = t;
+      cum += total;
+      peak = Math.max(peak, total / W);
+      series.push({ base, conv, res, summ, total });
+    }
+    return { series, comps, cum, overflow, peak, W, th };
+  }
+  const cv = CA.canvas("gr-cv", { aspect: 0.66, draw });
+  function draw(c, w, h) {
+    const on = CA.el("gr-on").checked;
+    const R = simulate(on);
+    const off = on ? simulate(false) : R;
+    const ymax = Math.max(R.W * 1.15, ...R.series.map((s) => s.total)) ;
+    const A = CA.axes(c, { box: { l: 52, t: 14, r: w - 10, b: h - 40 }, x: [0, TURNS], y: [0, ymax], xt: [0, 30, 60, 90, 120, 150], yt: [0, R.W / 2, R.W], yf: CA.si, xl: "턴", yl: "입력 토큰" });
+    const layers = [["base", "user"], ["conv", "think"], ["res", "read"], ["summ", "edit"]];
+    let acc = R.series.map(() => 0);
+    layers.forEach(([key, col]) => {
+      const top = R.series.map((s, i) => acc[i] + s[key]);
+      c.beginPath();
+      top.forEach((v, i) => { const x = A.X(i + 1), y = A.Y(v); i ? c.lineTo(x, y) : c.moveTo(x, y); });
+      for (let i = top.length - 1; i >= 0; i--) c.lineTo(A.X(i + 1), A.Y(acc[i]));
+      c.closePath(); c.fillStyle = CA.alpha(CA.col(col), 0.72); c.fill();
+      acc = top;
+    });
+    CA.line(c, [[A.X(0), A.Y(R.W)], [A.X(TURNS), A.Y(R.W)]], CA.col("fail"), 1.5);
+    CA.text(c, "윈도우 " + CA.si(R.W), A.X(2), A.Y(R.W) - 9, { size: 11, mono: true, color: CA.col("fail") });
+    if (on) {
+      CA.line(c, [[A.X(0), A.Y(R.W * R.th)], [A.X(TURNS), A.Y(R.W * R.th)]], CA.col("edit"), 1, [5, 4]);
+      CA.text(c, "압축 임계", A.X(TURNS) - 4, A.Y(R.W * R.th) - 9, { size: 11, align: "right", color: CA.col("edit") });
+      R.comps.forEach((t) => { c.fillStyle = CA.col("edit"); c.beginPath(); c.moveTo(A.X(t), A.Y(0) - 2); c.lineTo(A.X(t) - 4, A.Y(0) + 6); c.lineTo(A.X(t) + 4, A.Y(0) + 6); c.fill(); });
+      // 압축 없을 때의 곡선을 점선으로 겹쳐 비교
+      CA.line(c, off.series.map((s, i) => [A.X(i + 1), A.Y(Math.min(s.total, ymax))]), CA.col("text-faint"), 1.2, [3, 3]);
+    } else if (R.overflow > 0) {
+      const x = A.X(R.overflow);
+      CA.line(c, [[x, A.Y(0)], [x, A.Y(ymax)]], CA.col("fail"), 1.5, [4, 3]);
+      CA.text(c, `턴 ${R.overflow}: 윈도우 초과`, x + 6, A.Y(ymax) + 10, { size: 11, color: CA.col("fail"), weight: 700 });
+    }
+    CA.set("gr-o1", on ? R.comps.length + "회" : "—");
+    CA.set("gr-o2", CA.pct(R.peak), R.peak > 1 ? "bad" : "");
+    CA.set("gr-o3", CA.si(R.cum));
+    CA.set("gr-o4", off.overflow > 0 ? "턴 " + off.overflow : "넘치지 않음");
+  }
+  CA.wire(["gr-win", "gr-tool", "gr-base", "gr-th", "gr-sum"], cv.redraw, { "gr-win": CA.si, "gr-tool": CA.si, "gr-base": CA.si, "gr-th": (v) => CA.pct(v), "gr-sum": (v) => CA.pct(v) });
+  CA.el("gr-on").addEventListener("change", cv.redraw);
+})();
+
+/* ---------------- 3. 건초더미 속 바늘 ---------------- */
+(function () {
+  const LENS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 768, 1000].map((k) => k * 1000);
+  const DEPTHS = 11;
+  const recall = (L, d, rob, dis) => {
+    const lf = Math.log(L / 1000 + 1) / Math.log(1001);
+    const mid = Math.pow(Math.sin(Math.PI * d), 1.4);
+    const edgeEnd = d > 0.9 ? 0.4 : 1; // 끝부분은 특히 잘 기억한다
+    const loss = (1 - rob) * lf * (0.25 + 0.95 * mid * edgeEnd) + dis * lf * 0.35;
+    return CA.clamp(1 - loss, 0, 1);
+  };
+  const cv = CA.canvas("nd-cv", { aspect: 0.62, draw });
+  let geom = null;
+  function heat(v) {
+    // 초록(1) → 노랑 → 빨강(0)
+    const a = CA.col("run"), b = CA.col("edit"), r = CA.col("fail");
+    const mix = (x, y, t) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); const A = p(x), B = p(y); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`; };
+    return v > 0.5 ? mix(b, a, (v - 0.5) * 2) : mix(r, b, v * 2);
+  }
+  function draw(c, w, h) {
+    const rob = CA.val("nd-rob"), dis = CA.val("nd-dis"), sel = CA.val("nd-len");
+    const side = Math.min(170, w * 0.3);
+    const l = 62, t = 12, r = w - side - 20, b = h - 40;
+    const cw = (r - l) / LENS.length, ch = (b - t) / DEPTHS;
+    geom = { l, r, cw };
+    LENS.forEach((L, i) => {
+      for (let j = 0; j < DEPTHS; j++) {
+        const v = recall(L, j / (DEPTHS - 1), rob, dis);
+        c.fillStyle = heat(v); c.fillRect(l + i * cw, t + j * ch, cw - 1, ch - 1);
+      }
+      if (i % 2 === 0 || i === LENS.length - 1) CA.text(c, CA.si(L), l + i * cw + cw / 2, b + 10, { size: 10, mono: true, align: "center", color: CA.col("text-faint") });
+    });
+    c.strokeStyle = CA.col("text"); c.lineWidth = 2; c.strokeRect(l + sel * cw, t, cw - 1, b - t - 1);
+    [0, 50, 100].forEach((d) => CA.text(c, d + "%", l - 6, t + (d / 100) * (DEPTHS - 1) * ch + ch / 2, { size: 10, mono: true, align: "right", color: CA.col("text-faint") }));
+    CA.text(c, "컨텍스트 길이 (토큰)", (l + r) / 2, b + 28, { size: 12, align: "center", color: CA.col("text-dim") });
+    c.save(); c.translate(14, (t + b) / 2); c.rotate(-Math.PI / 2); CA.text(c, "바늘 깊이 (앞 → 끝)", 0, 0, { size: 12, align: "center", color: CA.col("text-dim") }); c.restore();
+    // 오른쪽: 선택한 길이의 U자 곡선
+    const L = LENS[sel];
+    const A = CA.axes(c, { box: { l: w - side, t: t, r: w - 8, b: b }, x: [0, 1], y: [0, 1], xt: [0, 0.5, 1], yt: [0, 0.5, 1], xf: (v) => v * 100 + "%", yf: (v) => v * 100 });
+    const pts = []; let s = 0;
+    for (let k = 0; k <= 40; k++) { const d = k / 40, v = recall(L, d, rob, dis); pts.push([A.X(d), A.Y(v)]); s += v; }
+    CA.line(c, pts, CA.col("accent"), 2.5);
+    CA.text(c, CA.si(L) + " 토큰", w - side + 6, t + 8, { size: 11, mono: true, color: CA.col("text-dim") });
+    CA.set("nd-o1", CA.pct(s / 41)); CA.set("nd-o2", CA.pct(recall(L, 0, rob, dis))); CA.set("nd-o3", CA.pct(recall(L, 0.5, rob, dis))); CA.set("nd-o4", CA.pct(recall(L, 1, rob, dis)));
+  }
+  CA.wire(["nd-rob", "nd-dis", "nd-len"], cv.redraw, { "nd-len": (v) => CA.si(LENS[v]) + " 토큰", "nd-rob": (v) => v.toFixed(2), "nd-dis": (v) => v.toFixed(2) });
+  CA.el("nd-cv").addEventListener("click", (e) => {
+    if (!geom) return;
+    const rect = e.target.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const i = Math.floor((x - geom.l) / geom.cw);
+    if (i >= 0 && i < LENS.length) { CA.el("nd-len").value = i; CA.el("nd-len").dispatchEvent(new Event("input")); }
+  });
+})();
+</script>
+</body>
+</html>

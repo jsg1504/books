@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>평가와 비용 · LoopBook</title>
+<meta name="description" content="코딩 에이전트를 재는 법. pass@k와 pass^k, 벤치마크 점수의 신뢰구간, 턴이 늘수록 커지는 토큰 비용과 프롬프트 캐시를 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="evaluation">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 09</div>
+    <h1>평가와 비용</h1>
+    <p class="lead">“이 에이전트가 저 에이전트보다 낫다”는 말을 하려면 무엇을 재야 할까? 성공률 한 숫자 뒤에는 시도 횟수, 표본 크기, 운, 그리고 돈이 숨어 있다. 마지막 장에서는 코딩 에이전트 벤치마크가 어떻게 채점하는지, 성공률을 어떻게 읽어야 하는지, 그리고 한 과제를 푸는 데 드는 토큰 비용이 왜 턴 수의 제곱으로 자라는지를 계산한다.</p>
+    <ul class="objectives">
+      <li>저장소 기반 코딩 벤치마크의 채점 흐름(과제 → 패치 → 숨겨진 테스트)을 설명할 수 있다.</li>
+      <li>pass@k와 pass^k를 계산하고, 각각이 무엇을 재는지 구분할 수 있다.</li>
+      <li>과제 수에 따른 성공률의 신뢰구간을 어림하고, 두 점수 차이가 의미 있는지 판단할 수 있다.</li>
+      <li>턴 수, 컨텍스트 성장, 캐시 적중률로 과제당 토큰 비용을 계산할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="bench">
+    <h2>무엇을 재는가</h2>
+    <p>실제 저장소 기반의 코딩 벤치마크(SWE-bench 계열이 대표적이다)는 대략 이렇게 채점한다. 오픈소스 프로젝트의 실제 이슈와, 그 이슈가 해결되기 직전의 저장소 상태를 준다. 에이전트는 패치를 만든다. 채점기는 에이전트가 보지 못한 테스트로 패치를 검사한다. 이슈 해결로 <b>실패 → 통과</b>로 바뀌어야 하는 테스트와, 원래 통과하던 것이 <b>계속 통과</b>해야 하는 테스트가 모두 통과해야 “해결”이다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 230" role="img" aria-label="저장소 기반 코딩 벤치마크 채점 흐름">
+        <defs><marker id="ea" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--axis)"/></marker></defs>
+        <rect x="14" y="40" width="140" height="110" rx="12" class="soft-user"/><text x="84" y="70" text-anchor="middle" class="t-b">과제</text><text x="84" y="94" text-anchor="middle" class="t-dim">이슈 본문</text><text x="84" y="114" text-anchor="middle" class="t-dim">+ 해결 전 저장소</text><text x="84" y="134" text-anchor="middle" class="t-mono">commit a1b2c3</text>
+        <path d="M158 95H196" class="s-line" marker-end="url(#ea)"/>
+        <rect x="200" y="40" width="150" height="110" rx="12" class="soft-think"/><text x="275" y="70" text-anchor="middle" class="t-b">에이전트 루프</text><text x="275" y="94" text-anchor="middle" class="t-dim">탐색 · 편집 · 실행</text><text x="275" y="114" text-anchor="middle" class="t-dim">(1~8장)</text><text x="275" y="134" text-anchor="middle" class="t-mono">턴 · 토큰 · 시간 기록</text>
+        <path d="M354 95H392" class="s-line" marker-end="url(#ea)"/>
+        <rect x="396" y="56" width="110" height="78" rx="12" class="soft-edit"/><text x="451" y="90" text-anchor="middle" class="t-b">패치</text><text x="451" y="112" text-anchor="middle" class="t-mono">diff</text>
+        <path d="M510 95H548" class="s-line" marker-end="url(#ea)"/>
+        <rect x="552" y="14" width="194" height="164" rx="12" class="f-surface"/><text x="649" y="40" text-anchor="middle" class="t-b">숨겨진 테스트</text>
+        <rect x="568" y="54" width="162" height="48" rx="8" class="soft-run"/><text x="649" y="74" text-anchor="middle" class="t">실패 → 통과</text><text x="649" y="92" text-anchor="middle" class="t-mono">이슈가 고쳐졌는가</text>
+        <rect x="568" y="112" width="162" height="48" rx="8" class="soft-read"/><text x="649" y="132" text-anchor="middle" class="t">통과 → 통과</text><text x="649" y="150" text-anchor="middle" class="t-mono">다른 것을 깨지 않았나</text>
+        <text x="649" y="204" text-anchor="middle" class="t-acc">둘 다 통과 = 해결</text>
+      </svg>
+      <figcaption><b>그림 9-1.</b> 저장소 기반 코딩 벤치마크의 채점. 테스트를 에이전트에게 보여 주지 않는 이유는 6장의 “통과는 해결이 아니다” 문제를 막기 위해서다. 같은 모델이라도 하네스(도구, 턴 한도, 시도 횟수)가 다르면 점수가 달라지므로 점수와 함께 실험 조건을 읽어야 한다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="passk">
+    <h2>pass@k와 pass^k</h2>
+    <p>에이전트는 같은 과제에서도 실행마다 다른 결과를 낸다. 그래서 과제마다 여러 번(<var>n</var>번) 돌려 <var>c</var>번 성공했다고 기록한다. 이 기록으로 두 가지 서로 다른 질문에 답할 수 있다.</p>
+    <ul>
+      <li><b>pass@k</b> — “<var>k</var>번 시도해서 <em>한 번이라도</em> 성공할 확률은?” 여러 후보 중 하나를 고를 수 있을 때(사람이 검토하거나, 테스트로 고를 수 있을 때)의 능력.</li>
+      <li><b>pass^k</b> — “<var>k</var>번 시도해서 <em>모두</em> 성공할 확률은?” 매번 믿고 맡길 수 있는가, 즉 일관성.</li>
+    </ul>
+    <div class="formula"><div class="eq">pass@<var>k</var> = 1 − <span class="frac"><span>C(<var>n</var> − <var>c</var>, <var>k</var>)</span><span>C(<var>n</var>, <var>k</var>)</span></span> &nbsp;&nbsp;&nbsp; pass^<var>k</var> ≈ <span class="frac"><span>C(<var>c</var>, <var>k</var>)</span><span>C(<var>n</var>, <var>k</var>)</span></span></div>
+      <div class="where">C(<var>a</var>, <var>b</var>)는 이항계수. 왼쪽은 <var>n</var>개의 기록 중 <var>k</var>개를 뽑았을 때 실패만 뽑힐 확률을 1에서 뺀 비편향 추정량이다. 오른쪽은 <var>k</var>개 모두 성공이 뽑힐 확률이다. 성공률을 <var>p</var>로 두면 각각 1 − (1−<var>p</var>)<sup><var>k</var></sup>, <var>p</var><sup><var>k</var></sup>에 가깝다.</div></div>
+
+    <div class="sim" id="sim-passk">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>pass@k vs pass^k 계산기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="pk-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>과제당 시도 n <output id="pk-n-out"></output></span><input type="range" id="pk-n" min="1" max="30" step="1" value="10"></label>
+          <label class="ctrl"><span>성공 c <output id="pk-c-out"></output></span><input type="range" id="pk-c" min="0" max="30" step="1" value="6"></label>
+          <label class="ctrl"><span>표시할 k <output id="pk-k-out"></output></span><input type="range" id="pk-k" min="1" max="30" step="1" value="3"></label>
+          <div class="legend"><span><i style="background:var(--run)"></i>pass@k</span><span><i style="background:var(--fail)"></i>pass^k</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">성공률 c/n</span><span class="v" id="pk-o1">—</span></div>
+        <div class="stat"><span class="k">pass@k</span><span class="v good" id="pk-o2">—</span></div>
+        <div class="stat"><span class="k">pass^k</span><span class="v bad" id="pk-o3">—</span></div>
+        <div class="stat"><span class="k">두 값의 차이</span><span class="v" id="pk-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 성공률 60%짜리 에이전트도 pass@5는 99%에 가깝다 — “다섯 번 돌려 하나 고르기”가 가능하다면 강력하다. ② 같은 에이전트의 pass^5는 8% 남짓이다. 매번 맡길 수 있는 에이전트를 원한다면 이쪽이 중요하다. ③ k &gt; n 영역은 기록으로 추정할 수 없어 회색이다. 위쪽 격자는 n번의 시도 결과(초록 = 성공)다.</div>
+    </div>
+  </section>
+
+  <section id="ci">
+    <h2>점수의 흔들림: 신뢰구간</h2>
+    <p>과제 500개짜리 벤치마크에서 A가 52.4%, B가 50.8%를 받았다. A가 더 나은가? 과제는 무작위 표본이고 실행은 확률적이므로 점수 자체가 흔들린다. 성공률 <var>p</var>, 과제 수 <var>N</var>일 때 표준오차와 95% 신뢰구간의 반폭은 대략 다음과 같다.</p>
+    <div class="formula"><div class="eq">SE = √(<var>p</var>(1 − <var>p</var>) / <var>N</var>), &nbsp;&nbsp; 95% CI ≈ <var>p</var> ± 1.96 · SE</div>
+      <div class="where"><var>p</var> = 0.5, <var>N</var> = 500이면 SE ≈ 2.2%p, 반폭 ≈ 4.4%p. 두 점수의 차이를 볼 때는 각자의 구간이 아니라 차이의 표준오차 √(SE<sub>A</sub><sup>2</sup> + SE<sub>B</sub><sup>2</sup>)를 써야 한다(같은 과제로 짝지어 비교하면 더 작아진다).</div></div>
+
+    <div class="sim" id="sim-ci">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>두 에이전트 비교 — 벤치마크를 여러 번 다시 뽑는다면</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ci-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>과제 수 N <output id="ci-n-out"></output></span><input type="range" id="ci-n" min="20" max="3000" step="10" value="500"></label>
+          <label class="ctrl"><span>A의 실제 성공률 <output id="ci-a-out"></output></span><input type="range" id="ci-a" min="0.05" max="0.95" step="0.005" value="0.52"></label>
+          <label class="ctrl"><span>B의 실제 성공률 <output id="ci-b-out"></output></span><input type="range" id="ci-b" min="0.05" max="0.95" step="0.005" value="0.50"></label>
+          <button class="btn" id="ci-go">다시 뽑기</button>
+          <div class="legend"><span><i style="background:var(--read)"></i>A 점수 분포</span><span><i style="background:var(--edit)"></i>B 점수 분포</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">95% CI 반폭 (A)</span><span class="v" id="ci-o1">—</span></div>
+        <div class="stat"><span class="k">B가 A를 이긴 비율</span><span class="v warn" id="ci-o2">—</span></div>
+        <div class="stat"><span class="k">차이의 z 값</span><span class="v" id="ci-o3">—</span></div>
+        <div class="stat"><span class="k">2%p 차이를 가르려면</span><span class="v" id="ci-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 실제 차이 2%p, N = 500이면 벤치마크를 다시 뽑을 때마다 상당한 비율로 B가 A를 이긴다 — 순위가 뒤집힌다. ② N을 3,000으로 올리면 두 분포가 갈라진다. ③ 리더보드에서 1~2%p 차이를 볼 때는 과제 수와 반복 실행 여부를 먼저 확인하자. 실행마다의 무작위성까지 더하면 실제 흔들림은 이 그림보다 크다.</div>
+    </div>
+  </section>
+
+  <section id="cost">
+    <h2>비용은 턴 수의 제곱으로 자란다</h2>
+    <p>1장에서 모델은 매 턴 전체 대화를 다시 입력받는다고 했다. 시작 컨텍스트가 <var>C</var><sub>0</sub>이고 턴마다 <var>Δ</var>씩(도구 결과 + 모델 출력) 늘어난다면, <var>T</var>턴 동안의 누적 입력 토큰은:</p>
+    <div class="formula"><div class="eq"><var>I</var>(<var>T</var>) = ∑<sub><var>t</var>=0</sub><sup><var>T</var>−1</sup> (<var>C</var><sub>0</sub> + <var>t</var>Δ) = <var>T</var><var>C</var><sub>0</sub> + Δ · <span class="frac"><span><var>T</var>(<var>T</var> − 1)</span><span>2</span></span></div>
+      <div class="where">두 번째 항이 <var>T</var><sup>2</sup>으로 자란다. 다행히 매 턴 입력의 앞부분은 이전 턴과 똑같다. <span class="term">프롬프트 캐시</span><span class="en">prompt caching</span>는 이 반복되는 접두사를 저장해 두고 재사용해, 그 부분을 훨씬 싼 단가(예: 기본 입력 단가의 10% 수준)로 처리한다. 새로 캐시에 쓰는 부분에는 할증이 붙기도 한다.</div></div>
+
+    <div class="sim" id="sim-cost">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>과제당 비용 계산기 — 캐시가 있을 때와 없을 때</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cs-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>턴 수 T <output id="cs-t-out"></output></span><input type="range" id="cs-t" min="1" max="200" step="1" value="50"></label>
+          <label class="ctrl"><span>시작 컨텍스트 C<sub>0</sub> <output id="cs-c-out"></output></span><input type="range" id="cs-c" min="2000" max="60000" step="1000" value="15000"></label>
+          <label class="ctrl"><span>턴당 증가 Δ <output id="cs-d-out"></output></span><input type="range" id="cs-d" min="100" max="10000" step="100" value="2000"></label>
+          <label class="ctrl"><span>턴당 출력 토큰 <output id="cs-o-out"></output></span><input type="range" id="cs-o" min="50" max="3000" step="50" value="400"></label>
+          <label class="ctrl"><span>입력 단가 ($/백만 토큰) <output id="cs-p-out"></output></span><input type="range" id="cs-p" min="0.25" max="15" step="0.25" value="3"></label>
+          <label class="ctrl"><span>출력 단가 배수 <output id="cs-x-out"></output></span><input type="range" id="cs-x" min="1" max="8" step="0.5" value="5"></label>
+          <label class="ctrl"><span>캐시 읽기 단가 (입력 대비) <output id="cs-r-out"></output></span><input type="range" id="cs-r" min="0.05" max="1" step="0.05" value="0.1"></label>
+          <label class="ctrl"><span>캐시 쓰기 할증 <output id="cs-w-out"></output></span><input type="range" id="cs-w" min="1" max="2" step="0.05" value="1.25"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="cs-o1">—</span></div>
+        <div class="stat"><span class="k">캐시 없이</span><span class="v bad" id="cs-o2">—</span></div>
+        <div class="stat"><span class="k">캐시 사용</span><span class="v good" id="cs-o3">—</span></div>
+        <div class="stat"><span class="k">입력 비용 중 2차 항 비중</span><span class="v" id="cs-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 턴 수를 두 배로 늘리면 캐시 없는 비용은 거의 네 배가 된다. ② 캐시를 쓰면 매 턴 <b>새로 붙은 Δ만</b> 정가(+쓰기 할증)로 처리하고 나머지는 캐시 단가로 처리하므로, 곡선이 훨씬 완만해진다. ③ 캐시는 접두사가 똑같아야 적중한다. 시스템 프롬프트에 매번 바뀌는 시각을 넣거나 도구 정의 순서를 바꾸면 캐시가 깨진다 — 2장의 “고정 부분은 앞에” 원칙이다. ④ 단가는 예시이며, 실제 요금은 모델과 제공자마다 다르다.</div>
+    </div>
+  </section>
+
+  <section id="tradeoff">
+    <h2>성공률과 비용의 줄다리기</h2>
+    <p>평가를 마무리하는 질문은 결국 하나다. <b>해결된 과제 하나당 얼마가 드는가?</b> 더 많은 턴, 더 큰 모델, 여러 번 시도 후 선택(pass@k)은 성공률을 올리지만 비용도 올린다. 그래서 실무 평가는 성공률 하나가 아니라 비용–성공률 평면 위의 점으로 에이전트 설정을 비교한다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 300" role="img" aria-label="비용-성공률 평면의 파레토 경계">
+        <defs><marker id="ta2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--axis)"/></marker></defs>
+        <path d="M70 260H730" class="s-line" marker-end="url(#ta2)"/><path d="M70 260V16" class="s-line" marker-end="url(#ta2)"/>
+        <text x="728" y="284" text-anchor="end" class="t-dim">과제당 비용 (로그) →</text><text x="22" y="140" class="t-dim" text-anchor="middle" transform="rotate(-90 22 140)">성공률 →</text>
+        <path d="M110 220 C200 150, 320 100, 460 78 S 680 56, 710 54" class="s-acc" stroke-width="2.5" fill="none" stroke-dasharray="7 5"/>
+        <text x="600" y="46" class="t-acc">파레토 경계</text>
+        <g>
+          <circle cx="110" cy="220" r="8" class="c-read"/><text x="124" y="224" class="t">작은 모델 · 짧은 턴</text>
+          <circle cx="250" cy="132" r="8" class="c-read"/><text x="264" y="136" class="t">중간 모델 · 테스트 실행</text>
+          <circle cx="300" cy="196" r="8" class="c-fail" opacity=".7"/><text x="314" y="200" class="t-dim">큰 모델 · 도구 없음 (지배당함)</text>
+          <circle cx="460" cy="78" r="8" class="c-run"/><text x="474" y="98" class="t">큰 모델 · 테스트 · 하위 에이전트</text>
+          <circle cx="680" cy="58" r="8" class="c-edit"/><text x="600" y="84" class="t">5번 시도 후 선택</text>
+          <circle cx="560" cy="150" r="8" class="c-fail" opacity=".7"/><text x="574" y="154" class="t-dim">긴 턴 · 압축 없음 (지배당함)</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 9-2.</b> 비용–성공률 평면(개념도). 경계 위의 점들만이 의미 있는 선택지이고, 경계 아래의 점은 더 싸면서 더 잘하는 다른 설정에 지배당한다. 이 책의 앞선 장들 — 컨텍스트 관리, 좋은 도구, 정확한 탐색, 피드백 — 은 대부분 점을 <b>왼쪽 위로</b> 옮기는 방법이었다.</figcaption>
+    </figure>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>저장소 기반 벤치마크는 보이지 않는 테스트로 “실패→통과”와 “통과→통과”를 모두 검사한다. 점수는 하네스 조건과 함께 읽는다.</li>
+      <li>pass@k는 여러 번 중 한 번의 성공(고를 수 있을 때), pass^k는 매번의 성공(맡길 수 있는가)을 잰다. k가 커질수록 둘은 정반대로 움직인다.</li>
+      <li>500문제의 50% 점수는 ±4.4%p쯤 흔들린다. 작은 차이는 과제 수와 반복 실행을 확인한 뒤에야 의미가 있다.</li>
+      <li>누적 입력 토큰은 턴 수의 제곱으로 자란다. 프롬프트 캐시는 반복되는 접두사를 싸게 만들고, 출력을 줄이는 습관은 Δ 자체를 줄인다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 성공률 50%인 에이전트의 pass@3과 pass^3에 가장 가까운 값은?</p><div class="opts">
+        <button class="opt">50%, 50%</button>
+        <button class="opt" data-correct>87.5%, 12.5%</button>
+        <button class="opt">150%, 0%</button>
+      </div><div class="quiz-exp">1 − 0.5<sup>3</sup> = 0.875, 0.5<sup>3</sup> = 0.125.</div></div>
+      <div class="quiz-q"><p>2. 과제 수를 4배로 늘리면 신뢰구간의 폭은?</p><div class="opts">
+        <button class="opt">1/4로 준다</button>
+        <button class="opt" data-correct>절반으로 준다</button>
+        <button class="opt">변하지 않는다</button>
+      </div><div class="quiz-exp">표준오차는 1/√N에 비례한다. √4 = 2.</div></div>
+      <div class="quiz-q"><p>3. 캐시 없이 30턴에 $1이 들던 과제를 60턴으로 늘리면(다른 조건 동일, 증가분이 지배적) 비용은 대략?</p><div class="opts">
+        <button class="opt">$2</button>
+        <button class="opt" data-correct>$4에 가깝다</button>
+        <button class="opt">$1 그대로</button>
+      </div><div class="quiz-exp">누적 입력의 2차 항 Δ·T(T−1)/2가 지배적이면 T가 2배일 때 약 4배.</div></div>
+      <div class="quiz-q"><p>4. 프롬프트 캐시 적중률을 떨어뜨리는 습관은?</p><div class="opts">
+        <button class="opt">시스템 프롬프트와 도구 정의를 고정해 둔다</button>
+        <button class="opt" data-correct>시스템 프롬프트 맨 앞에 매 요청의 현재 시각을 넣는다</button>
+        <button class="opt">변하는 내용을 대화의 끝에 붙인다</button>
+      </div><div class="quiz-exp">캐시는 바이트 단위로 같은 접두사만 재사용한다. 앞부분이 바뀌면 그 뒤 전체가 다시 처리된다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* 이항계수 비율을 로그로 안정적으로 계산 */
+function lchoose(n, k) { if (k < 0 || k > n) return -Infinity; let s = 0; for (let i = 1; i <= k; i++) s += Math.log(n - k + i) - Math.log(i); return s; }
+const passAt = (n, c, k) => (n - c < k ? 1 : 1 - Math.exp(lchoose(n - c, k) - lchoose(n, k)));
+const passPow = (n, c, k) => (c < k ? 0 : Math.exp(lchoose(c, k) - lchoose(n, k)));
+
+/* ---------------- 1. pass@k ---------------- */
+(function () {
+  const nEl = CA.el("pk-n"), cEl = CA.el("pk-c");
+  const cv = CA.canvas("pk-cv", { aspect: 0.64, draw });
+  function draw(g, w, h) {
+    const n = CA.val("pk-n"), c = Math.min(CA.val("pk-c"), n), k = CA.val("pk-k"), K = 30;
+    // 위: n번 시도 격자
+    const cell = Math.min(22, (w - 20) / n);
+    for (let i = 0; i < n; i++) { CA.rrect(g, 10 + i * cell, 8, cell - 3, 18, 4); g.fillStyle = i < c ? CA.col("run") : CA.col("fail"); g.globalAlpha = i < c ? 0.8 : 0.45; g.fill(); g.globalAlpha = 1; }
+    const A = CA.axes(g, { box: { l: 46, t: 44, r: w - 12, b: h - 40 }, x: [1, K], y: [0, 1], xt: [1, 5, 10, 15, 20, 25, 30], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "시도 수 k", yl: "확률" });
+    if (n < K) { g.fillStyle = CA.alpha(CA.col("text-faint"), 0.12); g.fillRect(A.X(n + 0.5), A.box.t, A.box.r - A.X(n + 0.5), A.box.b - A.box.t); }
+    const a = [], b = [];
+    for (let j = 1; j <= Math.min(n, K); j++) { a.push([A.X(j), A.Y(passAt(n, c, j))]); b.push([A.X(j), A.Y(passPow(n, c, j))]); }
+    CA.line(g, a, CA.col("run"), 2.6); CA.line(g, b, CA.col("fail"), 2.6);
+    CA.line(g, [[A.X(1), A.Y(c / n)], [A.X(K), A.Y(c / n)]], CA.col("text-faint"), 1, [4, 4]);
+    if (k <= n) {
+      [[passAt(n, c, k), "run"], [passPow(n, c, k), "fail"]].forEach(([v, col]) => { g.fillStyle = CA.col(col); g.beginPath(); g.arc(A.X(k), A.Y(v), 5.5, 0, 7); g.fill(); });
+      CA.line(g, [[A.X(k), A.Y(0)], [A.X(k), A.Y(1)]], CA.col("axis"), 1, [3, 3]);
+    }
+    const ok = k <= n;
+    CA.set("pk-o1", CA.pct(c / n)); CA.set("pk-o2", ok ? CA.pct(passAt(n, c, k), 1) : "추정 불가"); CA.set("pk-o3", ok ? CA.pct(passPow(n, c, k), 1) : "추정 불가");
+    CA.set("pk-o4", ok ? (100 * (passAt(n, c, k) - passPow(n, c, k))).toFixed(1) + "%p" : "—");
+  }
+  const sync = () => { cEl.max = nEl.value; if (+cEl.value > +nEl.value) cEl.value = nEl.value; };
+  nEl.addEventListener("input", sync);
+  CA.wire(["pk-n", "pk-c", "pk-k"], cv.redraw);
+})();
+
+/* ---------------- 2. 신뢰구간 ---------------- */
+(function () {
+  const R = 400;
+  let seed = 9;
+  // 이항분포 표본: 정규 근사 + 반올림 (N이 작을 땐 직접 시행)
+  function sample(N, p, rnd) {
+    if (N <= 200) { let s = 0; for (let i = 0; i < N; i++) if (rnd() < p) s++; return s / N; }
+    const u = 1 - rnd(), v = rnd(); const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    return CA.clamp(Math.round(N * p + z * Math.sqrt(N * p * (1 - p))), 0, N) / N;
+  }
+  const cv = CA.canvas("ci-cv", { aspect: 0.62, draw });
+  function draw(g, w, h) {
+    const N = CA.val("ci-n"), a = CA.val("ci-a"), b = CA.val("ci-b");
+    const rnd = CA.rng(seed);
+    const SA = [], SB = []; let bWins = 0;
+    for (let i = 0; i < R; i++) { const x = sample(N, a, rnd), y = sample(N, b, rnd); SA.push(x); SB.push(y); if (y > x) bWins++; }
+    const seA = Math.sqrt((a * (1 - a)) / N), seB = Math.sqrt((b * (1 - b)) / N);
+    const lo = Math.max(0, Math.min(a, b) - 5 * Math.max(seA, seB)), hi = Math.min(1, Math.max(a, b) + 5 * Math.max(seA, seB));
+    const bins = 46, bwid = (hi - lo) / bins;
+    const hist = (S) => { const H = Array(bins).fill(0); S.forEach((v) => { const k = Math.floor((v - lo) / bwid); if (k >= 0 && k < bins) H[k]++; }); return H; };
+    const HA = hist(SA), HB = hist(SB), ymax = Math.max(...HA, ...HB) * 1.15;
+    const A = CA.axes(g, { box: { l: 40, t: 14, r: w - 12, b: h - 62 }, x: [lo, hi], y: [0, ymax], xt: [lo, (lo + hi) / 2, hi], xf: (v) => (v * 100).toFixed(1) + "%", yt: [], xl: "벤치마크 점수 (같은 실력, 다른 표본)" });
+    [[HA, "read"], [HB, "edit"]].forEach(([H, col]) => {
+      g.fillStyle = CA.alpha(CA.col(col), 0.45);
+      H.forEach((v, k) => { if (v) g.fillRect(A.X(lo + k * bwid), A.Y(v), A.X(lo + (k + 1) * bwid) - A.X(lo + k * bwid) - 1, A.Y(0) - A.Y(v)); });
+    });
+    // 신뢰구간 막대
+    const ciBar = (p, se, y, col, lbl) => {
+      CA.line(g, [[A.X(p - 1.96 * se), y], [A.X(p + 1.96 * se), y]], CA.col(col), 3);
+      g.fillStyle = CA.col(col); g.beginPath(); g.arc(A.X(p), y, 5, 0, 7); g.fill();
+      CA.text(g, `${lbl} ${(p * 100).toFixed(1)}% ± ${(196 * se).toFixed(1)}`, A.X(p + 1.96 * se) + 8, y, { size: 11, mono: true, color: CA.col(col) });
+    };
+    ciBar(a, seA, h - 36, "read", "A"); ciBar(b, seB, h - 18, "edit", "B");
+    const z = (a - b) / Math.sqrt(seA * seA + seB * seB);
+    CA.set("ci-o1", "±" + (196 * seA).toFixed(1) + "%p");
+    CA.set("ci-o2", CA.pct(bWins / R));
+    CA.set("ci-o3", z.toFixed(2), Math.abs(z) >= 1.96 ? "good" : "warn");
+    // 2%p 차이를 z=1.96으로 가르는 데 필요한 N (p≈0.5)
+    const pbar = (a + b) / 2, need = Math.ceil((2 * pbar * (1 - pbar) * 1.96 * 1.96) / (0.02 * 0.02));
+    CA.set("ci-o4", "N ≈ " + CA.fmt(need));
+  }
+  CA.wire(["ci-n", "ci-a", "ci-b"], cv.redraw, { "ci-n": (v) => CA.fmt(v), "ci-a": (v) => CA.pct(v, 1), "ci-b": (v) => CA.pct(v, 1) });
+  CA.el("ci-go").addEventListener("click", () => { seed++; cv.redraw(); });
+})();
+
+/* ---------------- 3. 비용 계산기 ---------------- */
+(function () {
+  const cv = CA.canvas("cs-cv", { aspect: 0.66, draw });
+  function model() {
+    const T = CA.val("cs-t"), C0 = CA.val("cs-c"), D = CA.val("cs-d"), O = CA.val("cs-o"), P = CA.val("cs-p") / 1e6, X = CA.val("cs-x"), Rr = CA.val("cs-r"), Wr = CA.val("cs-w");
+    const no = [], ca = []; let cumNo = 0, cumCa = 0, inTok = 0, prev = 0;
+    for (let t = 0; t < T; t++) {
+      const ctx = C0 + t * D;
+      inTok += ctx;
+      cumNo += ctx * P + O * P * X;
+      // 캐시: 이전 턴까지의 접두사는 캐시 읽기, 새로 붙은 부분은 캐시 쓰기
+      const read = t === 0 ? 0 : prev, write = ctx - read;
+      cumCa += read * P * Rr + write * P * Wr + O * P * X;
+      prev = ctx;
+      no.push(cumNo); ca.push(cumCa);
+    }
+    const quad = (D * T * (T - 1)) / 2, lin = T * C0;
+    return { T, no, ca, inTok, quadShare: quad / (quad + lin) };
+  }
+  function draw(g, w, h) {
+    const M = model();
+    const ymax = Math.max(0.01, M.no[M.no.length - 1]) * 1.08;
+    const nice = (v) => (v < 0.1 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : v.toFixed(0));
+    const A = CA.axes(g, { box: { l: 60, t: 14, r: w - 12, b: h - 40 }, x: [0, Math.max(10, M.T)], y: [0, ymax], xt: [0, Math.round(M.T / 4), Math.round(M.T / 2), Math.round((3 * M.T) / 4), M.T], yt: [0, ymax / 2, ymax], yf: (v) => "$" + nice(v), xl: "턴", yl: "누적 비용", ylOff: 50 });
+    const area = (arr, col) => {
+      g.beginPath(); g.moveTo(A.X(0), A.Y(0)); arr.forEach((v, i) => g.lineTo(A.X(i + 1), A.Y(v))); g.lineTo(A.X(arr.length), A.Y(0)); g.closePath();
+      g.fillStyle = CA.alpha(CA.col(col), 0.14); g.fill();
+      CA.line(g, arr.map((v, i) => [A.X(i + 1), A.Y(v)]), CA.col(col), 2.6);
+    };
+    area(M.no, "fail"); area(M.ca, "run");
+    CA.text(g, "캐시 없음", A.X(M.T) - 6, A.Y(M.no[M.no.length - 1]) + 12, { size: 11.5, align: "right", color: CA.col("fail"), weight: 700 });
+    CA.text(g, "캐시 사용", A.X(M.T) - 6, A.Y(M.ca[M.ca.length - 1]) - 12, { size: 11.5, align: "right", color: CA.col("run"), weight: 700 });
+    const f = (v) => "$" + (v < 1 ? v.toFixed(3) : v.toFixed(2));
+    CA.set("cs-o1", CA.si(M.inTok)); CA.set("cs-o2", f(M.no[M.no.length - 1])); CA.set("cs-o3", `${f(M.ca[M.ca.length - 1])} (−${CA.pct(1 - M.ca[M.ca.length - 1] / M.no[M.no.length - 1])})`); CA.set("cs-o4", CA.pct(M.quadShare));
+  }
+  CA.wire(["cs-t", "cs-c", "cs-d", "cs-o", "cs-p", "cs-x", "cs-r", "cs-w"], cv.redraw, { "cs-c": CA.si, "cs-d": CA.si, "cs-p": (v) => "$" + v, "cs-x": (v) => "×" + v, "cs-r": (v) => "×" + v, "cs-w": (v) => "×" + v });
+})();
+</script>
+</body>
+</html>

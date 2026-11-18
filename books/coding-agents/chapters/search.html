@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>코드베이스 탐색 · LoopBook</title>
+<meta name="description" content="처음 보는 저장소에서 고칠 곳을 찾는 법. grep 놀이터, 탐색 전략 경주, 저장소 지도 트리맵으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .grep-in { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 700px) { .grep-in { grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) auto; align-items: end; } }
+  #gp-out { height: 300px; }
+  #gp-out .file { color: var(--read); font-weight: 600; margin-top: 8px; }
+  #gp-out .ctx { color: var(--text-faint); }
+  #rm-pane { height: 160px; }
+</style>
+</head>
+<body data-root="../" data-chapter="search">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 04</div>
+    <h1>코드베이스 탐색</h1>
+    <p class="lead">에이전트는 저장소를 모르는 채로 일을 시작한다. 사람 개발자가 처음 보는 프로젝트에서 그러듯, 디렉터리 구조를 훑고, 이름으로 찾고, 필요한 부분만 읽는다. 다만 에이전트에게는 읽는 모든 것이 컨텍스트 토큰이라는 비용이 된다. 이 장은 <b>적게 읽고 정확히 찾는 법</b>을 다룬다.</p>
+    <ul class="objectives">
+      <li>glob, grep, 범위 읽기, 심볼 탐색, 의미 검색의 쓰임새와 비용을 비교할 수 있다.</li>
+      <li>정규식 검색 결과의 정밀도(일치 수)를 조절하는 방법을 안다.</li>
+      <li>저장소 크기와 키워드의 흔함에 따라 탐색 전략의 비용이 어떻게 달라지는지 설명할 수 있다.</li>
+      <li>저장소 지도(심볼 개요)가 전체 내용 대비 얼마나 작은지, 언제 유용한지 말할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="funnel">
+    <h2>탐색은 깔때기다</h2>
+    <p>버그 보고서 한 줄에서 고칠 한 줄까지 가는 과정은 범위를 점점 좁히는 깔때기다. 단계마다 쓰는 도구가 다르고, 아래로 갈수록 정보가 구체적이지만 비싸다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 290" role="img" aria-label="코드 탐색 깔때기">
+        <g text-anchor="middle">
+          <path d="M40 20H720L660 70H100Z" class="soft-user"/><text x="380" y="50" class="t-b">저장소 전체 · 수천 파일 · 수백만 토큰</text>
+          <path d="M100 76H660L600 126H160Z" class="soft-read" opacity=".55"/><text x="380" y="106" class="t">목록 · glob — <tspan class="t-mono">src/**/*session*</tspan> → 파일 이름만 (수십 토큰)</text>
+          <path d="M160 132H600L540 182H220Z" class="soft-read" opacity=".8"/><text x="380" y="162" class="t">grep — <tspan class="t-mono">"expires\s*[&lt;&gt;]"</tspan> → 일치한 줄만 (수백 토큰)</text>
+          <path d="M220 188H540L490 238H270Z" class="soft-read"/><text x="380" y="218" class="t">범위 읽기 — <tspan class="t-mono">session.ts:10-40</tspan> (수백~수천)</text>
+          <path d="M270 244H490L460 282H300Z" class="soft-edit"/><text x="380" y="268" class="t-b">고칠 줄 · 18행</text>
+        </g>
+        <text x="732" y="56" class="t-dim" text-anchor="end">싸다</text><text x="732" y="270" class="t-dim" text-anchor="end">구체적</text>
+      </svg>
+      <figcaption><b>그림 4-1.</b> 위로 갈수록 넓게 보고 싸며, 아래로 갈수록 좁고 구체적이다. 처음부터 맨 아래(파일 전체 읽기)로 뛰어들면 토큰을 낭비하고, 맨 위에만 머물면 근거 없이 추측하게 된다.</figcaption>
+    </figure>
+    <table class="tbl">
+      <tr><th>도구</th><th>묻는 질문</th><th>장점</th><th>약점</th></tr>
+      <tr><td><b>목록·glob</b></td><td>“이름에 session이 들어간 파일은?”</td><td>매우 싸다. 구조를 파악한다.</td><td>내용은 모른다.</td></tr>
+      <tr><td><b>grep</b><span class="en">ripgrep 등</span></td><td>“expires를 비교하는 줄은 어디?”</td><td>정확하고 빠르다. 결과가 줄 번호와 함께 온다.</td><td>정확한 단어를 알아야 한다. 흔한 단어는 결과가 폭발한다.</td></tr>
+      <tr><td><b>범위 읽기</b></td><td>“그 함수 전체를 보여 줘”</td><td>필요한 맥락만.</td><td>위치를 먼저 알아야 한다.</td></tr>
+      <tr><td><b>심볼 탐색</b><span class="en">LSP</span></td><td>“이 함수를 부르는 곳은?”</td><td>문자열이 아닌 의미 단위. 정의·참조를 정확히.</td><td>언어 서버가 필요하다.</td></tr>
+      <tr><td><b>의미 검색</b><span class="en">embedding</span></td><td>“세션 만료를 처리하는 코드”</td><td>단어를 몰라도 찾는다.</td><td>색인 구축 비용. 순위가 틀리면 엉뚱한 파일부터 읽는다.</td></tr>
+    </table>
+  </section>
+
+  <section id="grep">
+    <h2>grep 놀이터</h2>
+    <p>grep은 코딩 에이전트가 가장 자주 쓰는 탐색 도구다. 패턴을 조금만 바꿔도 결과의 양과 질이 크게 달라진다. 아래는 작은 가상 저장소다. 패턴, 대소문자 구분, 경로 필터, 앞뒤 맥락 줄 수를 바꿔 가며 <b>결과 토큰</b>이 어떻게 변하는지 보자.</p>
+
+    <div class="sim" id="sim-grep">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>가상 저장소 검색</h3></div>
+      <div class="sim-body">
+        <div class="btns" id="gp-presets"></div>
+        <div class="grep-in">
+          <label class="ctrl"><span>패턴 (정규식)</span><input type="text" id="gp-pat" class="mono" value="expires" spellcheck="false"></label>
+          <label class="ctrl"><span>경로 glob</span><input type="text" id="gp-glob" class="mono" value="**/*" spellcheck="false"></label>
+          <label class="check"><input type="checkbox" id="gp-ci"> 대소문자 무시</label>
+        </div>
+        <label class="ctrl"><span>앞뒤 맥락 줄 (-C) <output id="gp-c-out"></output></span><input type="range" id="gp-c" min="0" max="4" step="1" value="0"></label>
+        <div class="pane" id="gp-out"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">일치한 줄</span><span class="v" id="gp-o1">—</span></div>
+        <div class="stat"><span class="k">파일 수</span><span class="v" id="gp-o2">—</span></div>
+        <div class="stat"><span class="k">결과 토큰</span><span class="v" id="gp-o3">—</span></div>
+        <div class="stat"><span class="k">저장소 전체 대비</span><span class="v" id="gp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <code>session</code>처럼 흔한 단어는 일치가 쏟아진다. <code>session\.expires</code>처럼 좁히면 원하는 줄만 남는다. ② glob을 <code>src/**</code>로 바꾸면 테스트와 문서가 빠진다. ③ <code>-C 2</code>는 각 일치의 앞뒤 2줄을 보여 줘 파일을 따로 열지 않아도 될 때가 많다 — 하지만 토큰은 몇 배로 늘어난다.</div>
+    </div>
+  </section>
+
+  <section id="race">
+    <h2>탐색 전략 경주</h2>
+    <p>버그가 있는 파일 하나를 찾는 세 가지 전략을 비교해 보자. 각 점은 파일 하나, 점의 크기는 파일 크기다. 에이전트가 읽은 파일은 파랗게 변하고, 목표 파일을 찾으면 초록 링이 생긴다.</p>
+    <ul>
+      <li><b>차례로 읽기</b> — 디렉터리 순서대로 파일을 연다. 아무 정보 없이 시작한 경우의 기준선.</li>
+      <li><b>grep 먼저</b> — 키워드로 후보 파일을 추린 뒤(작은 비용) 후보만 읽는다. 키워드가 흔할수록 후보가 많다.</li>
+      <li><b>의미 검색</b> — 질의와 비슷한 순서로 파일을 정렬해 위에서부터 읽는다. 질의 품질이 낮으면 목표의 순위가 밀린다.</li>
+    </ul>
+
+    <div class="sim" id="sim-race">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>버그 파일 찾기 — 세 전략의 토큰 경주</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rc-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>저장소 파일 수 <output id="rc-n-out"></output></span><input type="range" id="rc-n" min="30" max="400" step="10" value="160"></label>
+          <label class="ctrl"><span>키워드 흔함 (grep 후보 비율) <output id="rc-fp-out"></output></span><input type="range" id="rc-fp" min="0" max="0.4" step="0.01" value="0.06"></label>
+          <label class="ctrl"><span>의미 검색 질의 품질 <output id="rc-q-out"></output></span><input type="range" id="rc-q" min="0" max="1" step="0.05" value="0.6"></label>
+          <div class="btns"><button class="btn primary" id="rc-go">▶ 경주 시작</button><button class="btn" id="rc-new">새 저장소</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">차례로 읽기</span><span class="v" id="rc-o1">—</span></div>
+        <div class="stat"><span class="k">grep 먼저</span><span class="v" id="rc-o2">—</span></div>
+        <div class="stat"><span class="k">의미 검색</span><span class="v" id="rc-o3">—</span></div>
+        <div class="stat"><span class="k">200회 평균 (토큰)</span><span class="v" id="rc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 키워드 흔함이 낮으면 grep이 압도적이다 — 정확한 오류 메시지나 함수 이름을 알 때. ② 흔함을 0.3 이상으로 올리면 grep 후보가 많아져 장점이 줄어든다. 이때는 패턴을 좁히는 것이 답이다. ③ 질의 품질이 높을 때 의미 검색이 좋지만, 낮으면 차례로 읽기와 비슷해진다. 실무 에이전트는 이들을 섞어 쓴다: 의미 검색이나 목록으로 방향을 잡고, grep으로 확인하고, 범위로 읽는다.</div>
+    </div>
+  </section>
+
+  <section id="map">
+    <h2>저장소 지도</h2>
+    <p>파일을 다 읽을 수는 없지만, 각 파일에 <b>어떤 함수와 클래스가 있는지</b>만 요약한 지도는 훨씬 작다. 함수 이름과 시그니처만 남기면 원래 크기의 수 퍼센트로 줄어든다. 일부 에이전트는 이런 <span class="term">저장소 지도</span><span class="en">repo map</span>를 컨텍스트에 넣어 어디를 볼지 고르는 데 쓴다. 아래 트리맵에서 사각형의 넓이는 파일의 토큰 수다. 파일을 눌러 지도에 담기는 내용을 확인해 보자.</p>
+
+    <div class="sim" id="sim-map">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>트리맵 — 전체 내용 vs 심볼 지도</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row">
+          <div class="seg" id="rm-mode"><button data-v="full" class="on">전체 내용</button><button data-v="map">심볼 지도</button></div>
+          <label class="ctrl" style="flex:1;min-width:200px"><span>저장소 규모 (파일 수) <output id="rm-n-out"></output></span><input type="range" id="rm-n" min="40" max="1600" step="20" value="300"></label>
+          <label class="ctrl" style="flex:1;min-width:200px"><span>윈도우 크기 <output id="rm-w-out"></output></span><input type="range" id="rm-w" min="32000" max="1000000" step="8000" value="200000"></label>
+        </div>
+        <div class="sim-view"><canvas id="rm-cv"></canvas></div>
+        <div class="pane" id="rm-pane"><div class="ln dim">사각형을 누르면 그 파일의 심볼 지도가 여기에 나타납니다.</div></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전체 내용</span><span class="v" id="rm-o1">—</span></div>
+        <div class="stat"><span class="k">심볼 지도</span><span class="v" id="rm-o2">—</span></div>
+        <div class="stat"><span class="k">압축률</span><span class="v" id="rm-o3">—</span></div>
+        <div class="stat"><span class="k">윈도우에 들어가나?</span><span class="v" id="rm-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: 규모를 키우면 전체 내용은 금세 윈도우를 넘지만 지도는 한참 버틴다. 위쪽 막대가 윈도우 크기 대비 비율이다. 그러나 지도도 수천 파일이면 수십만 토큰이 된다 — 그래서 큰 저장소에서는 지도 전체가 아니라 <b>질문과 관련된 부분</b>만 골라 넣는다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>탐색은 깔때기다: 목록·glob → grep → 범위 읽기. 위는 싸고 넓고, 아래는 비싸고 구체적이다.</li>
+      <li>grep의 성패는 패턴의 정밀도에 달렸다. 흔한 단어는 결과를 폭발시킨다. 경로 필터와 구체적인 패턴으로 좁힌다.</li>
+      <li>정확한 단어를 알면 grep, 개념만 알면 의미 검색, 호출 관계는 심볼 탐색. 실무에서는 섞어 쓴다.</li>
+      <li>심볼 지도는 전체 내용의 수 퍼센트로 저장소의 윤곽을 보여 준다. 큰 저장소에서는 그마저 골라 넣어야 한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 테스트 로그에 <code>TypeError: cannot read 'expiresAt' of undefined</code>가 찍혔다. 가장 효율적인 첫 탐색은?</p><div class="opts">
+        <button class="opt">src 디렉터리의 파일을 차례로 모두 읽는다</button>
+        <button class="opt" data-correct><code>expiresAt</code>를 grep한다</button>
+        <button class="opt">README를 읽는다</button>
+      </div><div class="quiz-exp">정확하고 드문 식별자를 알고 있으므로 grep이 몇 줄 안에 후보를 준다.</div></div>
+      <div class="quiz-q"><p>2. grep 결과가 2,000줄이 나왔다. 가장 적절한 다음 행동은?</p><div class="opts">
+        <button class="opt">결과 전체를 컨텍스트에 넣고 하나씩 본다</button>
+        <button class="opt" data-correct>패턴을 구체화하거나 경로 필터를 추가해 다시 검색한다</button>
+        <button class="opt">grep을 포기하고 모든 파일을 읽는다</button>
+      </div><div class="quiz-exp">결과 폭발은 패턴이 너무 넓다는 신호다. 좁혀서 다시 묻는 편이 훨씬 싸다.</div></div>
+      <div class="quiz-q"><p>3. “사용자 권한을 확인하는 코드가 어디 있지?”처럼 정확한 단어를 모를 때 유리한 것은?</p><div class="opts">
+        <button class="opt">정확한 문자열 grep</button>
+        <button class="opt" data-correct>의미 검색 또는 디렉터리 구조 훑어보기</button>
+        <button class="opt">파일 크기순 정렬</button>
+      </div><div class="quiz-exp">개념 수준의 질문은 의미 검색이나 구조(예: <code>src/auth/</code>)로 방향을 잡은 뒤 grep으로 확인한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 가상 저장소 ---------------- */
+const REPO = {
+  "src/auth/session.ts": `import { loadToken } from "./token";
+import { db } from "../db/pool";
+
+// TODO: 세션 TTL을 설정 파일로 옮기기
+export async function getSession(id: string) {
+  const session = await db.sessions.find(id);
+  if (!session) return null;
+  const now = Date.now();
+  if (session.expires > now) return session;
+  return null;
+}
+
+export async function refresh(session) {
+  session.expires = Date.now() / 1000 + SESSION_TTL;
+  await db.sessions.save(session);
+  return session;
+}`,
+  "src/auth/token.ts": `export function loadToken(raw: string) {
+  const [id, exp, sig] = raw.split(".");
+  if (!verify(id + exp, sig)) throw new Error("bad signature");
+  return { id, expires: Number(exp) };
+}
+
+function verify(payload: string, sig: string) {
+  return hmac(payload) === sig;
+}`,
+  "src/auth/middleware.ts": `import { getSession } from "./session";
+
+export async function requireLogin(req, res, next) {
+  const session = await getSession(req.cookies.sid);
+  if (!session) return res.status(401).send("login required");
+  req.session = session;
+  next();
+}`,
+  "src/api/users.ts": `import { requireLogin } from "../auth/middleware";
+
+export const routes = [
+  ["GET", "/me", requireLogin, (req) => req.session.user],
+  ["POST", "/logout", requireLogin, logout],
+];
+
+async function logout(req) {
+  // FIXME: 세션 레코드를 삭제하지 않는다
+  req.session.expires = 0;
+}`,
+  "src/db/pool.ts": `import { createPool } from "pg";
+
+export const db = createPool({ max: 10 });
+// sessions 테이블: id TEXT, user_id INT, expires INTEGER`,
+  "src/db/schema.sql": `CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  expires INTEGER NOT NULL -- unix seconds
+);`,
+  "tests/session.test.ts": `import { getSession, refresh } from "../src/auth/session";
+
+test("expired session is rejected", async () => {
+  const s = await seed({ expires: Date.now() / 1000 - 60 });
+  expect(await getSession(s.id)).toBeNull();
+});
+
+test("refresh extends session", async () => {
+  const s = await refresh(await seed({}));
+  expect(s.expires).toBeGreaterThan(Date.now() / 1000);
+});`,
+  "docs/ARCHITECTURE.md": `# 구조
+- src/auth: 세션과 토큰. session.expires는 유닉스 초.
+- src/api: HTTP 라우트
+- src/db: 데이터베이스 풀과 스키마
+TODO: 세션 만료 정책 문서화`,
+  "README.md": `# demo-app
+npm install && npm test
+로그인 세션은 24시간 후 만료된다.`,
+};
+
+/* ---------------- 1. grep 놀이터 ---------------- */
+(function () {
+  const PRE = [["expires", "흔한 이름"], ["session\\.expires\\s*[<>]", "비교만"], ["TODO|FIXME", "할 일 표시"], ["^import .* from", "import 문"], ["session", "아주 흔한 단어"], ["async function \\w+", "함수 정의"]];
+  CA.el("gp-presets").innerHTML = PRE.map((p, i) => `<button class="btn" data-i="${i}" style="font-weight:500"><span class="mono">${CA.esc(p[0])}</span> <span style="color:var(--text-faint)">· ${p[1]}</span></button>`).join("");
+  CA.$$("#gp-presets button").forEach((b) => b.addEventListener("click", () => { CA.el("gp-pat").value = PRE[b.dataset.i][0]; render(); }));
+  const globRe = (g) => new RegExp("^" + g.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*\/?/g, "§").replace(/\*/g, "[^/]*").replace(/§/g, ".*").replace(/\?/g, ".") + "$");
+  const total = Object.values(REPO).reduce((s, t) => s + CA.estTokens(t), 0);
+  function render() {
+    const pat = CA.el("gp-pat").value, ci = CA.el("gp-ci").checked, C = CA.val("gp-c");
+    const out = CA.el("gp-out");
+    let re, gre;
+    try { re = new RegExp(pat, ci ? "gi" : "g"); gre = globRe(CA.el("gp-glob").value.trim() || "**/*"); } catch (e) { out.innerHTML = `<div class="ln k-fail">정규식 오류: ${CA.esc(e.message)}</div>`; ["gp-o1", "gp-o2", "gp-o3", "gp-o4"].forEach((i) => CA.set(i, "—")); return; }
+    if (!pat) { out.innerHTML = '<div class="ln dim">패턴을 입력하세요.</div>'; return; }
+    let hits = 0, files = 0, text = "", html = "";
+    Object.entries(REPO).forEach(([p, src]) => {
+      if (!gre.test(p)) return;
+      const L = src.split("\n");
+      const m = L.map((l) => { re.lastIndex = 0; return re.test(l); });
+      if (!m.some(Boolean)) return;
+      files++;
+      html += `<div class="file">${CA.esc(p)}</div>`; text += p + "\n";
+      const show = new Set();
+      m.forEach((v, i) => { if (v) { hits++; for (let j = Math.max(0, i - C); j <= Math.min(L.length - 1, i + C); j++) show.add(j); } });
+      let prev = -2;
+      [...show].sort((a, b) => a - b).forEach((i) => {
+        if (prev >= 0 && i > prev + 1) html += `<div class="ctx">--</div>`;
+        html += `<div class="${m[i] ? "" : "ctx"}">${String(i + 1).padStart(3)}${m[i] ? ":" : "-"} ${m[i] ? safeMark(L[i], re) : CA.esc(L[i])}</div>`;
+        text += `${i + 1}: ${L[i]}\n`; prev = i;
+      });
+    });
+    out.innerHTML = html || '<div class="ln dim">일치 없음</div>';
+    const tk = CA.estTokens(text);
+    CA.set("gp-o1", hits); CA.set("gp-o2", files); CA.set("gp-o3", CA.fmt(tk)); CA.set("gp-o4", CA.pct(tk / total, 1));
+  }
+  function safeMark(line, re) {
+    let o = "", last = 0, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(line))) { if (!m[0]) { re.lastIndex++; continue; } o += CA.esc(line.slice(last, m.index)) + "<mark>" + CA.esc(m[0]) + "</mark>"; last = m.index + m[0].length; }
+    return o + CA.esc(line.slice(last));
+  }
+  ["gp-pat", "gp-glob"].forEach((id) => CA.el(id).addEventListener("input", render));
+  CA.el("gp-ci").addEventListener("change", render);
+  CA.wire(["gp-c"], render);
+})();
+
+/* ---------------- 2. 탐색 전략 경주 ---------------- */
+(function () {
+  let seed = 1, repo = null, anim = null;
+  const S = ["seq", "grep", "sem"];
+  const NAME = { seq: "차례로 읽기", grep: "grep 먼저", sem: "의미 검색" };
+  function build() {
+    const n = CA.val("rc-n"), rnd = CA.rng(seed * 97 + n);
+    const dirs = Math.max(4, Math.round(Math.sqrt(n) / 1.6));
+    const files = [];
+    for (let i = 0; i < n; i++) {
+      const d = Math.floor(rnd() * dirs);
+      const tok = Math.round(300 + Math.pow(rnd(), 2.2) * 9000);
+      files.push({ d, tok, x: 0, y: 0 });
+    }
+    files.sort((a, b) => a.d - b.d);
+    const target = Math.floor(rnd() * n);
+    // 디렉터리별 원형 배치
+    const cols = Math.ceil(Math.sqrt(dirs * 1.6));
+    files.forEach((f, i) => { f.i = i; });
+    const byDir = Array.from({ length: dirs }, () => []);
+    files.forEach((f) => byDir[f.d].push(f));
+    byDir.forEach((arr, d) => {
+      const cx = (d % cols + 0.5) / cols, cy = (Math.floor(d / cols) + 0.5) / Math.ceil(dirs / cols);
+      arr.forEach((f, k) => { const a = k * 2.39996, r = 0.018 * Math.sqrt(k + 1); f.x = cx + r * Math.cos(a); f.y = cy + r * Math.sin(a) * 1.3; });
+    });
+    repo = { files, target, dirs, cols };
+  }
+  function plans(r, rnd) {
+    const n = r.files.length, fp = CA.val("rc-fp"), q = CA.val("rc-q");
+    const seq = r.files.map((f) => f.i);
+    const cand = r.files.filter((f) => f.i === r.target || rnd() < fp).map((f) => f.i).sort(() => rnd() - 0.5);
+    const grepCost = 120 + cand.length * 40;
+    // 의미 검색: 목표의 점수 = 품질에 따라 높게, 나머지는 무작위
+    const score = r.files.map((f) => ({ i: f.i, s: f.i === r.target ? q * 1.2 + rnd() * (1.3 - q) : rnd() }));
+    const sem = score.sort((a, b) => b.s - a.s).map((o) => o.i);
+    return { seq: { order: seq, pre: 0 }, grep: { order: cand, pre: grepCost }, sem: { order: sem, pre: 300 } };
+  }
+  const cost = (r, p) => { let c = p.pre, k = 0; for (const i of p.order) { c += r.files[i].tok; k++; if (i === r.target) break; } return { c, k }; };
+  function average() {
+    let sum = { seq: 0, grep: 0, sem: 0 };
+    const rnd = CA.rng(999);
+    for (let t = 0; t < 200; t++) {
+      const r = { files: repo.files, target: Math.floor(rnd() * repo.files.length) };
+      const P = plans(r, rnd);
+      S.forEach((s) => (sum[s] += cost(r, P[s]).c));
+    }
+    CA.set("rc-o4", S.map((s) => CA.si(sum[s] / 200)).join(" · "));
+  }
+  let state = null;
+  function start() {
+    const rnd = CA.rng(seed * 13);
+    const P = plans(repo, rnd);
+    state = { P, idx: { seq: 0, grep: 0, sem: 0 }, tok: { seq: P.seq.pre, grep: P.grep.pre, sem: P.sem.pre }, done: { seq: false, grep: false, sem: false }, read: { seq: new Set(), grep: new Set(), sem: new Set() }, acc: 0 };
+    S.forEach((s) => { const c = cost(repo, P[s]); state.final = state.final || {}; state.final[s] = c; });
+    if (!anim) anim = CA.loop(CA.el("rc-cv"), tick);
+    anim.start();
+  }
+  function tick(dt) {
+    if (!state) return;
+    state.acc += dt;
+    const speed = Math.max(0.012, 1.2 / repo.files.length);
+    while (state.acc > speed) {
+      state.acc -= speed;
+      S.forEach((s) => {
+        if (state.done[s]) return;
+        const i = state.P[s].order[state.idx[s]++];
+        if (i === undefined) { state.done[s] = true; return; }
+        state.read[s].add(i); state.tok[s] += repo.files[i].tok;
+        if (i === repo.target) state.done[s] = true;
+      });
+    }
+    if (S.every((s) => state.done[s])) anim.stop();
+    cv.redraw();
+  }
+  const cv = CA.canvas("rc-cv", { height: (w) => Math.max(360, w * 0.75), draw });
+  function draw(c, w, h) {
+    if (!repo) return;
+    const panelH = (h - 70) / 3;
+    const maxTok = state ? Math.max(...S.map((s) => state.final[s].c)) : 1;
+    S.forEach((s, k) => {
+      const y0 = k * panelH, pw = w * 0.58;
+      CA.rrect(c, 4, y0 + 4, pw - 8, panelH - 8, 8); c.fillStyle = CA.col("surface"); c.fill();
+      CA.text(c, NAME[s], 14, y0 + 18, { size: 12, weight: 700 });
+      const read = state ? state.read[s] : new Set();
+      repo.files.forEach((f) => {
+        const x = 10 + f.x * (pw - 20), y = y0 + 24 + f.y * (panelH - 34);
+        const r = 1.3 + Math.sqrt(f.tok) / 26;
+        c.beginPath(); c.arc(x, y, r, 0, 7);
+        c.fillStyle = read.has(f.i) ? CA.col("read") : CA.alpha(CA.col("text-faint"), 0.45);
+        c.fill();
+        if (f.i === repo.target) {
+          const found = state && state.done[s] && read.has(f.i);
+          c.strokeStyle = found ? CA.col("run") : CA.col("fail"); c.lineWidth = 2;
+          c.beginPath(); c.arc(x, y, r + 4, 0, 7); c.stroke();
+        }
+      });
+      // 토큰 막대
+      const bx = pw + 6, bw = w - bx - 10, by = y0 + panelH / 2 - 10;
+      CA.rrect(c, bx, by, bw, 20, 5); c.fillStyle = CA.col("surface"); c.fill();
+      if (state) {
+        const f = Math.min(1, state.tok[s] / maxTok);
+        CA.rrect(c, bx, by, Math.max(4, bw * f), 20, 5); c.fillStyle = state.done[s] ? CA.col("run") : CA.col("read"); c.fill();
+        CA.text(c, `${CA.si(state.tok[s])} 토큰 · ${state.read[s].size}개 파일`, bx, by + 34, { size: 11, mono: true, color: CA.col("text-dim") });
+      } else CA.text(c, "대기", bx + 8, by + 10, { size: 11, color: CA.col("text-faint") });
+    });
+    CA.text(c, "● 빨간 링 = 버그가 있는 파일 (에이전트는 모른다) · 파랑 = 읽은 파일", 8, h - 20, { size: 11.5, color: CA.col("text-dim") });
+    if (state) S.forEach((s, k) => { if (state.done[s]) CA.set("rc-o" + (k + 1), CA.si(state.final[s].c) + " · " + state.final[s].k + "개"); });
+  }
+  const reset = () => { if (anim) anim.stop(); state = null; build(); ["rc-o1", "rc-o2", "rc-o3"].forEach((i) => CA.set(i, "—")); average(); cv.redraw(); };
+  CA.wire(["rc-n", "rc-fp", "rc-q"], reset, { "rc-fp": (v) => CA.pct(v), "rc-q": (v) => v.toFixed(2) });
+  CA.el("rc-go").addEventListener("click", start);
+  CA.el("rc-new").addEventListener("click", () => { seed++; reset(); });
+})();
+
+/* ---------------- 3. 저장소 지도 트리맵 ---------------- */
+(function () {
+  const DIRN = ["src/auth", "src/api", "src/db", "src/ui", "src/billing", "src/jobs", "lib", "tests", "scripts", "docs", "src/search", "src/admin"];
+  const VERB = ["get", "load", "save", "parse", "render", "handle", "build", "verify", "sync", "apply", "create", "update"];
+  const NOUN = ["Session", "Token", "User", "Invoice", "Query", "Route", "Cache", "Order", "Report", "Config", "Event", "Form"];
+  let files = [], rects = [], sel = -1;
+  function build() {
+    const n = CA.val("rm-n"), rnd = CA.rng(31 + n);
+    files = [];
+    for (let i = 0; i < n; i++) {
+      const d = Math.floor(Math.pow(rnd(), 1.3) * DIRN.length);
+      const tok = Math.round(200 + Math.pow(rnd(), 2.5) * 14000);
+      const nSym = Math.max(1, Math.round(tok / 450 + rnd() * 3));
+      const name = NOUN[Math.floor(rnd() * NOUN.length)].toLowerCase() + (i % 7 ? "" : "_utils") + (d === 7 ? ".test.ts" : d === 9 ? ".md" : ".ts");
+      const syms = Array.from({ length: Math.min(nSym, 14) }, (_, k) => `${k % 4 === 0 ? "class " + NOUN[(i + k) % NOUN.length] + "Service" : "function " + VERB[(i * 3 + k) % VERB.length] + NOUN[(i + k * 5) % NOUN.length]}(${k % 3 ? "id: string" : "opts"})`);
+      files.push({ d, tok, path: `${DIRN[d]}/${name}`, syms, mapTok: 30 + syms.length * 16 });
+    }
+  }
+  // 이진 분할 트리맵: 무게 반씩 나눠 긴 쪽으로 자른다
+  function layout(items, x, y, w, h, out) {
+    if (!items.length) return;
+    if (items.length === 1) { out.push({ it: items[0], x, y, w, h }); return; }
+    const tot = items.reduce((s, it) => s + it.v, 0);
+    let acc = 0, k = 0;
+    while (k < items.length - 1 && acc + items[k].v < tot / 2) acc += items[k++].v;
+    if (k === 0) { acc = items[0].v; k = 1; }
+    const a = items.slice(0, k), b = items.slice(k), f = acc / tot;
+    if (w >= h) { layout(a, x, y, w * f, h, out); layout(b, x + w * f, y, w * (1 - f), h, out); }
+    else { layout(a, x, y, w, h * f, out); layout(b, x, y + h * f, w, h * (1 - f), out); }
+  }
+  const getMode = CA.seg("rm-mode", () => cv.redraw());
+  const cv = CA.canvas("rm-cv", { height: (w) => Math.max(300, w * 0.56), draw });
+  function draw(c, w, h) {
+    const mode = getMode(), W = CA.val("rm-w");
+    const full = files.reduce((s, f) => s + f.tok, 0), map = files.reduce((s, f) => s + f.mapTok, 0);
+    const used = mode === "full" ? full : map;
+    // 상단 막대: 윈도우 대비
+    const bh = 22;
+    CA.rrect(c, 0, 0, w, bh, 6); c.fillStyle = CA.col("surface"); c.fill();
+    const fr = Math.min(1, used / W);
+    CA.rrect(c, 0, 0, Math.max(6, w * fr), bh, 6); c.fillStyle = used > W ? CA.col("fail") : mode === "full" ? CA.col("read") : CA.col("edit"); c.fill();
+    CA.text(c, `${mode === "full" ? "전체 내용" : "심볼 지도"} ${CA.si(used)} / 윈도우 ${CA.si(W)}  (${CA.pct(used / W)})`, 8, bh / 2, { size: 11.5, mono: true, color: fr > 0.45 ? "#fff" : CA.col("text") });
+    // 트리맵: 디렉터리 → 파일
+    const top = bh + 8;
+    const byDir = DIRN.map((_, d) => files.map((f, i) => ({ f, i })).filter((o) => o.f.d === d)).filter((a) => a.length);
+    const dirItems = byDir.map((arr) => ({ arr, v: arr.reduce((s, o) => s + (mode === "full" ? o.f.tok : o.f.mapTok * 12), 0) })).sort((a, b) => b.v - a.v);
+    const dr = []; layout(dirItems, 0, top, w, h - top, dr);
+    rects = [];
+    const palette = ["read", "think", "run", "edit", "accent", "accent-2", "user", "fail"];
+    dr.forEach((D, k) => {
+      const items = D.it.arr.map((o) => ({ ...o, v: mode === "full" ? o.f.tok : o.f.mapTok * 12 })).sort((a, b) => b.v - a.v);
+      const fr2 = []; layout(items, D.x + 2, D.y + 16, D.w - 4, D.h - 18, fr2);
+      const col = CA.col(palette[D.it.arr[0].f.d % palette.length]);
+      c.fillStyle = CA.alpha(col, 0.12); c.fillRect(D.x + 1, D.y + 1, D.w - 2, D.h - 2);
+      if (D.w > 50) CA.text(c, DIRN[D.it.arr[0].f.d] + "/", D.x + 5, D.y + 9, { size: 10.5, mono: true, color: CA.col("text-dim") });
+      fr2.forEach((R) => {
+        const on = R.it.i === sel;
+        c.fillStyle = CA.alpha(col, on ? 0.95 : mode === "full" ? 0.55 : 0.35);
+        c.fillRect(R.x + 0.5, R.y + 0.5, Math.max(0.5, R.w - 1), Math.max(0.5, R.h - 1));
+        if (mode === "map" && R.w > 8 && R.h > 8) {
+          // 지도는 내용 대신 몇 줄의 심볼만 — 얇은 줄로 표현
+          c.fillStyle = CA.alpha(CA.col("text"), 0.35);
+          const n = Math.min(R.it.f.syms.length, Math.floor((R.h - 4) / 4));
+          for (let j = 0; j < n; j++) c.fillRect(R.x + 3, R.y + 3 + j * 4, Math.min(R.w - 6, 6 + (j * 13) % 20), 1.5);
+        }
+        rects.push(R);
+      });
+    });
+    CA.set("rm-o1", CA.si(full)); CA.set("rm-o2", CA.si(map)); CA.set("rm-o3", CA.pct(map / full, 1));
+    CA.set("rm-o4", `전체 ${full <= W ? "예" : "아니오"} · 지도 ${map <= W ? "예" : "아니오"}`, map > W ? "bad" : full > W ? "warn" : "good");
+  }
+  CA.el("rm-cv").addEventListener("click", (e) => {
+    const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const hit = rects.find((R) => x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h);
+    if (!hit) return;
+    sel = hit.it.i; const f = files[sel];
+    CA.el("rm-pane").innerHTML = `<div class="ln k-read">${CA.esc(f.path)}  — 전체 ${CA.fmt(f.tok)} 토큰 → 지도 ${f.mapTok} 토큰</div>` + f.syms.map((s) => `<div class="ln">  ${CA.esc(s)} { … }</div>`).join("");
+    cv.redraw();
+  });
+  CA.wire(["rm-n", "rm-w"], () => { build(); sel = -1; cv.redraw(); }, { "rm-n": (v) => CA.fmt(v), "rm-w": CA.si });
+})();
+</script>
+</body>
+</html>

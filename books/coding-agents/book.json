@@ -1,0 +1,14 @@
+{
+  "title": "코딩 에이전트 실험 교과서",
+  "topic": "인공지능",
+  "description": "프롬프트 한 줄이 어떻게 머지된 패치가 될까요? 에이전트 루프, 컨텍스트, 도구 호출, 탐색, 편집, 테스트, 권한, 평가를 애니메이션 도해와 실험으로 배웁니다.",
+  "published": true,
+  "format": "custom",
+  "cover": "cover.svg",
+  "details": ["9개 장", "27개 실험", "3D 저장소 그래프"],
+  "links": [
+    {"label": "에이전트 루프", "href": "chapters/loop.html", "kind": "첫 장"},
+    {"label": "컨텍스트 압축", "href": "chapters/context.html#growth", "kind": "실험"},
+    {"label": "권한 정책 분류 게임", "href": "chapters/safety.html#game", "kind": "게임"}
+  ]
+}

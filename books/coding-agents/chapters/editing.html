@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>편집과 패치 · LoopBook</title>
+<meta name="description" content="코딩 에이전트가 파일을 고치는 방식. 문자열 치환 편집기, unified diff 적용기, 편집 형식별 비용 계산으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .ed-grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { .ed-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .ed-grid h4, .df-grid h4 { margin: 0 0 6px; font-size: 13px; color: var(--text-dim); font-weight: 600; }
+  #ed-file { height: 260px; }
+  #ed-old, #ed-new { height: 92px; }
+  #ed-diff, #df-out { height: 260px; }
+  .dl { white-space: pre; }
+  .dl.del { background: color-mix(in srgb, var(--fail) 14%, transparent); }
+  .dl.add { background: color-mix(in srgb, var(--run) 16%, transparent); }
+  .dl.hit { background: color-mix(in srgb, var(--edit) 22%, transparent); }
+  .dl.fuzz { outline: 1px dashed var(--edit); }
+  .df-grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { .df-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+  #df-hunk { height: 260px; }
+</style>
+</head>
+<body data-root="../" data-chapter="editing">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 05</div>
+    <h1>편집과 패치</h1>
+    <p class="lead">원인을 찾았다면 이제 고칠 차례다. 그런데 모델이 “파일을 고친다”는 것은 정확히 무엇일까? 모델은 텍스트만 만들 수 있으므로, 하네스와 약속한 <span class="term">편집 형식</span><span class="en">edit format</span>으로 변경을 기술해야 한다. 파일 전체를 다시 쓸 수도, 바꿀 부분만 지정할 수도, diff를 쓸 수도 있다. 형식마다 실패하는 방식과 비용이 다르다.</p>
+    <ul class="objectives">
+      <li>전체 재작성, 문자열 치환, unified diff, 줄 번호 편집의 차이를 설명할 수 있다.</li>
+      <li>문자열 치환이 실패하는 두 가지 경우(불일치, 중복 일치)를 진단하고 고칠 수 있다.</li>
+      <li>diff의 맥락 줄과 줄 번호가 파일 변경에 어떻게 반응하는지 이해한다.</li>
+      <li>파일 크기와 변경 크기에 따른 편집 형식별 출력 토큰을 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="formats">
+    <h2>같은 수정, 네 가지 표현</h2>
+    <p>세션 만료 버그를 고치는 한 줄짜리 수정을 네 가지 형식으로 써 보자.</p>
+    <div class="ed-grid">
+      <div class="code"><div class="bar"><span>① 전체 재작성</span><span>파일 전체 출력</span></div><pre>export function isActive(session) {
+  const now = Date.now();
+  <span class="add">  return session.expires * 1000 > now;</span>}
+<span class="c">… (파일의 나머지 200줄도 모두 다시 출력)</span></pre></div>
+      <div class="code"><div class="bar"><span>② 문자열 치환</span><span>old → new</span></div><pre>{ <span class="s">"path"</span>: <span class="s">"src/auth/session.ts"</span>,
+  <span class="s">"old_string"</span>: <span class="s">"return session.expires > now;"</span>,
+  <span class="s">"new_string"</span>: <span class="s">"return session.expires * 1000 > now;"</span> }</pre></div>
+      <div class="code"><div class="bar"><span>③ unified diff</span><span>맥락 + −/+ 줄</span></div><pre><span class="c">--- a/src/auth/session.ts</span>
+<span class="c">+++ b/src/auth/session.ts</span>
+<span class="f">@@ -4,3 +4,3 @@</span>
+   const now = Date.now();
+<span class="del">-  return session.expires > now;</span><span class="add">+  return session.expires * 1000 > now;</span> }</pre></div>
+      <div class="code"><div class="bar"><span>④ 줄 번호 편집</span><span>위치로 지정</span></div><pre>{ <span class="s">"path"</span>: <span class="s">"src/auth/session.ts"</span>,
+  <span class="s">"replace_lines"</span>: [<span class="n">5</span>, <span class="n">5</span>],
+  <span class="s">"content"</span>: <span class="s">"  return session.expires * 1000 > now;"</span> }</pre></div>
+    </div>
+    <table class="tbl">
+      <tr><th>형식</th><th>출력 비용</th><th>대표적 실패</th><th>잘 맞는 상황</th></tr>
+      <tr><td><b>전체 재작성</b></td><td>파일 크기에 비례 (크다)</td><td>긴 파일에서 관련 없는 부분을 빠뜨리거나 바꿈</td><td>새 파일, 아주 작은 파일, 전면 개편</td></tr>
+      <tr><td><b>문자열 치환</b></td><td>변경 + 고유하게 만드는 맥락</td><td>공백까지 정확히 일치하지 않음 · 여러 곳에 일치</td><td>대부분의 국소 수정 (많은 코딩 에이전트의 기본)</td></tr>
+      <tr><td><b>unified diff</b></td><td>변경 + 앞뒤 맥락 줄(보통 3줄)</td><td>맥락 줄 오타, 잘못된 hunk 헤더</td><td>여러 군데 수정, 사람이 리뷰하는 패치</td></tr>
+      <tr><td><b>줄 번호 편집</b></td><td>가장 작다</td><td>앞선 편집으로 줄 번호가 밀림 · 모델이 줄 번호를 잘못 셈</td><td>방금 읽은 파일을 한 번만 고칠 때</td></tr>
+    </table>
+    <p>핵심 차이는 <b>위치를 무엇으로 지정하느냐</b>다. 줄 번호는 위치를 숫자로, 문자열 치환과 diff는 위치를 <em>내용</em>으로 지정한다. 내용으로 지정하면 파일이 조금 바뀌어도 찾아갈 수 있지만, 내용이 정확히 맞아야 한다.</p>
+  </section>
+
+  <section id="replace">
+    <h2>문자열 치환 편집기</h2>
+    <p>문자열 치환은 규칙이 단순하다. <code>old_string</code>이 파일에서 <b>정확히 한 곳</b> 일치하면 그 자리를 <code>new_string</code>으로 바꾼다. 0곳이면 “찾을 수 없음”, 2곳 이상이면 “고유하지 않음”으로 거절한다. 거절은 실패가 아니라 안전장치다. 잘못된 곳을 고치는 것보다 다시 시도하는 편이 낫다.</p>
+
+    <div class="sim" id="sim-edit">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>old_string → new_string</h3></div>
+      <div class="sim-body">
+        <div class="btns" id="ed-presets"></div>
+        <div class="ed-grid">
+          <div>
+            <h4>src/billing/discount.py (편집 가능)</h4>
+            <textarea id="ed-file" spellcheck="false" aria-label="원본 파일"></textarea>
+          </div>
+          <div>
+            <h4>old_string</h4>
+            <textarea id="ed-old" spellcheck="false" aria-label="old_string"></textarea>
+            <h4 style="margin-top:8px">new_string</h4>
+            <textarea id="ed-new" spellcheck="false" aria-label="new_string"></textarea>
+            <label class="check" style="margin-top:6px"><input type="checkbox" id="ed-all"> replace_all (모든 일치를 바꾸기)</label>
+          </div>
+        </div>
+        <div><h4 style="margin:0 0 6px;font-size:13px;color:var(--text-dim)">결과 diff</h4><div class="pane" id="ed-diff"></div></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">일치 수</span><span class="v" id="ed-o1">—</span></div>
+        <div class="stat"><span class="k">판정</span><span class="v" id="ed-o2">—</span></div>
+        <div class="stat"><span class="k">편집 출력 토큰</span><span class="v" id="ed-o3">—</span></div>
+        <div class="stat"><span class="k">전체 재작성이라면</span><span class="v" id="ed-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “중복 일치” 예제는 <code>rate = 0.1</code>이 두 함수에 모두 있다. old_string에 함수 이름 줄까지 포함하면 고유해진다. ② “공백 불일치” 예제는 들여쓰기가 스페이스 4칸인데 2칸으로 적었다 — 눈으로는 비슷해도 일치하지 않는다. 모델이 파일을 <b>읽은 직후</b>에 편집해야 하는 이유다. ③ 같은 이름을 전부 바꾸려는 것이 의도라면 replace_all을 켜라.</div>
+    </div>
+  </section>
+
+  <section id="diff">
+    <h2>diff는 움직이는 파일 위에 놓인다</h2>
+    <p>unified diff의 hunk는 <code>@@ -시작,길이 +시작,길이 @@</code> 헤더와, 바뀌지 않는 <b>맥락 줄</b>(앞에 공백), 지울 줄(<code>-</code>), 넣을 줄(<code>+</code>)로 이루어진다. 패치를 적용하는 프로그램은 헤더의 줄 번호에서 맥락 줄을 찾는다. 그런데 그 사이 파일이 바뀌었다면? 다른 편집이 위쪽에 줄을 추가했거나, 동료가 커밋을 올렸다면?</p>
+    <p>대부분의 패치 도구는 헤더 위치에서 맥락이 안 맞으면 <b>근처를 찾아본다</b>(오프셋). 그래도 없으면 맥락 줄 일부를 무시하고 맞춰 보기도 한다(퍼지). 아래 실험에서 hunk 위쪽에 줄을 끼워 넣고, 맥락 줄을 바꿔 가며 적용 결과를 보자.</p>
+
+    <div class="sim" id="sim-diff">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>hunk 적용기 — 오프셋과 퍼지</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:180px"><span>hunk 위쪽에 추가된 줄 <output id="df-shift-out"></output></span><input type="range" id="df-shift" min="0" max="30" step="1" value="0"></label>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>탐색 범위 (±줄) <output id="df-win-out"></output></span><input type="range" id="df-win" min="0" max="40" step="1" value="10"></label>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>퍼지 (무시 가능한 맥락 줄) <output id="df-fuzz-out"></output></span><input type="range" id="df-fuzz" min="0" max="2" step="1" value="0"></label>
+          <label class="check"><input type="checkbox" id="df-drift"> 맥락 줄 하나가 바뀜 (동료의 커밋)</label>
+          <label class="check"><input type="checkbox" id="df-dup"> 같은 코드가 파일에 한 번 더 있음</label>
+        </div>
+        <div class="df-grid">
+          <div><h4>패치 (모델이 작성)</h4><div class="pane" id="df-hunk"></div></div>
+          <div><h4>현재 파일에 적용한 모습</h4><div class="pane" id="df-out"></div></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">결과</span><span class="v" id="df-o1">—</span></div>
+        <div class="stat"><span class="k">적용 위치</span><span class="v" id="df-o2">—</span></div>
+        <div class="stat"><span class="k">오프셋</span><span class="v" id="df-o3">—</span></div>
+        <div class="stat"><span class="k">사용한 퍼지</span><span class="v" id="df-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 위쪽 줄을 늘리면 오프셋으로 적용되다가, 탐색 범위를 넘으면 실패한다. 줄 번호 편집(형식 ④)이었다면 <b>경고 없이 엉뚱한 줄</b>을 바꿨을 것이다. ② “맥락 줄이 바뀜”을 켜면 퍼지 0에서는 실패, 퍼지 1에서는 성공한다 — 편하지만 위험하다. ③ “같은 코드가 한 번 더”를 켜고 탐색 범위를 넓히면 <b>가까운 쪽에 적용</b>된다. 의도한 곳이 맞는지 확인할 방법은 맥락 줄뿐이다.</div>
+    </div>
+  </section>
+
+  <section id="cost">
+    <h2>편집 형식의 비용</h2>
+    <p>출력 토큰은 입력 토큰보다 비싸고(보통 몇 배), 생성 속도도 느리다. 그래서 편집 형식은 비용과 지연에 직결된다. 파일 길이 <var>L</var>줄, 변경 <var>c</var>줄이 <var>m</var>군데에 흩어져 있다고 하자. 줄당 토큰을 <var>τ</var>라 하면 대략:</p>
+    <div class="formula"><div class="eq" style="white-space:normal;line-height:1.8">전체 ≈ <var>τL</var>, &nbsp; 치환 ≈ <var>τ</var>(2<var>c</var> + 2<var>u</var><var>m</var>), &nbsp; diff ≈ <var>τ</var>(2<var>c</var> + 6<var>m</var>) + 헤더, &nbsp; 줄번호 ≈ <var>τc</var> + 작은 상수·<var>m</var></div>
+      <div class="where"><var>u</var>: old_string을 고유하게 만들기 위해 덧붙이는 맥락 줄 수(앞뒤 각각). diff의 6<var>m</var>은 hunk마다 앞뒤 3줄씩의 맥락. 치환과 diff의 2<var>c</var>는 지울 내용과 넣을 내용을 모두 쓰기 때문이다.</div></div>
+
+    <div class="sim" id="sim-cost">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>편집 형식별 출력 토큰</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="co-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>파일 길이 L <output id="co-L-out"></output></span><input type="range" id="co-L" min="20" max="3000" step="10" value="400"></label>
+          <label class="ctrl"><span>바꿀 줄 수 c <output id="co-c-out"></output></span><input type="range" id="co-c" min="1" max="200" step="1" value="6"></label>
+          <label class="ctrl"><span>흩어진 위치 수 m <output id="co-m-out"></output></span><input type="range" id="co-m" min="1" max="20" step="1" value="2"></label>
+          <label class="ctrl"><span>고유화 맥락 u <output id="co-u-out"></output></span><input type="range" id="co-u" min="0" max="5" step="1" value="1"></label>
+          <label class="ctrl"><span>출력 단가 (입력 대비) <output id="co-x-out"></output></span><input type="range" id="co-x" min="1" max="8" step="0.5" value="5"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전체 재작성</span><span class="v" id="co-o1">—</span></div>
+        <div class="stat"><span class="k">문자열 치환</span><span class="v" id="co-o2">—</span></div>
+        <div class="stat"><span class="k">unified diff</span><span class="v" id="co-o3">—</span></div>
+        <div class="stat"><span class="k">전체 재작성이 유리해지는 c</span><span class="v" id="co-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 파일이 길고 변경이 작으면 전체 재작성은 수십 배 비싸다. ② 바꿀 줄 수를 파일 길이의 절반 가까이로 올리면 전체 재작성이 오히려 싸진다 — 전면 개편이라면 다시 쓰는 편이 낫다. ③ 그래프의 x축은 바꿀 줄 수 c이고, 세로 점선이 현재 값이다. 오른쪽 축의 비용은 “입력 토큰 단가 기준 환산”이다.</div>
+    </div>
+    <div class="callout"><b class="h">편집 직후에 확인한다</b>편집이 “적용되었다”는 것은 텍스트가 바뀌었다는 뜻일 뿐, 코드가 옳다는 뜻이 아니다. 하네스나 에이전트는 편집 직후 포매터·린터·타입 검사기를 돌려 문법 오류를 바로 잡는다. 이 빠른 신호가 다음 장의 주제인 피드백 루프의 첫 단계다.</div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>편집 형식은 위치를 지정하는 방식이 다르다. 줄 번호는 숫자로, 치환과 diff는 내용으로 위치를 찾는다.</li>
+      <li>문자열 치환은 정확히 한 곳 일치할 때만 적용된다. 불일치는 공백·들여쓰기, 중복은 맥락 부족이 원인인 경우가 많다.</li>
+      <li>diff는 오프셋·퍼지로 움직이는 파일에 적응하지만, 넓은 탐색과 퍼지는 엉뚱한 곳에 적용될 위험을 키운다.</li>
+      <li>출력 토큰은 비싸다. 국소 수정에는 치환·diff, 전면 개편에는 전체 재작성이 유리하다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 문자열 치환이 “old_string이 3곳에서 일치”로 거절되었다. 올바른 대응은?</p><div class="opts">
+        <button class="opt">파일 전체를 다시 쓴다</button>
+        <button class="opt" data-correct>바꾸려는 곳의 앞뒤 줄을 old_string에 포함해 고유하게 만든다</button>
+        <button class="opt">하네스에 버그 보고를 한다</button>
+      </div><div class="quiz-exp">맥락을 덧붙여 한 곳만 일치하게 만든다. 세 곳 모두를 바꾸는 것이 의도라면 replace_all을 쓴다.</div></div>
+      <div class="quiz-q"><p>2. 같은 파일에 연달아 두 번 편집할 때 줄 번호 편집이 특히 위험한 이유는?</p><div class="opts">
+        <button class="opt" data-correct>첫 편집으로 줄 수가 바뀌어 두 번째 편집의 줄 번호가 어긋난다</button>
+        <button class="opt">줄 번호 편집은 출력 토큰이 가장 많다</button>
+        <button class="opt">줄 번호는 파일 이름을 포함하지 않는다</button>
+      </div><div class="quiz-exp">내용으로 위치를 찾는 형식은 줄 이동에 강하지만, 숫자로 찾는 형식은 조용히 엉뚱한 줄을 바꾼다.</div></div>
+      <div class="quiz-q"><p>3. 3,000줄 파일에서 두 줄을 고친다. 출력 토큰이 가장 많은 형식은?</p><div class="opts">
+        <button class="opt">문자열 치환</button>
+        <button class="opt">unified diff</button>
+        <button class="opt" data-correct>전체 재작성</button>
+      </div><div class="quiz-exp">전체 재작성은 바꾸지 않는 2,998줄까지 다시 출력한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 문자열 치환 편집기 ---------------- */
+(function () {
+  const FILE = `RATE_LIMIT = 100
+
+def member_discount(price):
+    rate = 0.1
+    return price * (1 - rate)
+
+def coupon_discount(price, code):
+    if not code:
+        return price
+    rate = 0.1
+    return price * (1 - rate)
+
+def final_price(price, code=None):
+    p = member_discount(price)
+    return coupon_discount(p, code)`;
+  const PRESETS = [
+    ["성공", "def member_discount(price):\n    rate = 0.1", "def member_discount(price):\n    rate = 0.15"],
+    ["중복 일치", "    rate = 0.1", "    rate = 0.15"],
+    ["공백 불일치", "  rate = 0.1\n  return price * (1 - rate)", "  rate = 0.2\n  return price * (1 - rate)"],
+    ["찾을 수 없음", "def member_discount(price, user):", "def member_discount(price, user=None):"],
+    ["여러 줄 리팩터링", "def final_price(price, code=None):\n    p = member_discount(price)\n    return coupon_discount(p, code)", "def final_price(price, code=None, member=True):\n    p = member_discount(price) if member else price\n    return coupon_discount(p, code)"],
+  ];
+  const f = CA.el("ed-file"), o = CA.el("ed-old"), n = CA.el("ed-new"), all = CA.el("ed-all");
+  CA.el("ed-presets").innerHTML = PRESETS.map((p, i) => `<button class="btn" data-i="${i}">${p[0]}</button>`).join("") + `<button class="btn" id="ed-restore">파일 되돌리기</button>`;
+  CA.$$("#ed-presets button[data-i]").forEach((b) => b.addEventListener("click", () => { const p = PRESETS[b.dataset.i]; o.value = p[1]; n.value = p[2]; all.checked = false; render(); }));
+  CA.el("ed-restore").addEventListener("click", () => { f.value = FILE; render(); });
+  function positions(txt, s) { const out = []; if (!s) return out; let k = txt.indexOf(s); while (k >= 0) { out.push(k); k = txt.indexOf(s, k + s.length); } return out; }
+  function render() {
+    const txt = f.value, old = o.value, nw = n.value;
+    const pos = positions(txt, old);
+    const pane = CA.el("ed-diff");
+    let verdict, cls, result = null;
+    if (!old) { verdict = "old_string 비어 있음"; cls = "bad"; }
+    else if (!pos.length) { verdict = "찾을 수 없음"; cls = "bad"; }
+    else if (pos.length > 1 && !all.checked) { verdict = `고유하지 않음 (${pos.length}곳)`; cls = "warn"; }
+    else { verdict = all.checked && pos.length > 1 ? `${pos.length}곳 모두 적용` : "적용됨"; cls = "good"; result = all.checked ? txt.split(old).join(nw) : txt.replace(old, nw); }
+    const lines = txt.split("\n");
+    if (result === null) {
+      // 일치 위치(또는 가장 비슷한 줄)를 보여 준다
+      const hitLines = new Set();
+      pos.forEach((p) => { const a = txt.slice(0, p).split("\n").length - 1, b = a + old.split("\n").length - 1; for (let i = a; i <= b; i++) hitLines.add(i); });
+      let hint = "";
+      if (!pos.length && old) {
+        const first = old.split("\n")[0].trim();
+        const near = lines.findIndex((l) => first && l.trim() === first);
+        if (near >= 0) { hitLines.add(near); hint = `<div class="ln k-edit">힌트: ${near + 1}행에 앞뒤 공백만 다른 줄이 있습니다. 들여쓰기를 파일과 똑같이 맞추세요.</div>`; }
+      }
+      pane.innerHTML = (cls === "warn" ? `<div class="ln k-edit">tool_result is_error: old_string이 ${pos.length}곳에서 일치합니다. 맥락을 더 포함하거나 replace_all을 사용하세요.</div>` : `<div class="ln k-fail">tool_result is_error: ${verdict}</div>`) + hint +
+        lines.map((l, i) => `<div class="dl ${hitLines.has(i) ? "hit" : ""}">${String(i + 1).padStart(3)}  ${CA.esc(l.replace(/ /g, "·")) || " "}</div>`).join("");
+    } else {
+      pane.innerHTML = diff(lines, result.split("\n"));
+    }
+    CA.set("ed-o1", pos.length); CA.set("ed-o2", verdict, cls);
+    const editTok = CA.estTokens(old + nw) + 20;
+    CA.set("ed-o3", CA.fmt(editTok)); CA.set("ed-o4", CA.fmt(CA.estTokens(result || txt)));
+  }
+  // 간단한 LCS diff
+  function diff(a, b) {
+    const m = a.length, n2 = b.length, dp = Array.from({ length: m + 1 }, () => new Int16Array(n2 + 1));
+    for (let i = m - 1; i >= 0; i--) for (let j = n2 - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const out = []; let i = 0, j = 0;
+    while (i < m || j < n2) {
+      if (i < m && j < n2 && a[i] === b[j]) { out.push(`<div class="dl">${String(j + 1).padStart(3)}   ${CA.esc(a[i]) || " "}</div>`); i++; j++; }
+      else if (j < n2 && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) { out.push(`<div class="dl add">${String(j + 1).padStart(3)} + ${CA.esc(b[j]) || " "}</div>`); j++; }
+      else { out.push(`<div class="dl del">    − ${CA.esc(a[i]) || " "}</div>`); i++; }
+    }
+    return out.join("");
+  }
+  [f, o, n].forEach((e) => e.addEventListener("input", render));
+  all.addEventListener("change", render);
+  f.value = FILE; o.value = PRESETS[0][1]; n.value = PRESETS[0][2];
+  render();
+})();
+
+/* ---------------- 2. hunk 적용기 ---------------- */
+(function () {
+  const BASE = [
+    "import time", "", "SESSION_TTL = 86400", "", "class SessionStore:", "    def __init__(self, db):", "        self.db = db", "",
+    "    def get(self, sid):", "        s = self.db.find(sid)", "        if s is None:", "            return None",
+    "        if s.expires > time.time() * 1000:", "            return s", "        return None", "",
+    "    def refresh(self, s):", "        s.expires = time.time() + SESSION_TTL", "        self.db.save(s)", "        return s",
+  ];
+  // hunk: 13행(1부터)의 비교식을 고친다. 앞뒤 3줄 맥락
+  const HUNK = { start: 10, before: ["        s = self.db.find(sid)", "        if s is None:", "            return None"], del: ["        if s.expires > time.time() * 1000:"], add: ["        if s.expires > time.time():"], after: ["            return s", "        return None", ""] };
+  function current() {
+    const shift = CA.val("df-shift"), drift = CA.el("df-drift").checked, dup = CA.el("df-dup").checked;
+    let L = BASE.slice();
+    if (drift) L[9] = "        s = self.db.get(sid)  # find → get 이름 변경";
+    const extra = Array.from({ length: shift }, (_, i) => i % 3 === 0 ? `# 추가된 설정 ${i + 1}` : i % 3 === 1 ? `LOG_LEVEL_${i} = "info"` : "");
+    L.splice(3, 0, ...extra);
+    if (dup) {
+      // 비슷한 함수가 파일 아래쪽에 한 번 더 있다
+      L.push("", "class LegacyStore(SessionStore):", "    def get(self, sid):", "        s = self.db.find(sid)", "        if s is None:", "            return None", "        if s.expires > time.time() * 1000:", "            return s", "        return None", "");
+    }
+    return L;
+  }
+  function tryAt(L, at, fuzz) {
+    // fuzz: 맨 앞/맨 뒤 맥락 줄을 몇 줄까지 무시할지
+    const ctxB = HUNK.before.slice(fuzz), ctxA = HUNK.after.slice(0, HUNK.after.length - fuzz);
+    const seq = [...ctxB, ...HUNK.del, ...ctxA];
+    const s = at + fuzz;
+    for (let k = 0; k < seq.length; k++) if (L[s + k] !== seq[k]) return -1;
+    return s;
+  }
+  function apply() {
+    const L = current(), win = CA.val("df-win"), maxF = CA.val("df-fuzz");
+    const at0 = HUNK.start - 1;
+    for (let f = 0; f <= maxF; f++) {
+      for (let d = 0; d <= win; d++) {
+        for (const sgn of d ? [1, -1] : [1]) {
+          const at = at0 + sgn * d;
+          if (at < 0) continue;
+          const s = tryAt(L, at, f);
+          if (s >= 0) return { L, ok: true, at, s, off: at - at0, fuzz: f };
+        }
+      }
+    }
+    return { L, ok: false };
+  }
+  function render() {
+    const hunkLines = [`--- a/session_store.py`, `+++ b/session_store.py`, `@@ -${HUNK.start},7 +${HUNK.start},7 @@`, ...HUNK.before.map((l) => " " + l), ...HUNK.del.map((l) => "-" + l), ...HUNK.add.map((l) => "+" + l), ...HUNK.after.map((l) => " " + l)];
+    CA.el("df-hunk").innerHTML = hunkLines.map((l) => `<div class="dl ${l[0] === "-" && !l.startsWith("---") ? "del" : l[0] === "+" && !l.startsWith("+++") ? "add" : ""}">${CA.esc(l) || " "}</div>`).join("");
+    const R = apply();
+    const pane = CA.el("df-out");
+    if (!R.ok) {
+      pane.innerHTML = `<div class="ln k-fail">patch: Hunk #1 FAILED at ${HUNK.start}. 파일이 바뀌어 맥락을 찾지 못했습니다.</div>` + R.L.map((l, i) => `<div class="dl ${i === HUNK.start - 1 ? "hit" : ""}">${String(i + 1).padStart(3)}  ${CA.esc(l) || " "}</div>`).join("");
+      CA.set("df-o1", "실패", "bad"); CA.set("df-o2", "—"); CA.set("df-o3", "—"); CA.set("df-o4", "—");
+    } else {
+      const delAt = R.at + HUNK.before.length;
+      const out = R.L.slice();
+      const rows = [];
+      out.forEach((l, i) => {
+        if (i === delAt) { rows.push(`<div class="dl del">    − ${CA.esc(l)}</div>`); HUNK.add.forEach((a) => rows.push(`<div class="dl add">${String(i + 1).padStart(3)} + ${CA.esc(a)}</div>`)); return; }
+        const ctx = i >= R.at && i < R.at + HUNK.before.length + 1 + HUNK.after.length;
+        const fz = ctx && R.fuzz && (i < R.at + R.fuzz || i >= R.at + HUNK.before.length + 1 + HUNK.after.length - R.fuzz);
+        rows.push(`<div class="dl ${fz ? "fuzz" : ""}">${String(i + 1).padStart(3)}   ${CA.esc(l) || " "}</div>`);
+      });
+      pane.innerHTML = `<div class="ln k-run">patch: Hunk #1 succeeded at ${delAt + 1 - HUNK.before.length}${R.off ? ` (offset ${R.off > 0 ? "+" : ""}${R.off} lines)` : ""}${R.fuzz ? ` with fuzz ${R.fuzz}` : ""}.</div>` + rows.join("");
+      const wrong = CA.el("df-dup").checked && delAt > 20 + CA.val("df-shift");
+      CA.set("df-o1", wrong ? "성공 (다른 곳!)" : R.fuzz ? "성공 (퍼지)" : R.off ? "성공 (오프셋)" : "성공", wrong ? "bad" : R.fuzz || R.off ? "warn" : "good");
+      CA.set("df-o2", (delAt + 1) + "행"); CA.set("df-o3", (R.off > 0 ? "+" : "") + R.off); CA.set("df-o4", R.fuzz);
+      const tgt = pane.querySelector(".dl.del"); if (tgt) pane.scrollTop = Math.max(0, tgt.offsetTop - pane.offsetTop - 80);
+    }
+  }
+  CA.wire(["df-shift", "df-win", "df-fuzz"], render);
+  ["df-drift", "df-dup"].forEach((id) => CA.el(id).addEventListener("change", render));
+})();
+
+/* ---------------- 3. 편집 형식 비용 ---------------- */
+(function () {
+  const TAU = 10; // 줄당 토큰
+  const cost = (L, c, m, u) => ({
+    full: TAU * Math.max(L, c),
+    rep: TAU * (2 * c + 2 * u * m) + 25 * m,
+    diff: TAU * (2 * c + 6 * m) + 20 + 12 * m,
+    line: TAU * c + 18 * m,
+  });
+  const cv = CA.canvas("co-cv", { aspect: 0.64, draw });
+  function draw(cx, w, h) {
+    const L = CA.val("co-L"), c = CA.val("co-c"), m = CA.val("co-m"), u = CA.val("co-u"), x = CA.val("co-x");
+    const cmax = Math.max(10, Math.min(L, 200) * 1.0);
+    const ymax = Math.max(cost(L, cmax, m, u).rep, TAU * L) * 1.1;
+    const A = CA.axes(cx, { box: { l: 56, t: 14, r: w - 12, b: h - 40 }, x: [0, cmax], y: [0, ymax], xt: [0, cmax / 4, cmax / 2, (3 * cmax) / 4, cmax].map(Math.round), yt: [0, ymax / 2, ymax].map((v) => Math.round(v)), yf: CA.si, xl: "바꿀 줄 수 c", yl: "출력 토큰" });
+    const series = [["full", "fail", "전체 재작성"], ["rep", "edit", "문자열 치환"], ["diff", "read", "unified diff"], ["line", "run", "줄 번호"]];
+    series.forEach(([k, col, name], j) => {
+      const pts = [];
+      for (let k2 = 0; k2 <= 60; k2++) { const cc = Math.max(1, (k2 / 60) * cmax); pts.push([A.X(cc), A.Y(Math.min(ymax, cost(L, cc, m, u)[k]))]); }
+      CA.line(cx, pts, CA.col(col), 2.4, k === "line" ? [5, 4] : null);
+      CA.text(cx, name, A.box.l + 8, A.box.t + 10 + j * 16, { size: 11.5, color: CA.col(col), weight: 700 });
+    });
+    CA.line(cx, [[A.X(c), A.Y(0)], [A.X(c), A.Y(ymax)]], CA.col("axis"), 1, [3, 3]);
+    const C = cost(L, c, m, u);
+    const fmt = (v) => `${CA.si(v)} · ×${x}=${CA.si(v * x)}`;
+    CA.set("co-o1", fmt(C.full)); CA.set("co-o2", fmt(C.rep)); CA.set("co-o3", fmt(C.diff));
+    // 치환보다 전체 재작성이 싸지는 c: τL ≤ τ(2c+2um)+25m
+    const cs = Math.ceil((TAU * L - 2 * TAU * u * m - 25 * m) / (2 * TAU));
+    CA.set("co-o4", cs <= L ? `c ≥ ${Math.max(1, cs)}줄 (L의 ${CA.pct(Math.max(1, cs) / L)})` : "없음");
+  }
+  CA.wire(["co-L", "co-c", "co-m", "co-u", "co-x"], cv.redraw, { "co-x": (v) => "×" + v });
+})();
+</script>
+</body>
+</html>

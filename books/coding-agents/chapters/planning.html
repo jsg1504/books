@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>계획과 하위 에이전트 · LoopBook</title>
+<meta name="description" content="큰 작업을 나누는 법. 할 일 목록, 작업 그래프 스케줄러, 하위 에이전트의 컨텍스트 격리, 여러 에이전트의 조정 비용을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="planning">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>계획과 하위 에이전트</h1>
+    <p class="lead">“버그 하나 고치기”는 루프 한 번으로 충분하다. 하지만 “결제 기능에 할인 코드 추가하기”는 스키마, API, UI, 테스트, 문서로 이어지는 여러 작업의 묶음이다. 큰 작업을 다루는 에이전트는 <b>계획</b>을 세우고, 계획을 <b>기록</b>하고, 때로는 일을 <b>다른 에이전트에게 맡긴다</b>. 나누면 빨라지고 깔끔해지지만, 나누는 데도 비용이 든다.</p>
+    <ul class="objectives">
+      <li>할 일 목록이 긴 작업에서 하는 역할(진척 추적, 압축 후 기억)을 설명할 수 있다.</li>
+      <li>작업 의존 그래프에서 임계 경로를 찾고, 병렬 에이전트 수에 따른 완료 시간을 계산할 수 있다.</li>
+      <li>하위 에이전트가 메인 컨텍스트를 깨끗하게 유지하는 원리와 그 대가를 설명할 수 있다.</li>
+      <li>조정 비용이 있을 때 에이전트 수를 늘리면 속도가 어디서 꺾이는지 예측할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="todo">
+    <h2>계획을 적어 두기</h2>
+    <p>사람도 큰일을 할 때 목록을 만든다. 에이전트에게 목록은 더 중요하다. 컨텍스트가 압축되면(2장) 초반의 대화는 요약으로 바뀌지만, <b>할 일 목록</b>은 상태로 남아 매 턴 다시 보인다. 무엇을 끝냈고 무엇이 남았는지를 모델이 “기억”할 필요가 없어진다. 목록은 사용자에게도 진척을 보여 주는 창이다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 250" role="img" aria-label="할 일 목록의 상태 변화">
+        <defs><marker id="pa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--axis)"/></marker></defs>
+        <g>
+          <rect x="20" y="20" width="220" height="210" rx="12" class="f-surface"/><text x="36" y="46" class="t-b">턴 3</text>
+          <g transform="translate(36,62)"><rect width="16" height="16" rx="4" class="soft-run"/><path d="M4 8l3 3 6-6" class="sc-run" stroke-width="2" fill="none"/><text x="26" y="13" class="t">요구사항·코드 파악</text></g>
+          <g transform="translate(36,92)"><rect width="16" height="16" rx="4" class="soft-edit"/><circle cx="8" cy="8" r="3" class="c-edit"/><text x="26" y="13" class="t-b">스키마에 coupons 추가</text></g>
+          <g transform="translate(36,122)"><rect width="16" height="16" rx="4" class="f-elev"/><text x="26" y="13" class="t-dim">API 엔드포인트</text></g>
+          <g transform="translate(36,152)"><rect width="16" height="16" rx="4" class="f-elev"/><text x="26" y="13" class="t-dim">UI 폼</text></g>
+          <g transform="translate(36,182)"><rect width="16" height="16" rx="4" class="f-elev"/><text x="26" y="13" class="t-dim">테스트 · 문서</text></g>
+        </g>
+        <path d="M250 125H290" class="s-line" marker-end="url(#pa)"/>
+        <g>
+          <rect x="300" y="20" width="160" height="210" rx="12" class="soft-edit" opacity=".55"/>
+          <text x="380" y="100" text-anchor="middle" class="t-b">컨텍스트 압축</text>
+          <text x="380" y="122" text-anchor="middle" class="t-dim">대화 40K → 요약 3K</text>
+          <text x="380" y="144" text-anchor="middle" class="t-dim">목록은 그대로 유지</text>
+        </g>
+        <path d="M470 125H510" class="s-line" marker-end="url(#pa)"/>
+        <g>
+          <rect x="520" y="20" width="220" height="210" rx="12" class="f-surface"/><text x="536" y="46" class="t-b">턴 27</text>
+          <g transform="translate(536,62)"><rect width="16" height="16" rx="4" class="soft-run"/><path d="M4 8l3 3 6-6" class="sc-run" stroke-width="2" fill="none"/><text x="26" y="13" class="t">요구사항·코드 파악</text></g>
+          <g transform="translate(536,92)"><rect width="16" height="16" rx="4" class="soft-run"/><path d="M4 8l3 3 6-6" class="sc-run" stroke-width="2" fill="none"/><text x="26" y="13" class="t">스키마에 coupons 추가</text></g>
+          <g transform="translate(536,122)"><rect width="16" height="16" rx="4" class="soft-run"/><path d="M4 8l3 3 6-6" class="sc-run" stroke-width="2" fill="none"/><text x="26" y="13" class="t">API 엔드포인트</text></g>
+          <g transform="translate(536,152)"><rect width="16" height="16" rx="4" class="soft-edit"/><circle cx="8" cy="8" r="3" class="c-edit"/><text x="26" y="13" class="t-b">UI 폼</text></g>
+          <g transform="translate(536,182)"><rect width="16" height="16" rx="4" class="f-elev"/><text x="26" y="13" class="t-dim">테스트 · 문서</text></g>
+        </g>
+      </svg>
+      <figcaption><b>그림 7-1.</b> 할 일 목록은 압축을 견딘다. 각 항목은 대기 · 진행 중(하나만) · 완료 상태를 가진다. 진행 중인 항목을 하나로 제한하면 에이전트가 여러 일을 벌여 놓고 끝내지 않는 일을 막는다.</figcaption>
+    </figure>
+    <p>계획을 실행 전에 따로 세우는 방식도 있다. 일부 하네스는 읽기 전용 <b>계획 모드</b>를 두어, 에이전트가 코드를 조사하고 계획을 제안하면 사용자가 승인한 뒤에야 편집을 시작하게 한다. 방향이 틀린 계획을 일찍 고치는 것이 틀린 구현을 고치는 것보다 훨씬 싸다.</p>
+  </section>
+
+  <section id="dag">
+    <h2>작업 그래프와 병렬화</h2>
+    <p>계획의 항목들은 서로 의존한다. API는 스키마가 있어야 만들 수 있고, 통합 테스트는 API와 UI가 모두 있어야 돌릴 수 있다. 이 관계를 <span class="term">의존 그래프</span><span class="en">DAG</span>로 그리면 동시에 할 수 있는 일이 보인다. 아무리 많은 에이전트를 붙여도 그래프에서 가장 긴 경로, 즉 <span class="term">임계 경로</span><span class="en">critical path</span>보다 빨리 끝낼 수는 없다.</p>
+
+    <div class="sim" id="sim-dag">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>할인 코드 기능 — 작업 그래프 스케줄러</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:180px"><span>병렬 에이전트 수 <output id="dg-n-out"></output></span><input type="range" id="dg-n" min="1" max="5" step="1" value="1"></label>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>병렬 작업당 통합 비용 <output id="dg-m-out"></output></span><input type="range" id="dg-m" min="0" max="8" step="0.5" value="1.5"></label>
+          <label class="check"><input type="checkbox" id="dg-cp" checked> 임계 경로 우선 배정</label>
+        </div>
+        <div class="sim-view"><canvas id="dg-cv"></canvas></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">완료 시간</span><span class="v" id="dg-o1">—</span></div>
+        <div class="stat"><span class="k">속도 향상 (1명 대비)</span><span class="v" id="dg-o2">—</span></div>
+        <div class="stat"><span class="k">임계 경로 (하한)</span><span class="v" id="dg-o3">—</span></div>
+        <div class="stat"><span class="k">에이전트 가동률</span><span class="v" id="dg-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 에이전트를 1 → 2로 늘리면 크게 빨라지고, 3 → 5로 늘려도 거의 변하지 않는다 — 굵게 표시된 임계 경로가 하한이다. ② 통합 비용을 올리면 병렬의 이득이 줄다가 1명보다 느려질 수도 있다. 병렬 작업의 결과를 합치고 충돌을 해결하는 비용이다. ③ “임계 경로 우선”을 끄면 짧은 일부터 잡아 완료 시간이 늘어나는 경우가 생긴다.</div>
+    </div>
+  </section>
+
+  <section id="subagents">
+    <h2>하위 에이전트: 컨텍스트를 빌려 쓰기</h2>
+    <p><span class="term">하위 에이전트</span><span class="en">subagent</span>는 메인 에이전트가 도구처럼 부르는 또 다른 에이전트 루프다. 별도의 깨끗한 컨텍스트에서 시작해 맡은 일(예: “결제 모듈에서 할인 계산이 일어나는 곳을 모두 찾아라”)을 하고, <b>결론만</b> 메인에게 돌려준다. 탐색하며 읽은 수만 토큰의 파일 내용은 하위 에이전트와 함께 사라진다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 230" role="img" aria-label="하위 에이전트의 컨텍스트 격리">
+        <defs><marker id="sb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--accent)"/></marker></defs>
+        <rect x="20" y="70" width="190" height="90" rx="12" class="soft-think"/><text x="115" y="104" text-anchor="middle" class="t-b">메인 에이전트</text><text x="115" y="126" text-anchor="middle" class="t-dim">계획 · 편집 · 최종 판단</text>
+        <g>
+          <rect x="330" y="14" width="190" height="56" rx="10" class="soft-read"/><text x="425" y="38" text-anchor="middle" class="t">하위 에이전트 A</text><text x="425" y="56" text-anchor="middle" class="t-mono">읽음 42K → 요약 1.2K</text>
+          <rect x="330" y="88" width="190" height="56" rx="10" class="soft-read"/><text x="425" y="112" text-anchor="middle" class="t">하위 에이전트 B</text><text x="425" y="130" text-anchor="middle" class="t-mono">읽음 31K → 요약 0.9K</text>
+          <rect x="330" y="162" width="190" height="56" rx="10" class="soft-read"/><text x="425" y="186" text-anchor="middle" class="t">하위 에이전트 C</text><text x="425" y="204" text-anchor="middle" class="t-mono">읽음 55K → 요약 1.5K</text>
+        </g>
+        <path d="M212 100 C270 60, 280 42, 326 42" class="s-acc flow" marker-end="url(#sb)"/>
+        <path d="M212 115H326" class="s-acc flow" marker-end="url(#sb)"/>
+        <path d="M212 130 C270 170, 280 190, 326 190" class="s-acc flow" marker-end="url(#sb)"/>
+        <text x="270" y="30" class="t-mono" text-anchor="middle">과제 설명</text>
+        <rect x="580" y="70" width="160" height="90" rx="12" class="f-surface"/><text x="660" y="100" text-anchor="middle" class="t-b">메인 컨텍스트</text><text x="660" y="122" text-anchor="middle" class="t-dim">요약 3.6K만 추가</text><text x="660" y="142" text-anchor="middle" class="t-dim">(128K 대신)</text>
+        <path d="M524 42 C560 42, 560 90, 576 96" class="s-line" marker-end="url(#sb)"/><path d="M524 116H576" class="s-line" marker-end="url(#sb)"/><path d="M524 190 C560 190, 560 140, 576 134" class="s-line" marker-end="url(#sb)"/>
+      </svg>
+      <figcaption><b>그림 7-2.</b> 넓게 뒤지는 일은 하위 에이전트에게, 결정은 메인에게. 독립적인 하위 에이전트는 병렬로 돌릴 수도 있다.</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-sub">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>메인 컨텍스트 — 직접 탐색 vs 하위 에이전트</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sb-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>조사 과제 수 <output id="sb-n-out"></output></span><input type="range" id="sb-n" min="1" max="8" step="1" value="4"></label>
+          <label class="ctrl"><span>과제당 탐색 토큰 <output id="sb-x-out"></output></span><input type="range" id="sb-x" min="5000" max="90000" step="1000" value="35000"></label>
+          <label class="ctrl"><span>요약 크기 <output id="sb-s-out"></output></span><input type="range" id="sb-s" min="200" max="8000" step="100" value="1500"></label>
+          <label class="ctrl"><span>메인 작업 자체 (편집·테스트) <output id="sb-m-out"></output></span><input type="range" id="sb-m" min="5000" max="120000" step="1000" value="40000"></label>
+          <label class="ctrl"><span>하위 에이전트당 고정 비용 <output id="sb-o-out"></output></span><input type="range" id="sb-o" min="0" max="20000" step="500" value="8000"></label>
+          <div class="legend"><span><i style="background:var(--user)"></i>고정</span><span><i style="background:var(--think)"></i>메인 작업</span><span><i style="background:var(--read)"></i>탐색 원문</span><span><i style="background:var(--edit)"></i>요약</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">메인 컨텍스트 (직접)</span><span class="v" id="sb-o1">—</span></div>
+        <div class="stat"><span class="k">메인 컨텍스트 (하위)</span><span class="v good" id="sb-o2">—</span></div>
+        <div class="stat"><span class="k">총 처리 토큰 (직접 → 하위)</span><span class="v" id="sb-o3">—</span></div>
+        <div class="stat"><span class="k">200K 윈도우</span><span class="v" id="sb-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 하위 에이전트를 쓰면 메인 컨텍스트가 극적으로 작아진다 — 압축 없이 오래 일할 수 있고, 2장의 “중간에서 길을 잃는” 문제도 줄어든다. ② 그러나 <b>총 처리 토큰</b>은 오히려 늘 수 있다. 하위 에이전트마다 시스템 프롬프트와 도구 정의를 다시 읽고(고정 비용), 메인이 이미 아는 맥락을 다시 찾기도 한다. ③ 요약이 너무 작으면 메인이 필요한 세부를 잃어 결국 직접 다시 읽게 된다.</div>
+    </div>
+  </section>
+
+  <section id="scaling">
+    <h2>에이전트를 더 붙이면 계속 빨라질까</h2>
+    <p>작업 그래프의 교훈을 일반화하면 고전적인 <b>암달의 법칙</b>이 된다. 전체 작업 중 나눌 수 없는 직렬 부분의 비율을 <var>s</var>라 하면, <var>N</var>개의 에이전트로 얻는 속도 향상은 1/<var>s</var>를 넘지 못한다. 여기에 에이전트끼리 맞추는 비용 — 지시를 쓰고, 결과를 읽고, 충돌을 해결하는 비용 — 이 에이전트 수에 비례해 붙는다고 하자.</p>
+    <div class="formula"><div class="eq"><var>S</var>(<var>N</var>) = <span class="frac"><span>1</span><span><var>s</var> + <span class="frac"><span>1 − <var>s</var></span><span><var>N</var></span></span> + <var>c</var>(<var>N</var> − 1)</span></span></div>
+      <div class="where"><var>s</var>: 직렬 비율, <var>c</var>: 에이전트 하나가 늘 때마다 더해지는 조정 비용(전체 작업 대비 비율). <var>c</var> = 0이면 암달의 법칙이고, <var>c</var> &gt; 0이면 <var>N</var>* ≈ √((1−<var>s</var>)/<var>c</var>)에서 최대가 된 뒤 오히려 느려진다.</div></div>
+
+    <div class="sim" id="sim-amdahl">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>속도 향상 곡선 — 직렬 비율과 조정 비용</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="am-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>직렬 비율 s <output id="am-s-out"></output></span><input type="range" id="am-s" min="0" max="0.6" step="0.01" value="0.15"></label>
+          <label class="ctrl"><span>조정 비용 c <output id="am-c-out"></output></span><input type="range" id="am-c" min="0" max="0.08" step="0.002" value="0.012"></label>
+          <div class="legend"><span><i style="background:var(--text-faint)"></i>이상적 (N배)</span><span><i style="background:var(--read)"></i>암달 (c=0)</span><span><i style="background:var(--accent)"></i>조정 비용 포함</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">최적 에이전트 수 N*</span><span class="v" id="am-o1">—</span></div>
+        <div class="stat"><span class="k">최대 속도 향상</span><span class="v good" id="am-o2">—</span></div>
+        <div class="stat"><span class="k">N = 16에서</span><span class="v" id="am-o3">—</span></div>
+        <div class="stat"><span class="k">암달 한계 1/s</span><span class="v" id="am-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① c = 0이면 곡선은 1/s에 다가가며 평평해진다. ② c를 조금만 올려도 봉우리가 생기고, 그 뒤로는 에이전트를 늘릴수록 손해다. ③ 그래서 실무에서는 서로 겹치지 않는 몇 개의 큰 덩어리(다른 디렉터리, 독립 모듈)로 나눌 때 병렬 에이전트가 가장 효과적이다. 같은 파일을 여럿이 고치게 하면 c가 폭증한다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>할 일 목록은 압축을 견디는 작업 기억이다. 진행 중 항목을 하나로 유지하면 일을 끝까지 밀고 간다.</li>
+      <li>병렬화의 하한은 임계 경로다. 에이전트를 늘려도 의존 사슬보다 빨라지지 않고, 통합 비용이 이득을 갉아먹는다.</li>
+      <li>하위 에이전트는 메인 컨텍스트를 깨끗하게 지키는 대신 총 토큰을 더 쓸 수 있다. 넓은 탐색에 쓰고, 요약의 크기를 적절히.</li>
+      <li>조정 비용이 있으면 최적 에이전트 수가 존재한다. 겹치지 않는 큰 덩어리로 나누는 것이 핵심이다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 작업 합계가 75분, 임계 경로가 44분이다. 에이전트를 무한히 붙여도 완료 시간은?</p><div class="opts">
+        <button class="opt">0분에 가까워진다</button>
+        <button class="opt" data-correct>44분보다 짧아지지 않는다</button>
+        <button class="opt">75분 그대로다</button>
+      </div><div class="quiz-exp">의존 사슬을 따라 차례로 해야 하는 일이 44분이므로 그것이 하한이다. 최대 속도 향상은 75/44 ≈ 1.7배.</div></div>
+      <div class="quiz-q"><p>2. 하위 에이전트를 쓸 때 일반적으로 줄어드는 것은?</p><div class="opts">
+        <button class="opt" data-correct>메인 에이전트의 컨텍스트 크기</button>
+        <button class="opt">모든 에이전트가 처리한 총 토큰</button>
+        <button class="opt">도구 호출 수</button>
+      </div><div class="quiz-exp">탐색 원문이 메인으로 오지 않아 메인 컨텍스트가 작아진다. 총 토큰은 고정 비용 때문에 늘 수 있다.</div></div>
+      <div class="quiz-q"><p>3. 직렬 비율 s = 0.2, 조정 비용 c = 0일 때 속도 향상의 상한은?</p><div class="opts">
+        <button class="opt">2배</button>
+        <button class="opt" data-correct>5배</button>
+        <button class="opt">무한대</button>
+      </div><div class="quiz-exp">암달의 법칙에서 S(∞) = 1/s = 5.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 작업 그래프 스케줄러 ---------------- */
+(function () {
+  const T = [
+    { id: "A", name: "요구사항 파악", d: 5, dep: [], k: "think" },
+    { id: "B", name: "DB 스키마", d: 8, dep: ["A"], k: "edit" },
+    { id: "D", name: "인증 미들웨어", d: 6, dep: ["A"], k: "edit" },
+    { id: "E", name: "UI 폼", d: 10, dep: ["A"], k: "edit" },
+    { id: "C", name: "API 엔드포인트", d: 12, dep: ["B"], k: "edit" },
+    { id: "H", name: "마이그레이션", d: 5, dep: ["B"], k: "edit" },
+    { id: "F", name: "UI ↔ API 연결", d: 6, dep: ["C", "E"], k: "edit" },
+    { id: "G", name: "단위 테스트", d: 8, dep: ["C", "D"], k: "run" },
+    { id: "I", name: "API 문서", d: 4, dep: ["C"], k: "read" },
+    { id: "J", name: "통합 테스트", d: 7, dep: ["F", "G", "H"], k: "run" },
+    { id: "K", name: "PR 정리", d: 4, dep: ["J", "I"], k: "think" },
+  ];
+  const byId = Object.fromEntries(T.map((t) => [t.id, t]));
+  // 남은 경로 길이(우선순위)와 층
+  const tail = {}; const tailOf = (id) => tail[id] ?? (tail[id] = byId[id].d + Math.max(0, ...T.filter((t) => t.dep.includes(id)).map((t) => tailOf(t.id))));
+  T.forEach((t) => tailOf(t.id));
+  const level = {}; const levelOf = (id) => level[id] ?? (level[id] = byId[id].dep.length ? 1 + Math.max(...byId[id].dep.map(levelOf)) : 0);
+  T.forEach((t) => levelOf(t.id));
+  const CP = Math.max(...T.map((t) => tail[t.id]));
+  // 임계 경로 위의 작업
+  const crit = new Set(); (function walk(id) { crit.add(id); const nx = T.filter((t) => t.dep.includes(id)).sort((a, b) => tail[b.id] - tail[a.id])[0]; if (nx && tail[id] - byId[id].d === tail[nx.id]) walk(nx.id); })("A");
+  function schedule(n, m, cpFirst) {
+    const done = {}, start = {}, agentOf = {}, free = Array(n).fill(0), dur = {};
+    const left = new Set(T.map((t) => t.id));
+    let t = 0, guard = 0;
+    while (left.size && guard++ < 500) {
+      const ready = [...left].filter((id) => byId[id].dep.every((d) => done[d] !== undefined && done[d] <= t));
+      ready.sort((a, b) => (cpFirst ? tail[b] - tail[a] : byId[a].d - byId[b].d));
+      for (const id of ready) {
+        const ag = free.findIndex((f) => f <= t);
+        if (ag < 0) break;
+        const busy = free.some((f, j) => j !== ag && f > t);
+        dur[id] = byId[id].d + (busy && n > 1 ? m : 0);
+        start[id] = t; done[id] = t + dur[id]; agentOf[id] = ag; free[ag] = done[id]; left.delete(id);
+      }
+      const next = [...free.filter((f) => f > t), ...Object.values(done).filter((d) => d > t)];
+      t = next.length ? Math.min(...next) : t + 1;
+    }
+    return { start, done, agentOf, dur, span: Math.max(...Object.values(done)) };
+  }
+  const cv = CA.canvas("dg-cv", { height: (w) => Math.max(440, Math.min(560, w * 0.72)), draw });
+  function draw(c, w, h) {
+    const n = CA.val("dg-n"), m = CA.val("dg-m"), cpFirst = CA.el("dg-cp").checked;
+    const S = schedule(n, m, cpFirst), S1 = schedule(1, 0, true);
+    // 위쪽: DAG
+    const gh = 190, levels = 6;
+    const pos = {};
+    for (let L = 0; L < levels; L++) {
+      const ids = T.filter((t) => level[t.id] === L);
+      ids.forEach((t, i) => { pos[t.id] = { x: 14 + (L + 0.5) * ((w - 28) / levels), y: 16 + ((i + 0.5) / ids.length) * (gh - 30) }; });
+    }
+    const bw = Math.min(110, (w - 28) / levels - 12), bh = 30;
+    T.forEach((t) => t.dep.forEach((d) => {
+      const a = pos[d], b = pos[t.id];
+      const isC = crit.has(d) && crit.has(t.id);
+      c.strokeStyle = isC ? CA.col("accent") : CA.col("axis"); c.lineWidth = isC ? 2.6 : 1.1;
+      c.beginPath(); c.moveTo(a.x + bw / 2, a.y); c.bezierCurveTo(a.x + bw / 2 + 24, a.y, b.x - bw / 2 - 24, b.y, b.x - bw / 2, b.y); c.stroke();
+    }));
+    T.forEach((t) => {
+      const p = pos[t.id];
+      CA.rrect(c, p.x - bw / 2, p.y - bh / 2, bw, bh, 7);
+      c.fillStyle = CA.alpha(CA.col(t.k), 0.18); c.fill();
+      c.strokeStyle = crit.has(t.id) ? CA.col("accent") : CA.col(t.k); c.lineWidth = crit.has(t.id) ? 2.4 : 1.2; c.stroke();
+      CA.text(c, `${t.id} ${t.name}`, p.x, p.y - 4, { size: bw < 90 ? 10 : 11.5, align: "center", weight: 600 });
+      CA.text(c, t.d + "분", p.x, p.y + 9, { size: 10, align: "center", mono: true, color: CA.col("text-dim") });
+    });
+    // 아래쪽: 간트
+    const top = gh + 26, l = 64, r = w - 12;
+    const tmax = Math.max(S1.span, S.span);
+    const X = (v) => l + (v / tmax) * (r - l);
+    const rowH = Math.min(34, (h - top - 40) / n);
+    for (let a = 0; a < n; a++) {
+      const y = top + a * rowH;
+      CA.text(c, `에이전트 ${a + 1}`, 6, y + rowH / 2, { size: 11, color: CA.col("text-dim") });
+      c.fillStyle = CA.col("surface"); c.fillRect(l, y + 2, r - l, rowH - 4);
+    }
+    T.forEach((t) => {
+      const a = S.agentOf[t.id], y = top + a * rowH;
+      const x0 = X(S.start[t.id]), x1 = X(S.start[t.id] + t.d), x2 = X(S.done[t.id]);
+      CA.rrect(c, x0 + 1, y + 4, Math.max(2, x1 - x0 - 2), rowH - 8, 4); c.fillStyle = CA.alpha(CA.col(t.k), 0.85); c.fill();
+      if (crit.has(t.id)) { c.strokeStyle = CA.col("accent"); c.lineWidth = 2; c.stroke(); }
+      if (x2 > x1 + 1) { c.fillStyle = CA.alpha(CA.col("fail"), 0.35); c.fillRect(x1, y + 4, x2 - x1 - 1, rowH - 8); }
+      if (x1 - x0 > 16) CA.text(c, t.id, (x0 + x1) / 2, y + rowH / 2, { size: 11, align: "center", weight: 700, color: "#fff" });
+    });
+    const yb = top + n * rowH + 4;
+    const ticks = []; for (let v = 0; v <= tmax; v += 10) ticks.push(v);
+    CA.axes(c, { box: { l, t: yb, r, b: yb }, x: [0, tmax], y: [0, 1], xt: ticks, xf: (v) => v + "분" });
+    CA.line(c, [[X(CP), top - 6], [X(CP), yb]], CA.col("accent"), 1.5, [4, 3]);
+    CA.text(c, "임계 경로 " + CP + "분", X(CP) + 4, top - 10, { size: 11, color: CA.col("accent"), weight: 700 });
+    CA.line(c, [[X(S.span), top - 6], [X(S.span), yb]], CA.col("text"), 1.5);
+    if (Math.abs(X(S.span) - X(CP)) > 60) CA.text(c, "완료 " + S.span + "분", X(S.span) - 4, top - 10, { size: 11, align: "right", weight: 700 });
+    const work = T.reduce((s, t) => s + S.dur[t.id], 0);
+    CA.set("dg-o1", S.span + "분"); CA.set("dg-o2", (S1.span / S.span).toFixed(2) + "×", S.span > S1.span ? "bad" : "good");
+    CA.set("dg-o3", CP + "분"); CA.set("dg-o4", CA.pct(work / (n * S.span)));
+  }
+  CA.wire(["dg-n", "dg-m"], cv.redraw, { "dg-m": (v) => v + "분" });
+  CA.el("dg-cp").addEventListener("change", cv.redraw);
+})();
+
+/* ---------------- 2. 하위 에이전트 컨텍스트 ---------------- */
+(function () {
+  const BASE = 12000, W = 200000;
+  const cv = CA.canvas("sb-cv", { aspect: 0.66, draw });
+  function draw(c, w, h) {
+    const n = CA.val("sb-n"), x = CA.val("sb-x"), s = CA.val("sb-s"), m = CA.val("sb-m"), o = CA.val("sb-o");
+    const direct = { base: BASE, main: m, raw: n * x, sum: 0 };
+    const sub = { base: BASE, main: m, raw: 0, sum: n * s };
+    const tot = (q) => q.base + q.main + q.raw + q.sum;
+    const xmax = Math.max(W, tot(direct)) * 1.08;
+    const l = 110, r = w - 14;
+    const X = (v) => l + (v / xmax) * (r - l);
+    const bar = (q, y, label, bh = 34) => {
+      CA.text(c, label, 8, y + bh / 2, { size: 12, weight: 700 });
+      let acc = 0;
+      [["base", "user"], ["main", "think"], ["raw", "read"], ["sum", "edit"]].forEach(([k, col]) => {
+        if (!q[k]) return;
+        c.fillStyle = CA.alpha(CA.col(col), 0.8); c.fillRect(X(acc), y, X(acc + q[k]) - X(acc), bh); acc += q[k];
+      });
+      CA.text(c, CA.si(acc), X(acc) + 6, y + bh / 2, { size: 11.5, mono: true, color: acc > W ? CA.col("fail") : CA.col("text-dim") });
+    };
+    bar(direct, 20, "직접 탐색");
+    bar(sub, 74, "하위 에이전트");
+    // 하위 에이전트 각각의 컨텍스트
+    CA.text(c, "하위 에이전트 각자의 컨텍스트 (작업 후 버려짐)", l, 134, { size: 11.5, color: CA.col("text-dim") });
+    const rows = n, rh = Math.min(16, (h - 190) / rows);
+    for (let i = 0; i < rows; i++) {
+      const y = 146 + i * (rh + 4);
+      c.fillStyle = CA.alpha(CA.col("user"), 0.7); c.fillRect(X(0), y, X(o) - X(0), rh);
+      c.fillStyle = CA.alpha(CA.col("read"), 0.55); c.fillRect(X(o), y, X(o + x) - X(o), rh);
+      c.fillStyle = CA.alpha(CA.col("edit"), 0.9); c.fillRect(X(o + x), y, Math.max(2, X(o + x + s) - X(o + x)), rh);
+      CA.text(c, "#" + (i + 1), l - 10, y + rh / 2, { size: 10.5, mono: true, align: "right", color: CA.col("text-faint") });
+    }
+    const wy0 = 14, wy1 = 146 + rows * (rh + 4);
+    CA.line(c, [[X(W), wy0], [X(W), wy1]], CA.col("fail"), 1.5, [5, 4]);
+    CA.text(c, "윈도우 200K", X(W) - 4, wy1 + 10, { size: 11, align: "right", color: CA.col("fail") });
+    const totalDirect = tot(direct), totalSub = tot(sub) + n * (o + x + s);
+    CA.set("sb-o1", CA.si(tot(direct)), tot(direct) > W ? "bad" : "");
+    CA.set("sb-o2", CA.si(tot(sub)));
+    CA.set("sb-o3", `${CA.si(totalDirect)} → ${CA.si(totalSub)}`, totalSub > totalDirect ? "warn" : "good");
+    CA.set("sb-o4", tot(direct) > W ? "직접 탐색은 초과" : "둘 다 들어감", tot(direct) > W ? "bad" : "good");
+  }
+  CA.wire(["sb-n", "sb-x", "sb-s", "sb-m", "sb-o"], cv.redraw, { "sb-x": CA.si, "sb-s": CA.si, "sb-m": CA.si, "sb-o": CA.si });
+})();
+
+/* ---------------- 3. 속도 향상 곡선 ---------------- */
+(function () {
+  const S = (N, s, c) => 1 / (s + (1 - s) / N + c * (N - 1));
+  const cv = CA.canvas("am-cv", { aspect: 0.62, draw });
+  function draw(cx, w, h) {
+    const s = CA.val("am-s"), c = CA.val("am-c"), NM = 32;
+    const ymax = Math.min(NM, Math.max(4, (s > 0 ? 1 / s : NM) * 1.15));
+    const A = CA.axes(cx, { box: { l: 46, t: 14, r: w - 12, b: h - 40 }, x: [1, NM], y: [0, ymax], xt: [1, 4, 8, 12, 16, 20, 24, 28, 32], yt: [0, Math.round(ymax / 2), Math.round(ymax)], yf: (v) => v + "×", xl: "에이전트 수 N", yl: "속도 향상" });
+    const pts = (f) => { const a = []; for (let N = 1; N <= NM; N += 0.25) a.push([A.X(N), A.Y(Math.min(ymax, f(N)))]); return a; };
+    CA.line(cx, pts((N) => N), CA.col("text-faint"), 1.2, [4, 4]);
+    CA.line(cx, pts((N) => S(N, s, 0)), CA.col("read"), 2);
+    CA.line(cx, pts((N) => S(N, s, c)), CA.col("accent"), 3);
+    if (s > 0) { CA.line(cx, [[A.X(1), A.Y(Math.min(ymax, 1 / s))], [A.X(NM), A.Y(Math.min(ymax, 1 / s))]], CA.col("read"), 1, [2, 4]); }
+    let best = 1, bv = 1;
+    for (let N = 1; N <= 200; N++) { const v = S(N, s, c); if (v > bv) { bv = v; best = N; } }
+    if (best <= NM) { cx.fillStyle = CA.col("accent"); cx.beginPath(); cx.arc(A.X(best), A.Y(bv), 6, 0, 7); cx.fill(); CA.text(cx, `N* = ${best}`, A.X(best) + 9, A.Y(bv) - 12, { size: 11.5, weight: 700, color: CA.col("accent") }); }
+    CA.set("am-o1", best > 199 ? "≥ 200" : best); CA.set("am-o2", bv.toFixed(2) + "×"); CA.set("am-o3", S(16, s, c).toFixed(2) + "×"); CA.set("am-o4", s > 0 ? (1 / s).toFixed(1) + "×" : "∞");
+  }
+  CA.wire(["am-s", "am-c"], cv.redraw, { "am-s": (v) => v.toFixed(2), "am-c": (v) => v.toFixed(3) });
+})();
+</script>
+</body>
+</html>

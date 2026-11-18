@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>에이전트 루프 · LoopBook</title>
+<meta name="description" content="코딩 에이전트의 핵심 구조인 관찰–판단–행동 루프. 트레이스 재생기, 피드백 계산기, 종료 조건 몬테카를로로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .loop-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { .loop-grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); } }
+  #tr-pane { height: 330px; }
+  #tr-svg .node rect { transition: fill .25s, stroke-width .25s; }
+  #tr-svg .node.on rect { stroke-width: 3; }
+  #tr-svg .node.on text { font-weight: 700; }
+</style>
+</head>
+<body data-root="../" data-chapter="loop">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 01</div>
+    <h1>에이전트 루프</h1>
+    <p class="lead">채팅 모델은 질문 하나에 답 하나를 내놓는다. 코딩 에이전트는 같은 모델을 <b>반복문 안에</b> 넣는다. 모델이 도구 호출을 제안하면 하네스가 실행하고, 그 결과를 다시 모델에게 보여 준다. 이 단순한 반복이 왜 긴 작업을 가능하게 하는지, 그리고 언제 멈춰야 하는지를 수치로 확인한다.</p>
+    <ul class="objectives">
+      <li>모델, 하네스, 도구, 환경이 각각 무엇을 책임지는지 구분할 수 있다.</li>
+      <li>에이전트 루프의 한 턴이 어떤 메시지로 이루어지는지 트레이스에서 읽을 수 있다.</li>
+      <li>피드백이 없는 연쇄 작업의 성공률 <var>p</var><sup>n</sup>과 피드백 루프의 성공률을 비교할 수 있다.</li>
+      <li>종료 조건(완료 선언, 턴 한도, 예산)의 설정이 결과 분포를 어떻게 바꾸는지 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="chat-vs-agent">
+    <h2>챗봇과 에이전트는 무엇이 다른가</h2>
+    <p>같은 언어 모델이라도 쓰는 방식에 따라 전혀 다른 시스템이 된다. 채팅에서는 사용자의 질문과 모델의 답이 한 번 오간다. 답에 코드가 들어 있어도 그 코드를 실행해 보는 것은 사람의 몫이다. <span class="term">코딩 에이전트</span><span class="en">coding agent</span>는 모델에게 <span class="term">도구</span><span class="en">tool</span>를 쥐여 주고, 모델이 도구를 부르면 프로그램이 대신 실행한 뒤 결과를 돌려준다. 모델은 그 결과를 보고 다음 행동을 고른다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 270" role="img" aria-label="채팅과 에이전트 루프 비교">
+        <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--axis)"/></marker>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--accent)"/></marker></defs>
+        <text x="170" y="24" text-anchor="middle" class="t-b">채팅: 한 번 묻고 한 번 답한다</text>
+        <rect x="30" y="60" width="100" height="56" rx="10" class="soft-user"/><text x="80" y="93" text-anchor="middle" class="t">사람</text>
+        <rect x="210" y="60" width="100" height="56" rx="10" class="soft-think"/><text x="210" y="0" class="t"/><text x="260" y="93" text-anchor="middle" class="t">모델</text>
+        <path d="M134 78H204" class="s-line" marker-end="url(#a1)"/><text x="170" y="70" text-anchor="middle" class="t-mono">질문</text>
+        <path d="M206 100H136" class="s-line" marker-end="url(#a1)"/><text x="170" y="118" text-anchor="middle" class="t-mono">코드가 담긴 답</text>
+        <rect x="30" y="160" width="280" height="70" rx="10" class="f-surface"/>
+        <text x="170" y="188" text-anchor="middle" class="t-dim">복사 · 붙여넣기 · 실행 · 오류 확인 · 다시 질문</text>
+        <text x="170" y="210" text-anchor="middle" class="t-dim">— 모두 사람이 한다</text>
+        <line x1="380" y1="20" x2="380" y2="250" stroke="var(--border)"/>
+        <text x="575" y="24" text-anchor="middle" class="t-b">에이전트: 끝날 때까지 반복한다</text>
+        <rect x="420" y="50" width="96" height="44" rx="10" class="soft-user"/><text x="468" y="77" text-anchor="middle" class="t">사람 · 요청</text>
+        <rect x="530" y="100" width="110" height="52" rx="10" class="soft-think"/><text x="585" y="131" text-anchor="middle" class="t">모델</text>
+        <rect x="640" y="200" width="104" height="52" rx="10" class="soft-run"/><text x="692" y="231" text-anchor="middle" class="t">도구 · 환경</text>
+        <rect x="420" y="200" width="104" height="52" rx="10" class="f-surface"/><text x="472" y="224" text-anchor="middle" class="t">하네스</text><text x="472" y="241" text-anchor="middle" class="t-mono">실행 · 기록</text>
+        <path d="M500 96 L548 100" class="s-line" marker-end="url(#a1)"/>
+        <path d="M644 130 C700 140, 712 160, 700 196" class="s-acc flow" marker-end="url(#a2)"/><text x="716" y="160" class="t-mono">tool_use</text>
+        <path d="M636 226 H530" class="s-acc flow" marker-end="url(#a2)"/><text x="583" y="218" text-anchor="middle" class="t-mono">결과</text>
+        <path d="M470 196 C462 160, 490 135, 524 130" class="s-acc flow" marker-end="url(#a2)"/><text x="430" y="160" class="t-mono">관찰 추가</text>
+      </svg>
+      <figcaption><b>그림 1-1.</b> 왼쪽의 채팅에서 피드백을 모으는 일은 사람이 한다. 오른쪽의 에이전트에서는 하네스가 도구 실행과 결과 전달을 맡아, 모델이 스스로 오류를 보고 다시 시도할 수 있다.</figcaption>
+    </figure>
+    <p>여기서 네 가지 역할을 구분해 두면 이후 장이 쉬워진다.</p>
+    <table class="tbl">
+      <tr><th>역할</th><th>하는 일</th><th>예</th></tr>
+      <tr><td><b>모델</b></td><td>지금까지의 대화(컨텍스트)를 읽고 다음 메시지를 생성한다. 텍스트 답 또는 도구 호출 요청.</td><td>대형 언어 모델</td></tr>
+      <tr><td><b>하네스</b><span class="en">harness</span></td><td>반복문을 돌린다. 도구 호출을 실제로 실행하고, 권한을 확인하고, 결과를 대화에 붙이고, 언제 멈출지 정한다.</td><td>CLI 에이전트, IDE 확장, SDK로 만든 자체 루프</td></tr>
+      <tr><td><b>도구</b></td><td>이름, 설명, 입력 스키마를 가진 함수. 모델은 도구를 직접 실행하지 못하고 호출을 <em>요청</em>만 한다.</td><td>파일 읽기, 검색, 편집, 셸 명령</td></tr>
+      <tr><td><b>환경</b></td><td>도구가 작용하는 대상. 상태를 가진다.</td><td>저장소, 파일 시스템, 테스트 러너</td></tr>
+    </table>
+  </section>
+
+  <section id="anatomy">
+    <h2>루프의 해부: 한 턴은 무엇으로 이루어지나</h2>
+    <p>하네스의 핵심은 놀라울 만큼 짧다. 모델이 도구를 부르지 않는 답을 낼 때까지 호출과 실행을 반복한다.</p>
+    <div class="code"><div class="bar"><span>agent_loop.py — 최소 하네스</span><span>의사 코드</span></div><pre><span class="k">def</span> <span class="f">run</span>(task):
+    messages = [{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: task}]
+    <span class="k">for</span> turn <span class="k">in</span> range(MAX_TURNS):               <span class="c"># 종료 조건 ①: 턴 한도</span>
+        reply = model(system, tools, messages)      <span class="c"># 컨텍스트 전체를 매번 다시 보낸다</span>
+        messages.append(reply)
+        calls = [b <span class="k">for</span> b <span class="k">in</span> reply.content <span class="k">if</span> b.type == <span class="s">"tool_use"</span>]
+        <span class="k">if not</span> calls:                               <span class="c"># 종료 조건 ②: 도구 호출 없음 = 완료 선언</span>
+            <span class="k">return</span> reply.text
+        results = [execute(c) <span class="k">for</span> c <span class="k">in</span> calls]      <span class="c"># 권한 확인 → 실행 → 출력 자르기</span>
+        messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: results})
+    <span class="k">return</span> <span class="s">"턴 한도에 도달했습니다"</span></pre></div>
+    <p>모델에게 보내는 입력은 매 턴 <b>시스템 프롬프트 + 도구 정의 + 지금까지의 모든 메시지</b>다. 모델은 상태를 기억하지 않는다. 기억처럼 보이는 것은 하네스가 매번 다시 보여 주는 대화 기록이다. 이 사실이 2장(컨텍스트)과 9장(비용)의 출발점이 된다.</p>
+    <p>아래 재생기는 실제 에이전트가 남기는 형태의 트레이스를 한 단계씩 보여 준다. 과제는 “로그인 세션이 만료되지 않는 버그를 고쳐 줘”다. 오른쪽 그림에서 지금 어느 역할이 일하고 있는지, 컨텍스트가 얼마나 불어나는지 지켜보자.</p>
+
+    <div class="sim" id="sim-trace">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>에이전트 트레이스 재생기</h3></div>
+      <div class="sim-body">
+        <div class="loop-grid">
+          <div class="pane" id="tr-pane" aria-live="polite"></div>
+          <div>
+            <svg id="tr-svg" viewBox="0 0 360 300" role="img" aria-label="현재 활성화된 루프 역할">
+              <defs><marker id="ta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--axis)"/></marker></defs>
+              <path d="M180 62 C260 62, 300 110, 300 140" class="s-line" marker-end="url(#ta)"/>
+              <path d="M300 180 C300 220, 260 246, 210 248" class="s-line" marker-end="url(#ta)"/>
+              <path d="M150 248 C100 246, 60 220, 60 182" class="s-line" marker-end="url(#ta)"/>
+              <path d="M60 140 C60 110, 100 62, 140 60" class="s-line" marker-end="url(#ta)"/>
+              <g class="node" data-k="think"><rect x="120" y="36" width="120" height="48" rx="10" class="soft-think"/><text x="180" y="66" text-anchor="middle" class="t">모델 · 추론</text></g>
+              <g class="node" data-k="call"><rect x="246" y="138" width="108" height="48" rx="10" class="soft-edit"/><text x="300" y="167" text-anchor="middle" class="t">하네스 · 실행</text></g>
+              <g class="node" data-k="env"><rect x="120" y="224" width="120" height="48" rx="10" class="soft-run"/><text x="180" y="253" text-anchor="middle" class="t">도구 · 환경</text></g>
+              <g class="node" data-k="ctx"><rect x="6" y="138" width="108" height="48" rx="10" class="soft-read"/><text x="60" y="167" text-anchor="middle" class="t">컨텍스트 추가</text></g>
+              <text x="180" y="150" text-anchor="middle" class="t-mono" id="tr-turn">turn 0</text>
+              <text x="180" y="170" text-anchor="middle" class="t-dim" id="tr-act">대기 중</text>
+            </svg>
+            <canvas id="tr-cv"></canvas>
+          </div>
+        </div>
+        <div class="btns">
+          <button class="btn primary" id="tr-play">▶ 재생</button>
+          <button class="btn" id="tr-step">한 단계</button>
+          <button class="btn" id="tr-reset">처음으로</button>
+          <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px;margin-left:auto">속도 <input type="range" id="tr-speed" min="0.3" max="3" step="0.1" value="1" style="width:120px"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">턴 (모델 호출)</span><span class="v" id="tr-o1">0</span></div>
+        <div class="stat"><span class="k">도구 호출</span><span class="v" id="tr-o2">0</span></div>
+        <div class="stat"><span class="k">현재 컨텍스트</span><span class="v" id="tr-o3">0</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="tr-o4">0</span></div>
+      </div>
+      <div class="sim-note">해볼 것: 테스트가 한 번 실패한 뒤(빨간 줄) 모델이 무엇을 하는지 보라. 사람이 개입하지 않아도 실패 메시지를 읽고 다시 고친다. 아래 막대그래프는 <b>턴마다 모델에게 다시 보내는 컨텍스트 크기</b>다. 막대의 합이 누적 입력 토큰이며, 현재 크기보다 훨씬 빠르게 커진다.</div>
+    </div>
+  </section>
+
+  <section id="feedback">
+    <h2>왜 루프가 강력한가: 오류는 연쇄된다</h2>
+    <p>버그 하나를 고치려면 여러 단계를 거친다. 관련 파일을 찾고, 원인을 짚고, 수정하고, 다른 곳이 깨지지 않았는지 확인한다. 각 단계를 성공률 <var>p</var>로 해낸다고 하자. 중간 확인 없이 <var>n</var>단계를 이어 붙이면 전체가 성공할 확률은 다음과 같다.</p>
+    <div class="formula"><div class="eq"><var>P</var><sub>open</sub> = <var>p</var><sup><var>n</var></sup></div>
+      <div class="where"><var>p</var> = 0.95, <var>n</var> = 20이면 0.95<sup>20</sup> ≈ 0.36. 단계마다 95%로 잘해도 스무 단계짜리 일은 셋 중 둘이 실패한다.</div></div>
+    <p>피드백 루프는 실패를 <em>발견</em>하고 <em>다시 시도</em>할 기회를 준다. 한 단계가 실패했을 때 그 실패가 관찰(테스트 결과, 오류 메시지)로 드러날 확률을 <var>d</var>, 드러난 실패를 다시 시도할 수 있는 횟수를 <var>r</var>이라 하자. 단계 하나의 실효 성공률은 기하급수의 합이 된다.</p>
+    <div class="formula"><div class="eq"><var>q</var> = <var>p</var> · <span class="frac"><span>1 − ((1−<var>p</var>)<var>d</var>)<sup><var>r</var>+1</sup></span><span>1 − (1−<var>p</var>)<var>d</var></span></span>, &nbsp;&nbsp; <var>P</var><sub>loop</sub> = <var>q</var><sup><var>n</var></sup></div>
+      <div class="where">시도마다 성공하면 끝나고, 실패가 드러나면(확률 <var>d</var>) 재시도한다. 드러나지 않은 실패는 조용히 남아 과제 전체를 망친다. <var>d</var> = 0이면 <var>q</var> = <var>p</var>로 피드백이 없는 경우와 같다.</div></div>
+
+    <div class="sim" id="sim-chain">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>피드백의 가치 — 과제 길이에 따른 성공률</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ch-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>단계 성공률 p <output id="ch-p-out"></output></span><input type="range" id="ch-p" min="0.6" max="0.995" step="0.005" value="0.92"></label>
+          <label class="ctrl"><span>실패 감지율 d <output id="ch-d-out"></output></span><input type="range" id="ch-d" min="0" max="1" step="0.05" value="0.8"></label>
+          <label class="ctrl"><span>재시도 횟수 r <output id="ch-r-out"></output></span><input type="range" id="ch-r" min="0" max="6" step="1" value="2"></label>
+          <label class="ctrl"><span>표시할 과제 길이 n <output id="ch-n-out"></output></span><input type="range" id="ch-n" min="1" max="60" step="1" value="20"></label>
+          <div class="legend"><span><i style="background:var(--fail)"></i>피드백 없음 p<sup>n</sup></span><span><i style="background:var(--run)"></i>루프 q<sup>n</sup></span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">단계 실효 성공률 q</span><span class="v" id="ch-o1">—</span></div>
+        <div class="stat"><span class="k">n단계, 피드백 없음</span><span class="v" id="ch-o2">—</span></div>
+        <div class="stat"><span class="k">n단계, 루프</span><span class="v" id="ch-o3">—</span></div>
+        <div class="stat"><span class="k">성공률 50% 한계 길이</span><span class="v" id="ch-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>d = 0</b>으로 두면 재시도를 아무리 늘려도 두 곡선이 겹친다 — 실패를 볼 수 없으면 고칠 수도 없다. ② d를 0.5 → 0.95로 올리면 "50% 한계 길이"가 몇 배로 늘어난다. 테스트를 잘 갖춘 저장소에서 에이전트가 훨씬 길게 일할 수 있는 이유다(6장).</div>
+    </div>
+    <div class="callout"><b class="h">모델은 같아도 하네스가 다르면 결과가 다르다</b>위 식에서 <var>p</var>는 주로 모델의 능력이지만, <var>d</var>와 <var>r</var>은 하네스와 환경이 결정한다. 테스트를 실행할 수 있는가, 오류 메시지를 잘리지 않게 보여 주는가, 재시도할 턴이 남아 있는가. 같은 모델의 점수가 하네스마다 달라지는 이유가 여기에 있다.</div>
+  </section>
+
+  <section id="stop">
+    <h2>언제 멈추는가: 종료 조건</h2>
+    <p>루프는 반드시 끝나야 한다. 실무 하네스는 보통 여러 종료 조건을 함께 둔다.</p>
+    <ul>
+      <li><b>완료 선언</b> — 모델이 도구 호출 없이 최종 답을 낸다. 가장 흔한 종료이며, 모델이 <em>너무 일찍</em> 완료를 선언하는 것이 대표적인 실패다.</li>
+      <li><b>턴 한도</b> — 무한 반복을 막는다. 너무 낮으면 풀 수 있는 문제를 중간에 끊는다.</li>
+      <li><b>예산</b> — 토큰, 비용, 시간 한도. 긴 작업일수록 컨텍스트가 커져 한 턴의 비용도 커진다.</li>
+      <li><b>사람의 개입</b> — 권한 요청에 대한 거부, 사용자의 중단.</li>
+    </ul>
+    <p>아래 실험은 같은 과제를 200번 돌린 결과를 한 줄씩 그린다. 각 줄은 한 번의 실행이고, 칸 하나가 한 턴이다. 칸의 색은 그 턴의 행동이고, 줄 끝의 표시는 결과다. 에이전트는 매 턴 조금씩 진척하지만, 진척이 덜 된 상태에서 “다 했다”고 선언해 버릴 위험도 있다.</p>
+
+    <div class="sim" id="sim-runs">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>200번의 실행 — 턴 한도와 조기 종료</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rn-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>턴 한도 <output id="rn-max-out"></output></span><input type="range" id="rn-max" min="5" max="80" step="1" value="30"></label>
+          <label class="ctrl"><span>과제 난이도 (필요 진척) <output id="rn-diff-out"></output></span><input type="range" id="rn-diff" min="4" max="40" step="1" value="14"></label>
+          <label class="ctrl"><span>조기 완료 선언 성향 <output id="rn-early-out"></output></span><input type="range" id="rn-early" min="0" max="0.15" step="0.005" value="0.03"></label>
+          <label class="ctrl"><span>검증 습관 (완료 전 테스트) <output id="rn-ver-out"></output></span><input type="range" id="rn-ver" min="0" max="1" step="0.05" value="0.5"></label>
+          <button class="btn" id="rn-go">다시 실행 (새 시드)</button>
+          <div class="legend"><span><i style="background:var(--think)"></i>추론</span><span><i style="background:var(--read)"></i>읽기</span><span><i style="background:var(--edit)"></i>편집</span><span><i style="background:var(--run)"></i>테스트</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">성공</span><span class="v good" id="rn-o1">—</span></div>
+        <div class="stat"><span class="k">조기 종료 (오답)</span><span class="v bad" id="rn-o2">—</span></div>
+        <div class="stat"><span class="k">턴 한도 초과</span><span class="v warn" id="rn-o3">—</span></div>
+        <div class="stat"><span class="k">평균 턴 수</span><span class="v" id="rn-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 턴 한도를 낮추면 주황(한도 초과)이 늘고, 높이면 줄지만 평균 턴 수(=비용)가 는다. ② 조기 완료 성향을 높이면 짧고 틀린 실행(빨강)이 늘어난다. ③ <b>검증 습관</b>을 올리면 완료를 선언하기 전에 테스트를 돌려 미완성을 발견하고 계속 일한다 — 빨강이 초록으로 바뀐다. 모델 실험에서 “끝내기 전에 테스트를 실행하라”는 지시가 효과적인 이유다.</div>
+    </div>
+  </section>
+
+  <section id="design">
+    <h2>루프 설계의 다이얼</h2>
+    <p>같은 루프 구조 안에서도 하네스는 여러 다이얼을 돌릴 수 있다. 이후 장은 이 다이얼 하나하나를 다룬다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 210" role="img" aria-label="루프 설계 요소와 해당 장">
+        <g font-family="var(--font)">
+          <rect x="10" y="20" width="235" height="80" rx="10" class="soft-read"/><text x="26" y="48" class="t-b">무엇을 보여 줄까</text><text x="26" y="70" class="t-dim">컨텍스트 구성, 압축, 메모 파일</text><text x="26" y="88" class="t-mono">→ 2장 · 4장</text>
+          <rect x="262" y="20" width="235" height="80" rx="10" class="soft-think"/><text x="278" y="48" class="t-b">무엇을 할 수 있게 할까</text><text x="278" y="70" class="t-dim">도구 집합, 스키마, 편집 형식</text><text x="278" y="88" class="t-mono">→ 3장 · 5장</text>
+          <rect x="514" y="20" width="235" height="80" rx="10" class="soft-run"/><text x="530" y="48" class="t-b">무엇으로 확인할까</text><text x="530" y="70" class="t-dim">테스트, 린트, 타입 검사</text><text x="530" y="88" class="t-mono">→ 6장</text>
+          <rect x="10" y="116" width="235" height="80" rx="10" class="f-acc2-soft"/><text x="26" y="144" class="t-b">어떻게 나눌까</text><text x="26" y="166" class="t-dim">할 일 목록, 하위 에이전트</text><text x="26" y="184" class="t-mono">→ 7장</text>
+          <rect x="262" y="116" width="235" height="80" rx="10" class="soft-fail"/><text x="278" y="144" class="t-b">무엇을 막을까</text><text x="278" y="166" class="t-dim">권한 규칙, 샌드박스, 인젝션</text><text x="278" y="184" class="t-mono">→ 8장</text>
+          <rect x="514" y="116" width="235" height="80" rx="10" class="soft-edit"/><text x="530" y="144" class="t-b">얼마나 잘, 얼마에</text><text x="530" y="166" class="t-dim">성공률 통계, 토큰 비용</text><text x="530" y="184" class="t-mono">→ 9장</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 1-2.</b> 에이전트 루프의 여섯 가지 설계 축. 모델을 바꾸지 않고도 각 축을 조정해 성공률과 비용을 바꿀 수 있다.</figcaption>
+    </figure>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>코딩 에이전트 = 모델 + 도구 + 하네스의 반복문. 모델은 호출을 <em>요청</em>하고, 하네스가 실행하고 결과를 대화에 붙인다.</li>
+      <li>모델은 상태가 없다. 매 턴 시스템 프롬프트, 도구 정의, 전체 대화를 다시 입력받는다. 그래서 누적 입력 토큰은 현재 컨텍스트보다 훨씬 빨리 커진다.</li>
+      <li>피드백 없는 연쇄 작업의 성공률은 <var>p</var><sup>n</sup>으로 무너진다. 실패를 드러내는 관찰(<var>d</var>)과 재시도 여유(<var>r</var>)가 긴 작업의 한계 길이를 늘린다.</li>
+      <li>종료 조건은 비용과 정확도를 맞바꾼다. 턴 한도가 낮으면 미완성, 조기 완료 선언은 오답, 완료 전 검증은 둘 다 줄인다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 모델이 도구를 “호출”할 때 실제로 명령을 실행하는 주체는?</p><div class="opts">
+        <button class="opt">모델 내부의 실행기</button>
+        <button class="opt" data-correct>모델의 요청을 받은 하네스</button>
+        <button class="opt">사용자의 브라우저</button>
+      </div><div class="quiz-exp">모델은 도구 이름과 인자를 담은 요청 메시지를 생성할 뿐이다. 하네스가 권한을 확인하고 실행한 뒤 결과를 다음 입력에 붙인다.</div></div>
+      <div class="quiz-q"><p>2. 단계 성공률 0.9인 10단계 작업을 피드백 없이 수행할 때 전체 성공률에 가장 가까운 것은?</p><div class="opts">
+        <button class="opt">90%</button>
+        <button class="opt">65%</button>
+        <button class="opt" data-correct>35%</button>
+        <button class="opt">10%</button>
+      </div><div class="quiz-exp">0.9<sup>10</sup> ≈ 0.349. 단계가 늘수록 성공률은 곱해져서 빠르게 떨어진다.</div></div>
+      <div class="quiz-q"><p>3. 실패 감지율 d가 0일 때 재시도 횟수 r을 늘리면?</p><div class="opts">
+        <button class="opt">성공률이 r에 비례해 오른다</button>
+        <button class="opt" data-correct>변화가 없다</button>
+        <button class="opt">성공률이 떨어진다</button>
+      </div><div class="quiz-exp">실패가 관찰되지 않으면 재시도가 일어나지 않는다. q = p가 되어 피드백 없는 경우와 같다.</div></div>
+      <div class="quiz-q"><p>4. “완료 전 테스트 실행” 습관이 직접 줄이는 실패 유형은?</p><div class="opts">
+        <button class="opt" data-correct>미완성 상태에서의 조기 완료 선언</button>
+        <button class="opt">턴 한도 초과</button>
+        <button class="opt">도구 정의의 토큰 비용</button>
+      </div><div class="quiz-exp">검증이 미완성을 드러내면 에이전트는 완료를 선언하지 않고 계속 작업한다. 대신 턴을 더 쓰므로 한도 초과는 약간 늘 수 있다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 트레이스 재생기 ---------------- */
+(function () {
+  const T = [
+    { k: "user", node: "ctx", who: "user", txt: "로그인 세션이 만료되지 않는 버그를 고쳐 줘. 재현: 24시간 지나도 로그인 유지됨.", tok: 60 },
+    { k: "think", node: "think", who: "assistant", txt: "만료 판정 로직을 먼저 찾겠습니다. → tool_use Grep(pattern=\"expires\", path=\"src\")", tok: 70, call: 1 },
+    { k: "run", node: "env", who: "tool_result", txt: "src/auth/session.ts:18  if (session.expires > now) …\nsrc/auth/token.ts:9   expires: Date.now() / 1000 + ttl\nsrc/db/schema.ts:31   expires INTEGER NOT NULL", tok: 120 },
+    { k: "think", node: "think", who: "assistant", txt: "session.ts와 token.ts의 단위가 의심됩니다. → tool_use Read(\"src/auth/session.ts\")", tok: 55, call: 1 },
+    { k: "read", node: "env", who: "tool_result", txt: "…(84줄)…\n18  if (session.expires > now) return session\n19  // now = Date.now()  ← 밀리초", tok: 980 },
+    { k: "think", node: "think", who: "assistant", txt: "expires는 초, now는 밀리초. 비교가 항상 거짓 방향으로 어긋납니다. → tool_use Read(\"src/auth/token.ts\")", tok: 70, call: 1 },
+    { k: "read", node: "env", who: "tool_result", txt: "…(42줄)…\n9   expires: Date.now() / 1000 + ttl", tok: 520 },
+    { k: "think", node: "think", who: "assistant", txt: "단위를 밀리초로 통일합니다. → tool_use Edit(session.ts, old=\"session.expires > now\", new=\"session.expires * 1000 > now\")", tok: 90, call: 1 },
+    { k: "edit", node: "env", who: "tool_result", txt: "src/auth/session.ts 수정됨 (1곳)", tok: 25 },
+    { k: "think", node: "think", who: "assistant", txt: "테스트로 확인합니다. → tool_use Bash(\"npm test -- auth\")", tok: 45, call: 1 },
+    { k: "fail", node: "env", who: "tool_result", txt: "✗ session.test.ts:41  refresh() should extend expiry\n  expected 1700086400000 to be greater than 1700086400\n41 passed, 1 failed", tok: 310 },
+    { k: "think", node: "think", who: "assistant", txt: "refresh()도 초 단위로 저장합니다. 저장 시점을 밀리초로 바꾸는 게 근본 해결입니다. → tool_use Edit(token.ts …)", tok: 110, call: 1 },
+    { k: "edit", node: "env", who: "tool_result", txt: "src/auth/token.ts 수정됨 (1곳); src/auth/session.ts 되돌림", tok: 30 },
+    { k: "think", node: "think", who: "assistant", txt: "→ tool_use Bash(\"npm test\")", tok: 30, call: 1 },
+    { k: "run", node: "env", who: "tool_result", txt: "✓ 42 passed (3.1s)", tok: 40 },
+    { k: "think", node: "think", who: "assistant", txt: "완료했습니다. 만료 시각을 초로 저장하고 밀리초와 비교하던 단위 불일치가 원인이었습니다. token.ts에서 밀리초로 저장하도록 바꿨고 전체 테스트가 통과합니다.", tok: 80, done: true },
+  ];
+  const BASE = 2400; // 시스템 프롬프트 + 도구 정의
+  const pane = CA.el("tr-pane");
+  const nodes = CA.$$("#tr-svg .node");
+  let i = 0, timer = null, ctx = BASE, cum = 0, turns = 0, calls = 0, bars = [];
+  const cv = CA.canvas("tr-cv", { height: 110, draw: drawBars });
+  function drawBars(c, w, h) {
+    const max = 6000;
+    const bw = Math.max(4, (w - 50) / 10 - 4);
+    const A = CA.axes(c, { box: { l: 44, t: 8, r: w - 6, b: h - 22 }, x: [0, 10], y: [0, max], yt: [0, 3000, 6000], yf: CA.si });
+    bars.forEach((v, j) => {
+      const x = 46 + j * (bw + 4), y = A.Y(v);
+      c.fillStyle = CA.col("think"); c.globalAlpha = 0.75; c.fillRect(x, y, bw, A.Y(0) - y); c.globalAlpha = 1;
+    });
+    CA.text(c, "턴별 입력 컨텍스트", 50, 14, { size: 11, color: CA.col("text-dim") });
+  }
+  function highlight(node) { nodes.forEach((n) => n.classList.toggle("on", n.dataset.k === node)); }
+  function render() {
+    CA.set("tr-o1", turns); CA.set("tr-o2", calls); CA.set("tr-o3", CA.si(ctx)); CA.set("tr-o4", CA.si(cum));
+    CA.set("tr-turn", "turn " + turns);
+    cv.redraw();
+  }
+  function step() {
+    if (i >= T.length) { stop(); return false; }
+    const s = T[i++];
+    if (s.who === "assistant") {
+      // 모델 호출: 지금까지의 컨텍스트 전체가 입력으로 들어간다
+      turns++; cum += ctx; bars.push(ctx);
+      if (s.call) calls++;
+      highlight("think");
+      CA.set("tr-act", s.done ? "완료 선언 → 루프 종료" : "다음 행동 결정");
+    } else if (s.who === "tool_result") {
+      highlight("env");
+      CA.set("tr-act", "도구 실행 결과 수신");
+      setTimeout(() => { highlight("ctx"); CA.set("tr-act", "결과를 컨텍스트에 추가"); }, 350 / CA.val("tr-speed"));
+    } else { highlight("ctx"); CA.set("tr-act", "사용자 요청 수신"); }
+    ctx += s.tok;
+    const div = document.createElement("div");
+    div.className = `ln new k-${s.k}`;
+    div.innerHTML = `<span class="dim">${s.who}</span>  ${CA.esc(s.txt)}`;
+    pane.appendChild(div);
+    pane.scrollTop = pane.scrollHeight;
+    render();
+    if (s.done) stop();
+    return true;
+  }
+  function stop() { clearTimeout(timer); timer = null; CA.el("tr-play").textContent = "▶ 재생"; }
+  function reset() { stop(); i = 0; ctx = BASE; cum = 0; turns = 0; calls = 0; bars = []; pane.innerHTML = `<div class="ln dim">system  시스템 프롬프트와 도구 정의 4종 (약 ${CA.si(BASE)} 토큰)</div>`; highlight(null); CA.set("tr-act", "대기 중"); render(); }
+  CA.el("tr-step").addEventListener("click", () => { stop(); step(); });
+  CA.el("tr-reset").addEventListener("click", reset);
+  CA.el("tr-play").addEventListener("click", () => {
+    if (timer) { stop(); return; }
+    if (i >= T.length) reset();
+    CA.el("tr-play").textContent = "❚❚ 일시정지";
+    const tick = () => { if (step()) { timer = setTimeout(tick, 1100 / CA.val("tr-speed")); } };
+    timer = setTimeout(tick, 50);
+  });
+  reset();
+})();
+
+/* ---------------- 2. 피드백의 가치 ---------------- */
+(function () {
+  const q = (p, d, r) => { const f = (1 - p) * d; return f >= 1 ? 1 : (p * (1 - Math.pow(f, r + 1))) / (1 - f); };
+  const half = (s) => (s >= 1 ? Infinity : Math.log(0.5) / Math.log(s));
+  const cv = CA.canvas("ch-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const p = CA.val("ch-p"), d = CA.val("ch-d"), r = CA.val("ch-r"), n = CA.val("ch-n");
+    const qq = q(p, d, r);
+    const A = CA.axes(c, { box: { l: 48, t: 14, r: w - 12, b: h - 40 }, x: [1, 60], y: [0, 1], xt: [1, 10, 20, 30, 40, 50, 60], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "과제 길이 n (단계)", yl: "과제 성공률" });
+    const P1 = [], P2 = [];
+    for (let k = 1; k <= 60; k++) { P1.push([A.X(k), A.Y(Math.pow(p, k))]); P2.push([A.X(k), A.Y(Math.pow(qq, k))]); }
+    // 두 곡선 사이를 칠해 피드백의 이득을 보인다
+    c.beginPath(); P2.forEach(([x, y], j) => (j ? c.lineTo(x, y) : c.moveTo(x, y))); for (let j = P1.length - 1; j >= 0; j--) c.lineTo(P1[j][0], P1[j][1]);
+    c.fillStyle = CA.alpha(CA.col("run"), 0.12); c.fill();
+    CA.line(c, [[A.X(1), A.Y(0.5)], [A.X(60), A.Y(0.5)]], CA.col("text-faint"), 1, [4, 4]);
+    CA.line(c, P1, CA.col("fail"), 2.5);
+    CA.line(c, P2, CA.col("run"), 2.5);
+    const x = A.X(n);
+    CA.line(c, [[x, A.Y(0)], [x, A.Y(1)]], CA.col("axis"), 1, [3, 3]);
+    [[Math.pow(p, n), "fail"], [Math.pow(qq, n), "run"]].forEach(([v, k]) => { c.fillStyle = CA.col(k); c.beginPath(); c.arc(x, A.Y(v), 5, 0, 7); c.fill(); });
+    CA.text(c, "n = " + n, x + 6, A.Y(1) + 10, { size: 11, mono: true, color: CA.col("text-dim") });
+    CA.set("ch-o1", CA.pct(qq, 1)); CA.set("ch-o2", CA.pct(Math.pow(p, n), 1)); CA.set("ch-o3", CA.pct(Math.pow(qq, n), 1));
+    const h0 = half(p), h1 = half(qq);
+    CA.set("ch-o4", `${isFinite(h0) ? h0.toFixed(0) : "∞"} → ${isFinite(h1) ? (h1 > 9999 ? "∞" : h1.toFixed(0)) : "∞"}`);
+  }
+  CA.wire(["ch-p", "ch-d", "ch-r", "ch-n"], cv.redraw, { "ch-p": (v) => v.toFixed(3), "ch-d": (v) => v.toFixed(2) });
+})();
+
+/* ---------------- 3. 200번의 실행 ---------------- */
+(function () {
+  const N = 200;
+  let seed = 3;
+  let runs = [];
+  function simulate() {
+    const max = CA.val("rn-max"), diff = CA.val("rn-diff"), early = CA.val("rn-early"), ver = CA.val("rn-ver");
+    const rnd = CA.rng(seed);
+    runs = [];
+    for (let k = 0; k < N; k++) {
+      let prog = 0, cells = [], out = "limit";
+      const skill = 0.55 + rnd() * 0.7; // 실행마다 운이 다르다
+      for (let t = 0; t < max; t++) {
+        const u = rnd();
+        // 행동 선택: 진척이 적을수록 읽기, 중간엔 편집, 가끔 테스트
+        const kind = t === 0 ? "think" : u < 0.18 ? "think" : u < 0.5 - prog / diff * 0.2 ? "read" : u < 0.82 ? "edit" : "run";
+        cells.push(kind);
+        if (kind === "edit" || kind === "read") prog += skill * (0.45 + rnd() * 0.6);
+        if (prog >= diff) {
+          // 진짜 완료: 마지막 확인 테스트 후 종료
+          if (t + 1 < max) cells.push("run");
+          out = "ok"; break;
+        }
+        // 미완성인데 완료를 선언하려는 순간
+        if (t > 2 && rnd() < early * (0.4 + prog / diff)) {
+          if (rnd() < ver) { cells.push("run"); t++; continue; } // 검증으로 미완성 발견 → 계속
+          out = "early"; break;
+        }
+      }
+      runs.push({ cells: cells.slice(0, max), out });
+    }
+  }
+  const cv = CA.canvas("rn-cv", { height: (w) => Math.max(320, Math.min(440, w * 0.7)), draw });
+  function draw(c, w, h) {
+    const max = CA.val("rn-max");
+    const rows = N, top = 22, left = 6, right = 20;
+    const rh = (h - top - 6) / rows;
+    const cw = (w - left - right) / Math.max(max, 10);
+    const col = { think: CA.col("think"), read: CA.col("read"), edit: CA.col("edit"), run: CA.col("run") };
+    // 정렬: 결과별로 묶고 길이순
+    const order = runs.map((r, i) => i).sort((a, b) => {
+      const ra = { ok: 0, early: 1, limit: 2 }[runs[a].out], rb = { ok: 0, early: 1, limit: 2 }[runs[b].out];
+      return ra - rb || runs[a].cells.length - runs[b].cells.length;
+    });
+    order.forEach((ri, row) => {
+      const r = runs[ri], y = top + row * rh;
+      r.cells.forEach((k, t) => { c.fillStyle = col[k]; c.globalAlpha = 0.8; c.fillRect(left + t * cw, y, Math.max(1, cw - 0.6), Math.max(1, rh - 0.4)); });
+      c.globalAlpha = 1;
+      c.fillStyle = r.out === "ok" ? CA.col("run") : r.out === "early" ? CA.col("fail") : CA.col("edit");
+      c.fillRect(w - right + 6, y, 8, Math.max(1, rh - 0.4));
+    });
+    c.globalAlpha = 1;
+    const xl = left + max * cw;
+    CA.line(c, [[xl, top - 4], [xl, h - 4]], CA.col("fail"), 1.5, [4, 3]);
+    CA.text(c, `턴 한도 ${max}`, Math.min(xl - 4, w - 90), 10, { size: 11, mono: true, color: CA.col("fail"), align: "right" });
+    CA.text(c, "턴 →", left, 10, { size: 11, color: CA.col("text-dim") });
+    const cnt = { ok: 0, early: 0, limit: 0 }; let sumT = 0;
+    runs.forEach((r) => { cnt[r.out]++; sumT += r.cells.length; });
+    CA.set("rn-o1", CA.pct(cnt.ok / N)); CA.set("rn-o2", CA.pct(cnt.early / N)); CA.set("rn-o3", CA.pct(cnt.limit / N)); CA.set("rn-o4", (sumT / N).toFixed(1));
+  }
+  const up = () => { simulate(); cv.redraw(); };
+  CA.wire(["rn-max", "rn-diff", "rn-early", "rn-ver"], up, { "rn-early": (v) => v.toFixed(3), "rn-ver": (v) => CA.pct(v) });
+  CA.el("rn-go").addEventListener("click", () => { seed++; up(); });
+})();
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 그림과 실험으로 배우는 한국어 책을 주제별로 출간하는 프로젝트입니다. 첫 책은 AI 에이전트의 과제와 채점 방식을 다룹니다. 각 책은 고유한 주소, 목차, 본문과 시각 자료를 가지며 루트 서가에서 발견할 수 있습니다.
 
-**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/)
+**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/) · [코딩 에이전트 교과서](https://jsg1504.github.io/books/coding-agents/)
 
 ## 서가와 책
 
@@ -12,6 +12,7 @@
 | `books/<slug>/manuscript/` | 기본 형식 책의 장별 HTML 본문 |
 | `books/<slug>/assets/` | 해당 책의 이미지, 데이터, 독립 실험 페이지 |
 | `books/agent-benchmarks/` | 독자적인 실험실과 점수 비교 화면을 가진 첫 책 |
+| `books/coding-agents/` | 장별 HTML 페이지와 27개 실험으로 구성된 코딩 에이전트 교과서(LoopBook). 공통 도우미는 `js/common.js`, 장 목록은 같은 파일의 `CA.CHAPTERS` |
 | `templates/`, `shared/` | 서가와 기본 책의 공통 레이아웃·스타일 |
 | `tools/shelf.py` | 초안 생성과 정적 사이트 빌드 |
 
