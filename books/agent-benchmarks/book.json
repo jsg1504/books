@@ -1,0 +1,14 @@
+{
+  "title": "에이전트 벤치마크 실험 교과서",
+  "topic": "인공지능",
+  "description": "코드를 고치고 업무를 끝내는 AI를 어떻게 평가할까요? 하네스와 채점기를 직접 조작하며 벤치마크 점수의 의미를 읽습니다.",
+  "published": true,
+  "format": "custom",
+  "cover": "cover.svg",
+  "details": ["6개 장", "11개 실험", "22종 벤치마크"],
+  "links": [
+    {"label": "모델과 하네스", "href": "#chapter/0", "kind": "첫 장"},
+    {"label": "하네스 교차 비교", "href": "#lab/7", "kind": "실험"},
+    {"label": "벤치마크 도감", "href": "#catalog", "kind": "찾아보기"}
+  ]
+}

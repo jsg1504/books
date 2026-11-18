@@ -1,12 +1,52 @@
-# Bench Atlas
+# 열린 실험서가
 
-에이전트 벤치마크의 입력, 수행 과정, 채점 방식을 배우는 한국어 실험 교과서입니다.
+그림과 실험으로 배우는 한국어 책을 주제별로 출간하는 프로젝트입니다. 첫 책은 AI 에이전트의 과제와 채점 방식을 다룹니다. 각 책은 고유한 주소, 목차, 본문과 시각 자료를 가지며 루트 서가에서 발견할 수 있습니다.
 
-- 6개 장과 장별 확인 문제
-- 과제별 공식 자료와 출처를 포함한 벤치마크 도감
-- 독립 시행, 부분점수, 검증기, 정보 탐색 등을 체험하는 브라우저 실험실
-- DeepSeek-V4.1-Flash-1017 모델 카드의 발표 점수 비교
+**[전체 서가](https://jsg1504.github.io/agent-benchmark-atlas/)** · [첫 책 펼치기](https://jsg1504.github.io/agent-benchmark-atlas/books/agent-benchmarks/)
 
-[사이트 열기](https://jsg1504.github.io/agent-benchmark-atlas/)
+## 서가와 책
 
-모든 실험은 브라우저 안에서 동작합니다. 발표 점수는 모델 카드에 기재된 2026-10-17 스냅샷이며, 실험 데이터는 교육용입니다. 로컬에서는 프로젝트 디렉터리에서 `python3 -m http.server 8000`을 실행한 뒤 localhost:8000을 엽니다. GitHub Pages는 main 브랜치의 루트에서 서비스합니다.
+| 위치 | 역할 |
+|---|---|
+| `books/<slug>/book.json` | 표지, 제목, 주제, 소개, 출간 여부와 책 형식 |
+| `books/<slug>/manuscript/` | 기본 형식 책의 장별 HTML 본문 |
+| `books/<slug>/assets/` | 해당 책의 이미지, 데이터, 독립 실험 페이지 |
+| `books/agent-benchmarks/` | 독자적인 실험실과 점수 비교 화면을 가진 첫 책 |
+| `templates/`, `shared/` | 서가와 기본 책의 공통 레이아웃·스타일 |
+| `tools/shelf.py` | 초안 생성과 정적 사이트 빌드 |
+
+## 다른 주제의 책 시작하기
+
+Python 3.9 이상에서 실행합니다. 다음 명령은 예시로 **컴파일러 패스 실험 노트**의 초안을 만듭니다.
+
+```sh
+python3 tools/shelf.py new compiler-passes \
+  --title '컴파일러 패스 실험 노트' --topic '컴파일러' \
+  --description '작은 IR 예제로 변환 전후의 의미와 비용을 비교합니다.'
+```
+
+1. `books/compiler-passes/manuscript/introduction.html`에 본문을 씁니다. 문단, 그림, 표와 수식 표기 등을 HTML로 작성할 수 있습니다.
+2. 다음 장은 `manuscript/canonicalization.html`을 만들고 `book.json`의 `chapters` 배열에 `{"id":"canonicalization","title":"정규화 패스"}`를 추가합니다. 배열 순서로 목차와 장 이동 링크가 생성됩니다.
+3. 그림은 `assets/`에 넣고 본문에서 `../assets/그림파일명`으로 참조합니다. 브라우저 실험은 같은 폴더에 HTML로 만들고 `<iframe title="패스 실행 실험" src="../assets/pass-lab.html"></iframe>`처럼 삽입합니다.
+4. 책 표지를 쓰려면 책 폴더에 이미지를 넣고 `book.json`에 `"cover": "cover.png"`를 지정합니다. 생략하면 제목으로 표지를 만듭니다.
+5. 초안이 완성되면 `"published": true`로 바꿉니다. 서가가 출간된 책을 자동으로 찾아 카드와 링크를 만듭니다.
+
+```sh
+python3 tools/shelf.py build --drafts
+python3 -m http.server 8000 --directory _preview
+```
+
+브라우저에서 `http://localhost:8000/`을 엽니다. 초안도 포함한 미리보기입니다. 초안의 원고는 공개 저장소에 커밋하면 GitHub에서 열람할 수 있습니다.
+
+## 독립적인 인터랙티브 책
+
+전용 화면이나 자체 라우터가 필요한 책에는 `"format": "custom"`을 사용합니다. 같은 폴더에 `index.html`과 필요한 파일을 두고, 내부에서 전체 서가로 돌아가는 링크 `../../`를 제공합니다. 메타데이터의 `details`와 `links`로 권별 정보와 장·실험 바로가기를 지정할 수 있습니다. [첫 책의 설정](books/agent-benchmarks/book.json)을 참고하세요.
+
+## 출간
+
+```sh
+python3 tools/shelf.py build
+python3 -m http.server 8000 --directory _site
+```
+
+`main`에 푸시하면 GitHub Actions가 같은 명령으로 정적 파일을 생성해 GitHub Pages에 배포합니다. 빌드 산출물은 커밋할 필요가 없습니다. 사이트 루트는 서가, 각 책의 주소는 `books/<slug>/`입니다. 이미 공유한 첫 책의 `/#chapter/…`, `/#lab/…`, `/#catalog`, `/#compare` 등은 새 책 주소로 연결됩니다. 출간 후에는 외부 링크에 사용되는 책과 장의 ID를 유지하세요.

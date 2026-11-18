@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>열린 실험서가 · 인터랙티브 교과서</title>
+    <meta
+      name="description"
+      content="서로 다른 주제를 그림과 실험으로 배우는 한국어 교과서 서가"
+    />
+    <link rel="stylesheet" href="./shared/shelf.css" />
+    <script>
+      function openLegacyBook() {
+        if (
+          /^#(?:home|chapters|chapter|experiments|lab|catalog|compare)(?:\/|$)/.test(
+            location.hash,
+          )
+        ) {
+          location.replace(
+            "./books/agent-benchmarks/" + location.search + location.hash,
+          );
+        }
+      }
+      openLegacyBook();
+      window.addEventListener("hashchange", openLegacyBook);
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#shelf">도서 목록으로</a>
+    <header>
+      <div class="wrap mast">
+        <a class="logo" href="./"
+          ><svg
+            viewBox="0 0 34 34"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+          >
+            <path d="M3 6v23m6-23v23m6-23v23m4-21 8 20m-25 2h30" /></svg
+          >열린 실험서가</a
+        >
+        <nav aria-label="서가 메뉴">
+          <a href="#shelf">책 목록</a
+          ><a href="https://github.com/jsg1504/agent-benchmark-atlas#readme"
+            >집필 안내 ↗</a
+          >
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <section class="intro">
+        <h1>열린 실험서가</h1>
+        <p>그림을 읽고, 조건을 바꾸고, 결과를 확인하며 배우는 주제별 교과서.</p>
+      </section>
+      <section id="shelf" class="shelf" aria-labelledby="shelf-title">
+        <div class="row">
+          <h2 id="shelf-title">출간된 책</h2>
+          <span class="count">{{count}}권</span>
+        </div>
+        {{books}}
+      </section>
+    </main>
+    <footer class="end">
+      <div class="wrap">
+        <strong>열린 실험서가</strong
+        ><a href="https://github.com/jsg1504/agent-benchmark-atlas"
+          >GitHub 저장소 ↗</a
+        >
+      </div>
+    </footer>
+  </body>
+</html>

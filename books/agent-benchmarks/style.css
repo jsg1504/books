@@ -614,3 +614,7 @@ footer a {
 .lablist .lab-plate {
   margin: -20px -20px 17px;
 }
+
+@media (max-width: 520px) {
+  .mast nav { flex-wrap: wrap; gap: 8px 12px; }
+}
