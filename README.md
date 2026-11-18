@@ -2,7 +2,7 @@
 
 그림과 실험으로 배우는 한국어 책을 주제별로 출간하는 프로젝트입니다. 첫 책은 AI 에이전트의 과제와 채점 방식을 다룹니다. 각 책은 고유한 주소, 목차, 본문과 시각 자료를 가지며 루트 서가에서 발견할 수 있습니다.
 
-**[전체 서가](https://jsg1504.github.io/agent-benchmark-atlas/)** · [첫 책 펼치기](https://jsg1504.github.io/agent-benchmark-atlas/books/agent-benchmarks/)
+**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/)
 
 ## 서가와 책
 
@@ -40,7 +40,7 @@ python3 -m http.server 8000 --directory _preview
 
 ## 독립적인 인터랙티브 책
 
-전용 화면이나 자체 라우터가 필요한 책에는 `"format": "custom"`을 사용합니다. 같은 폴더에 `index.html`과 필요한 파일을 두고, 내부에서 전체 서가로 돌아가는 링크 `../../`를 제공합니다. 메타데이터의 `details`와 `links`로 권별 정보와 장·실험 바로가기를 지정할 수 있습니다. [첫 책의 설정](books/agent-benchmarks/book.json)을 참고하세요.
+전용 화면이나 자체 라우터가 필요한 책에는 `"format": "custom"`을 사용합니다. 같은 폴더에 `index.html`과 필요한 파일을 두고, 내부에서 전체 서가로 돌아가는 링크 `../`를 제공합니다. 메타데이터의 `details`와 `links`로 권별 정보와 장·실험 바로가기를 지정할 수 있습니다. [첫 책의 설정](books/agent-benchmarks/book.json)을 참고하세요.
 
 ## 출간
 
@@ -49,4 +49,4 @@ python3 tools/shelf.py build
 python3 -m http.server 8000 --directory _site
 ```
 
-`main`에 푸시하면 GitHub Actions가 같은 명령으로 정적 파일을 생성해 GitHub Pages에 배포합니다. 빌드 산출물은 커밋할 필요가 없습니다. 사이트 루트는 서가, 각 책의 주소는 `books/<slug>/`입니다. 이미 공유한 첫 책의 `/#chapter/…`, `/#lab/…`, `/#catalog`, `/#compare` 등은 새 책 주소로 연결됩니다. 출간 후에는 외부 링크에 사용되는 책과 장의 ID를 유지하세요.
+`main`에 푸시하면 GitHub Actions가 같은 명령으로 정적 파일을 생성해 GitHub Pages에 배포합니다. 빌드 산출물은 커밋할 필요가 없습니다. 사이트 루트(`https://jsg1504.github.io/books/`)는 서가, 각 책의 주소는 `<slug>/`입니다. `shared`는 서가가 사용하므로 책 경로로 쓸 수 없습니다. 이미 공유한 첫 책의 `/#chapter/…`, `/#lab/…`, `/#catalog`, `/#compare` 등은 새 책 주소로 연결됩니다. 출간 후에는 외부 링크에 사용되는 책과 장의 ID를 유지하세요.

@@ -12,6 +12,8 @@ from string import Template
 ROOT = Path(__file__).resolve().parents[1]
 BOOKS = ROOT / "books"
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# Books are served at the site root, beside the shelf's own folders.
+RESERVED = {"shared"}
 
 
 def slug(value):
@@ -54,7 +56,7 @@ def render_reader(folder, book, dest):
     items = "".join(f'<li><a href="read/{c["id"]}.html">{text(c["title"])}</a></li>' for c in chapters)
     content = f'<p>{values["description"]}</p><h2>목차</h2><ol>{items}</ol>'
     (dest / "index.html").write_text(layout.substitute(
-        values, page_title=values["title"], root="../../", book_home="./",
+        values, page_title=values["title"], root="../", book_home="./",
         heading=values["title"], content=content), encoding="utf-8")
     (dest / "read").mkdir()
     for i, chapter in enumerate(chapters):
@@ -67,14 +69,14 @@ def render_reader(folder, book, dest):
             nav.append(f'<a rel="next" href="{ids[i+1]}.html">다음 장 →</a>')
         heading = text(chapter["title"])
         (dest / "read" / (ids[i]+".html")).write_text(layout.substitute(
-            values, root="../../../", book_home="../", page_title=heading,
+            values, root="../../", book_home="../", page_title=heading,
             heading=heading, content=f'<article>{article}</article><nav aria-label="장 이동">{" ".join(nav)}</nav>'
         ), encoding="utf-8")
     return [f"{len(chapters)}개 장"]
 
 
 def book_card(folder, book, facts):
-    path = f'./books/{folder.name}/'
+    path = f'./{folder.name}/'
     title = text(book["title"])
     cover = book.get("cover")
     if cover and (Path(cover).name != cover or not (folder / cover).is_file()):
@@ -98,12 +100,13 @@ def build(args):
         for meta in sorted(BOOKS.glob("*/book.json")):
             book = json.loads(meta.read_text(encoding="utf-8"))
             folder = meta.parent
-            slug(folder.name)
+            if slug(folder.name) in RESERVED:
+                raise ValueError(f"{folder.name}: 서가가 사용하는 경로와 겹칩니다.")
             if not isinstance(book["published"], bool):
                 raise ValueError(f"{folder.name}: published 값은 true 또는 false여야 합니다.")
             if not book["published"] and not args.drafts:
                 continue
-            dest = stage / "books" / folder.name
+            dest = stage / folder.name
             shutil.copytree(folder, dest, ignore=shutil.ignore_patterns("book.json", "manuscript", ".*"))
             if book["format"] == "reader":
                 facts = render_reader(folder, book, dest)
