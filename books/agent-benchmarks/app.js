@@ -489,17 +489,17 @@ function catalog(query) {
   let group = "전체";
   const search = document.querySelector(".search");
   search.value = query || "";
-  const groups = ["전체", ...new Set(window.catalog.map((c) => c.group))];
+  const groups = ["전체", ...new Set(window.benchmarks.map((c) => c.group))];
   const chips = document.querySelector(".chips");
   chips.innerHTML = groups
     .map((x) => "<button>" + esc(x) + "</button>")
     .join("");
   function update() {
     const q = search.value.trim().toLowerCase();
-    const cs = window.catalog.filter(
+    const cs = window.benchmarks.filter(
       (c) =>
         (group === "전체" || group === c.group) &&
-        [c.name, c.input, c.action, c.grade, c.metric]
+        [c.name, c.input, c.action, c.grade, c.metric, ...noteText(c)]
           .join(" ")
           .toLowerCase()
           .includes(q),
@@ -533,7 +533,9 @@ function catalog(query) {
               .join("") +
             '<dt>출처</dt><dd><a href="' +
             esc(c.source) +
-            '" target="_blank" rel="noopener">원문 확인 ↗</a></dd></dl></details>',
+            '" target="_blank" rel="noopener">원문 확인 ↗</a></dd></dl><p class="more"><a class="btn" href="#bench/' +
+            benchNote(c).id +
+            '">상세 해설 읽기　→</a></p></details>',
         )
         .join("") ||
       '<p class="panel">조건에 맞는 항목이 없습니다. 검색어나 분류를 바꿔보세요.</p>';
@@ -546,6 +548,141 @@ function catalog(query) {
   };
   search.oninput = update;
   update();
+}
+function benchNote(c) {
+  return window.benchDetails[c.name];
+}
+function noteText(c) {
+  const n = benchNote(c);
+  return [n.full, n.lede, n.who, ...n.overview, ...n.grading, ...n.reading];
+}
+function benchScores(name) {
+  return scores.filter((s) => s[0] === name || s[0].startsWith(name + " ·"));
+}
+function bars(vals) {
+  return vals
+    .map(
+      (v, j) =>
+        '<div class="barrow"><span>' +
+        models[j] +
+        '</span><span class="track"><i class="fill" style="width:' +
+        (v ?? 0) +
+        '%"></i></span><b>' +
+        (v === null ? "—" : v.toFixed(1)) +
+        "</b></div>",
+    )
+    .join("");
+}
+function bench(id) {
+  const all = window.benchmarks;
+  const i = all.findIndex((c) => benchNote(c).id === id);
+  if (i < 0) return catalog("");
+  const c = all[i],
+    n = benchNote(c),
+    prev = all[(i + all.length - 1) % all.length],
+    next = all[(i + 1) % all.length];
+  const list = (xs) => xs.map((x) => "<li>" + esc(x) + "</li>").join("");
+  const facts = [
+    ["정식 이름", n.full],
+    ["만든 곳", n.who],
+    ["공개·버전", n.when],
+    ["분류", c.group],
+    ["지표", c.metric],
+    ["1017 보고값", c.score ?? "보고하지 않음"],
+  ];
+  const chart = benchScores(c.name)
+    .map(
+      (s) =>
+        '<h3 class="minor">' +
+        esc(s[0]) +
+        '</h3><p class="muted">' +
+        esc(s[2]) +
+        "</p>" +
+        bars(s[1]),
+    )
+    .join("");
+  const ch = chapters[n.chapter];
+  main.innerHTML =
+    '<div class="shell page"><a class="crumb" href="#catalog">← 벤치마크 도감</a><div class="pagehead"><div class="eyebrow" style="margin-top:24px">FIELD NOTE ' +
+    String(i + 1).padStart(2, "0") +
+    " / " +
+    all.length +
+    "　·　" +
+    esc(c.group) +
+    "</div><h1>" +
+    esc(c.name) +
+    '</h1><p class="sub">' +
+    esc(n.lede) +
+    '</p></div><div class="stats">' +
+    n.stats
+      .map(
+        ([v, l]) =>
+          '<div class="stat"><b>' + esc(v) + "</b><span>" + esc(l) + "</span></div>",
+      )
+      .join("") +
+    '</div><div class="chapterlayout"><div><article class="panel prose"><h2>무엇을 재는가</h2>' +
+    n.overview.map((p) => "<p>" + esc(p) + "</p>").join("") +
+    '</article><span class="tiny">과제 한 건의 흐름</span><div class="stages flow">' +
+    n.flow
+      .map(
+        (x, j) =>
+          '<div class="stage"><b>0' +
+          (j + 1) +
+          "　" +
+          ["입력", "에이전트", "채점"][j] +
+          "</b>" +
+          esc(x) +
+          "</div>",
+      )
+      .join("") +
+    '</div><section class="panel example"><span class="tiny">' +
+    (n.example.sample ? "구성 예시 · 이해를 돕기 위해 만든 과제" : "공개 예시 · 원문 요약") +
+    "</span><h2>" +
+    esc(n.example.title) +
+    "</h2><p>" +
+    esc(n.example.body) +
+    '</p></section><article class="panel prose"><h2>채점은 이렇게</h2>' +
+    n.grading.map((p) => "<p>" + esc(p) + "</p>").join("") +
+    '</article><article class="panel"><h2>점수를 읽을 때</h2><ul class="checks">' +
+    list(n.reading) +
+    '</ul></article></div><aside><section class="panel"><span class="tiny">FACT SHEET</span><dl class="facts">' +
+    facts
+      .map(([k, v]) => "<dt>" + k + "</dt><dd>" + esc(v) + "</dd>")
+      .join("") +
+    '<dt>출처</dt><dd><a href="' +
+    esc(c.source) +
+    '" target="_blank" rel="noopener">원문 확인 ↗</a></dd></dl></section>' +
+    (chart
+      ? '<section class="panel"><span class="tiny">1017 모델 카드</span>' +
+        chart +
+        '<p class="muted">막대 범위 0–100 · <a class="inline-link" href="#compare">전체 비교 →</a></p></section>'
+      : "") +
+    '<section class="panel"><h2>함께 보기</h2><p><a class="inline-link" href="#chapter/' +
+    n.chapter +
+    '">' +
+    (n.chapter + 1) +
+    "장 · " +
+    esc(ch[1]) +
+    " →</a></p>" +
+    n.labs
+      .map(
+        (l) =>
+          '<p><a class="inline-link" href="#lab/' +
+          l +
+          '">실험 · ' +
+          esc(window.labs[l].title) +
+          " →</a></p>",
+      )
+      .join("") +
+    '</section></aside></div><div class="pageturn"><a href="#bench/' +
+    benchNote(prev).id +
+    '">← ' +
+    esc(prev.name) +
+    '</a><a href="#bench/' +
+    benchNote(next).id +
+    '">' +
+    esc(next.name) +
+    " →</a></div></div>";
 }
 function compare() {
   page(
@@ -567,18 +704,7 @@ function compare() {
   function draw() {
     const [, vals, metric] = scores[sel.value];
     document.querySelector("#metric").textContent = metric;
-    document.querySelector("#bars").innerHTML = vals
-      .map(
-        (v, j) =>
-          '<div class="barrow"><span>' +
-          models[j] +
-          '</span><span class="track"><i class="fill" style="width:' +
-          (v ?? 0) +
-          '%"></i></span><b>' +
-          (v === null ? "—" : v.toFixed(1)) +
-          "</b></div>",
-      )
-      .join("");
+    document.querySelector("#bars").innerHTML = bars(vals);
   }
   sel.onchange = draw;
   draw();
@@ -604,7 +730,8 @@ function route() {
       q = decodeURIComponent(arg || "");
     } catch {}
     catalog(q);
-  } else if (key === "compare") compare();
+  } else if (key === "bench") bench(arg);
+  else if (key === "compare") compare();
   else home();
   document
     .querySelectorAll("nav a")
@@ -612,7 +739,9 @@ function route() {
       a.classList.toggle(
         "active",
         a.hash ===
-          "#" + ({ chapter: "chapters", lab: "experiments" }[key] || key),
+          "#" +
+            ({ chapter: "chapters", lab: "experiments", bench: "catalog" }[key] ||
+              key),
       ),
     );
   document.title =

@@ -245,7 +245,7 @@ const benchmarkRows = [
   ],
 ];
 
-window.catalog = benchmarkRows.map(
+window.benchmarks = benchmarkRows.map(
   ([name, group, input, action, grade, metric, score, source, note]) => ({
     name,
     group,
