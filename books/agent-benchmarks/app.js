@@ -709,6 +709,45 @@ function compare() {
   sel.onchange = draw;
   draw();
 }
+const drawer = document.createElement("div");
+const menu = document.querySelector("#menu");
+drawer.className = "drawer";
+drawer.id = "drawer";
+drawer.innerHTML =
+  '<div class="scrim"></div><nav class="drawerpanel" aria-label="전체 목차"><h4>CHAPTERS</h4><a href="#home"><span>00</span>표지 · 전체 그림</a>' +
+  chapters
+    .map(
+      (c, i) =>
+        '<a href="#chapter/' +
+        i +
+        '"><span>0' +
+        (i + 1) +
+        "</span>" +
+        esc(c[1]) +
+        "</a>",
+    )
+    .join("") +
+  '<h4>EXPLORE</h4><a href="#experiments"><span>' +
+  window.labs.length +
+  '</span>실험실</a><a href="#catalog"><span>' +
+  window.benchmarks.length +
+  '</span>벤치마크 도감</a><a href="#compare"><span>VS</span>모델 카드 점수 비교</a><h4>SHELF</h4><a href="../"><span>↩</span>열린 실험서가로 돌아가기</a></nav>';
+document.body.append(drawer);
+function setDrawer(open) {
+  if (drawer.classList.contains("open") === open) return;
+  drawer.classList.toggle("open", open);
+  menu.setAttribute("aria-expanded", open);
+  if (open) (drawer.querySelector("a.cur") || drawer.querySelector("a")).focus();
+  else menu.focus({ preventScroll: true });
+}
+menu.onclick = () => setDrawer(true);
+drawer.querySelector(".scrim").onclick = () => setDrawer(false);
+drawer.querySelector("nav").onclick = (e) => {
+  if (e.target.closest("a")) setDrawer(false);
+};
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setDrawer(false);
+});
 function route() {
   const [key, arg] = location.hash.slice(1).split("/");
   if (key === "chapter" && /^\d+$/.test(arg) && chapters[+arg]) chapter(+arg);
@@ -734,7 +773,7 @@ function route() {
   else if (key === "compare") compare();
   else home();
   document
-    .querySelectorAll("nav a")
+    .querySelectorAll(".mast nav a")
     .forEach((a) =>
       a.classList.toggle(
         "active",
@@ -744,6 +783,17 @@ function route() {
               key),
       ),
     );
+  const here =
+    key === "chapter"
+      ? "#chapter/" + arg
+      : "#" +
+        ({ lab: "experiments", bench: "catalog", chapters: "home" }[key] ||
+          (key && document.querySelector('.drawer a[href="#' + key + '"]')
+            ? key
+            : "home"));
+  drawer
+    .querySelectorAll("a")
+    .forEach((a) => a.classList.toggle("cur", a.getAttribute("href") === here));
   document.title =
     (document.querySelector("main h1")?.textContent || "홈") + " · Bench Atlas";
   window.scrollTo({ top: 0, behavior: "instant" });
