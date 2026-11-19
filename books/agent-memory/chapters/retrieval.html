@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검색 기반 기억 · RecallBook</title>
+<meta name="description" content="외부 저장소의 기억을 찾아 컨텍스트로 가져오는 법. 임베딩 공간, 코사인 유사도, 청킹, 키워드와 의미를 섞는 하이브리드 검색을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #ck-doc { font-family: var(--font); font-size: 14.5px; line-height: 2.05; white-space: normal; max-height: 300px; }
+  #ck-doc span.c0 { background: color-mix(in srgb, var(--work) 16%, transparent); }
+  #ck-doc span.c1 { background: color-mix(in srgb, var(--proc) 16%, transparent); }
+  #ck-doc span.ov { background: color-mix(in srgb, var(--epi) 30%, transparent); }
+  #ck-doc b.key { text-decoration: underline 2px var(--accent-2); text-underline-offset: 4px; }
+  #ck-doc i.cut { display: inline-block; width: 2px; height: 1.2em; background: var(--fail); vertical-align: -0.2em; margin: 0 1px; }
+  .hy-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 150px; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+  .hy-row.ans { background: color-mix(in srgb, var(--sem) 12%, transparent); outline: 1px solid var(--sem); }
+  .hy-row .rk { font-family: var(--mono); color: var(--text-faint); font-size: 12px; }
+  .hy-bars { display: grid; gap: 3px; }
+  .hy-bars i { display: block; height: 7px; border-radius: 4px; }
+  #hy-list { display: grid; gap: 2px; }
+</style>
+</head>
+<body data-root="../" data-chapter="retrieval">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 04</div>
+    <h1>검색 기반 기억</h1>
+    <p class="lead">장기 기억이 수천, 수만 개로 늘어나면 모두를 컨텍스트에 넣을 수는 없다. 지금 질문에 필요한 몇 개만 골라 와야 한다. 이것이 <span class="term">검색 증강 생성</span><span class="en">RAG</span>의 기억 버전이다. 이 장에서는 기억을 벡터로 바꾸는 임베딩, 기억을 자르는 단위인 청크, 그리고 키워드와 의미를 함께 쓰는 검색을 실험한다.</p>
+    <ul class="objectives">
+      <li>기억의 쓰기 경로(청킹 → 임베딩 → 색인)와 읽기 경로(질문 임베딩 → 근접 검색 → 재순위화 → 컨텍스트)를 그릴 수 있다.</li>
+      <li>코사인 유사도와 유클리드 거리의 차이, top-k와 유사도 임계값의 역할을 설명할 수 있다.</li>
+      <li>청크 크기와 겹침이 사실의 온전함과 검색 정밀도에 미치는 영향을 예측할 수 있다.</li>
+      <li>키워드 검색(BM25)과 벡터 검색이 각각 강한 질문 유형을 구분하고 섞는 이유를 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="pipeline">
+    <h2>기억을 찾아 오는 길</h2>
+    <p>검색 기반 기억은 두 경로로 이루어진다. <b>쓰기 경로</b>에서는 기억을 적당한 크기로 자르고, 각 조각을 임베딩 모델에 넣어 벡터로 바꾼 뒤 색인에 저장한다. <b>읽기 경로</b>에서는 현재 질문을 같은 모델로 임베딩하고, 색인에서 가까운 벡터 <var>k</var>개를 찾아, 필요하면 더 정확한 모델로 다시 순위를 매긴 뒤 컨텍스트에 넣는다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 270" role="img" aria-label="검색 기반 기억의 쓰기와 읽기 경로">
+        <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="a4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent-2)"/></marker></defs>
+        <text x="20" y="22" class="t-b">쓰기 경로</text>
+        <g transform="translate(20,34)">
+          <rect width="110" height="56" rx="8" class="soft-epi"/><text x="55" y="26" text-anchor="middle" class="t">대화 · 문서</text><text x="55" y="44" text-anchor="middle" class="t-mono">원문</text>
+          <path d="M114 28 H142" class="s-acc" marker-end="url(#a4)"/>
+          <rect x="146" width="110" height="56" rx="8" class="f-elev"/><text x="201" y="26" text-anchor="middle" class="t">청킹</text><g transform="translate(166,34)"><rect width="20" height="10" rx="2" class="c-epi" opacity=".6"/><rect x="24" width="20" height="10" rx="2" class="c-epi" opacity=".6"/><rect x="48" width="20" height="10" rx="2" class="c-epi" opacity=".6"/></g>
+          <path d="M260 28 H288" class="s-acc" marker-end="url(#a4)"/>
+          <rect x="292" width="120" height="56" rx="8" class="f-elev"/><text x="352" y="26" text-anchor="middle" class="t">임베딩 모델</text><text x="352" y="44" text-anchor="middle" class="t-mono">[0.12, −0.4, …]</text>
+          <path d="M416 28 H444" class="s-acc" marker-end="url(#a4)"/>
+          <rect x="448" width="150" height="56" rx="8" class="soft-sem"/><text x="523" y="26" text-anchor="middle" class="t">벡터 색인 (ANN)</text><text x="523" y="44" text-anchor="middle" class="t-mono">+ 메타데이터 · 시각</text>
+        </g>
+        <path d="M543 92 V150" stroke="var(--sem)" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+        <text x="20" y="140" class="t-b">읽기 경로</text>
+        <g transform="translate(20,152)">
+          <rect width="110" height="56" rx="8" class="soft-user"/><text x="55" y="26" text-anchor="middle" class="t">새 질문</text><text x="55" y="44" text-anchor="middle" class="t-mono">"그 숙소 어땠지?"</text>
+          <path d="M114 28 H142" stroke="var(--accent-2)" stroke-width="2" marker-end="url(#a4b)"/>
+          <rect x="146" width="110" height="56" rx="8" class="f-elev"/><text x="201" y="26" text-anchor="middle" class="t">질문 임베딩</text><text x="201" y="44" text-anchor="middle" class="t-mono">같은 모델</text>
+          <path d="M260 28 H288" stroke="var(--accent-2)" stroke-width="2" marker-end="url(#a4b)"/>
+          <rect x="292" width="120" height="56" rx="8" class="f-elev"/><text x="352" y="26" text-anchor="middle" class="t">근접 검색 top-k</text><text x="352" y="44" text-anchor="middle" class="t-mono">+ 키워드 · 필터</text>
+          <path d="M416 28 H444" stroke="var(--accent-2)" stroke-width="2" marker-end="url(#a4b)"/>
+          <rect x="448" width="110" height="56" rx="8" class="f-elev"/><text x="503" y="26" text-anchor="middle" class="t">재순위화</text><text x="503" y="44" text-anchor="middle" class="t-mono">k → k′</text>
+          <path d="M562 28 H590" stroke="var(--accent-2)" stroke-width="2" marker-end="url(#a4b)"/>
+          <rect x="594" width="126" height="56" rx="8" class="soft-work"/><text x="657" y="26" text-anchor="middle" class="t">컨텍스트</text><text x="657" y="44" text-anchor="middle" class="t-mono">기억 영역</text>
+        </g>
+        <text x="20" y="250" class="t-dim">쓰기 경로의 선택(청크 크기, 메타데이터)이 읽기 경로의 품질을 결정한다. 질문과 기억은 반드시 같은 임베딩 모델로 바꿔야 비교할 수 있다.</text>
+      </svg>
+      <figcaption><b>그림 4-1.</b> 검색 기반 기억의 두 경로. ANN(근사 최근접 이웃) 색인은 수백만 벡터에서도 밀리초 단위로 가까운 것을 찾아 준다. 대신 아주 드물게 진짜 최근접을 놓친다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="embed">
+    <h2>임베딩 공간과 코사인 유사도</h2>
+    <p><span class="term">임베딩</span><span class="en">embedding</span>은 의미가 비슷한 텍스트를 가까운 벡터로 보내도록 학습된 함수다. 두 벡터가 얼마나 비슷한지는 보통 <span class="term">코사인 유사도</span><span class="en">cosine similarity</span>로 잰다. 두 벡터가 같은 방향이면 1, 직각이면 0이다. 벡터의 길이는 무시하고 방향만 본다는 점이 유클리드 거리와 다르다.</p>
+    <div class="formula"><div class="eq">cos θ = <span class="frac"><span><b>q</b> · <b>m</b></span><span>‖<b>q</b>‖ ‖<b>m</b>‖</span></span></div>
+      <div class="where">실제 임베딩은 수백~수천 차원이다. 아래 실험은 2차원으로 줄인 그림이지만, 방향으로 비교한다는 원리와 top-k·임계값의 역할은 같다.</div></div>
+
+    <div class="sim" id="sim-embed">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>임베딩 공간 탐험 — 질문 근처의 기억 찾기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="em-cv" style="cursor:crosshair"></canvas></div>
+        <div class="sim-controls">
+          <div class="btns" id="em-q"><button class="btn" data-q="0">출장 숙소</button><button class="btn" data-q="1">점심 메뉴</button><button class="btn" data-q="2">배포 오류</button><button class="btn" data-q="3">가족 선물</button></div>
+          <div class="seg" id="em-metric"><button data-v="cos" class="on">코사인</button><button data-v="euc">유클리드</button></div>
+          <label class="ctrl"><span>top-k <output id="em-k-out"></output></span><input type="range" id="em-k" min="1" max="12" step="1" value="4"></label>
+          <label class="ctrl"><span>유사도 임계값 (코사인) <output id="em-t-out"></output></span><input type="range" id="em-t" min="0" max="0.99" step="0.01" value="0.8"></label>
+          <p style="font-size:13px;color:var(--text-dim);margin:0">캔버스를 클릭하면 그 위치로 질문을 옮깁니다.</p>
+          <div class="pane" id="em-list" style="font-size:12px;max-height:170px"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">가져온 기억</span><span class="v" id="em-o1">—</span></div>
+        <div class="stat"><span class="k">같은 주제 비율 (정밀도)</span><span class="v" id="em-o2">—</span></div>
+        <div class="stat"><span class="k">놓친 같은 주제 (재현율)</span><span class="v" id="em-o3">—</span></div>
+        <div class="stat"><span class="k">가장 낮은 유사도</span><span class="v" id="em-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① top-k를 12로 올리면 다른 주제의 기억까지 끌려온다 — 정밀도가 떨어진다. ② 임계값을 함께 쓰면 “k개까지, 단 충분히 비슷한 것만”이 된다. ③ 원점 가까이 있는 짧은 벡터(희미한 점)는 코사인으로는 방향만 맞으면 가깝게, 유클리드로는 멀게 판정된다. 메트릭을 바꿔 보자. ④ 두 주제 사이 빈 곳을 클릭하면 어느 쪽 기억도 임계값을 넘지 못한다 — “관련 기억 없음”을 아는 것도 중요하다(9장의 기권).</div>
+    </div>
+  </section>
+
+  <section id="chunk">
+    <h2>청킹: 기억을 어떻게 자를까</h2>
+    <p>긴 대화나 문서는 한 덩어리로 임베딩하면 여러 주제가 섞여 벡터가 흐려진다. 그래서 <span class="term">청크</span><span class="en">chunk</span>로 자른다. 청크가 너무 작으면 사실이 중간에서 잘리고 앞뒤 맥락(“그것”, “그 사람”)이 사라진다. 너무 크면 관련 없는 내용이 섞여 유사도가 희석되고, 컨텍스트 예산도 많이 쓴다. <b>겹침</b>(overlap)은 경계에서 잘리는 사실을 구하지만 저장량을 늘린다.</p>
+
+    <div class="sim" id="sim-chunk">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>청크 크기와 겹침</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1 1 200px"><span>청크 크기 (글자) <output id="ck-s-out"></output></span><input type="range" id="ck-s" min="30" max="420" step="10" value="120"></label>
+          <label class="ctrl" style="flex:1 1 200px"><span>겹침 <output id="ck-o-out"></output></span><input type="range" id="ck-o" min="0" max="0.5" step="0.05" value="0"></label>
+          <label class="check"><input type="checkbox" id="ck-sent"> 문장 경계에서 자르기</label>
+        </div>
+        <div class="pane" id="ck-doc" aria-label="청크로 나뉜 문서"></div>
+        <div class="legend"><span><i style="background:color-mix(in srgb,var(--work) 30%,transparent)"></i>청크 (번갈아 색)</span><span><i style="background:color-mix(in srgb,var(--epi) 45%,transparent)"></i>겹치는 부분</span><span><i style="background:var(--fail)"></i>경계</span><span><b style="text-decoration:underline 2px var(--accent-2)">밑줄</b> 핵심 사실 4개</span></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">청크 수</span><span class="v" id="ck-o1">—</span></div>
+        <div class="stat"><span class="k">온전한 핵심 사실</span><span class="v" id="ck-o2">—</span></div>
+        <div class="stat"><span class="k">신호 비율 (사실 길이 ÷ 청크 길이)</span><span class="v" id="ck-o3">—</span></div>
+        <div class="stat"><span class="k">저장량 (원문 대비)</span><span class="v" id="ck-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 크기를 30~50으로 줄이면 핵심 사실이 잘린다. ② 크기를 400으로 키우면 사실은 온전하지만 신호 비율이 떨어진다 — 청크 벡터에서 그 사실의 비중이 작아져 검색에 덜 걸린다. ③ 겹침 20~30% 또는 문장 경계 자르기를 켜면 작은 청크에서도 사실을 구한다.</div>
+    </div>
+  </section>
+
+  <section id="hybrid">
+    <h2>키워드와 의미를 섞는 하이브리드 검색</h2>
+    <p>벡터 검색은 표현이 달라도 의미가 같으면 찾아 준다(“엄마 생일” ↔ “어머니 생신”). 하지만 오류 코드, 제품 번호, 파일 이름처럼 <b>정확히 같은 문자열</b>이 중요할 때는 약하다. 벡터 공간에서는 “연결이 끊기는 다른 오류”도 가깝기 때문이다. 반대로 고전적인 키워드 검색인 <span class="term">BM25</span>는 정확한 단어 일치에 강하고 바꿔 말한 표현에 약하다. 그래서 둘을 섞는다.</p>
+    <div class="formula"><div class="eq">score = α · <span style="font-style:italic">norm</span>(sim<sub>vec</sub>) + (1 − α) · <span style="font-style:italic">norm</span>(BM25)</div>
+      <div class="where">두 점수는 범위가 달라서 각각 0~1로 정규화한 뒤 섞는다. 순위만 섞는 방법(RRF, reciprocal rank fusion)도 널리 쓰인다.</div></div>
+
+    <div class="sim" id="sim-hybrid">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>하이브리드 검색 — α를 움직여 순위 바꾸기</h3></div>
+      <div class="sim-body">
+        <div class="btns" id="hy-q"><button class="btn" data-q="0">노트북 메모리 몇 기가였지?</button><button class="btn" data-q="1">ERR_CONN_RESET 또 났어</button><button class="btn" data-q="2">엄마 생일 선물 뭐 드렸더라</button><button class="btn" data-q="3">지난번 출장 때 묵은 숙소 어땠어?</button></div>
+        <label class="ctrl"><span>α (0 = 키워드만, 1 = 벡터만) <output id="hy-a-out"></output></span><input type="range" id="hy-a" min="0" max="1" step="0.05" value="0.5"></label>
+        <div class="legend"><span><i style="background:var(--epi)"></i>BM25 (정규화)</span><span><i style="background:var(--accent-2)"></i>벡터 유사도 (정규화)</span><span><i style="background:var(--sem)"></i>정답 기억</span></div>
+        <div id="hy-list"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">정답 순위: 키워드만</span><span class="v" id="hy-o1">—</span></div>
+        <div class="stat"><span class="k">정답 순위: 벡터만</span><span class="v" id="hy-o2">—</span></div>
+        <div class="stat"><span class="k">정답 순위: 현재 α</span><span class="v" id="hy-o3">—</span></div>
+        <div class="stat"><span class="k">4개 질문 평균 MRR</span><span class="v" id="hy-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “ERR_CONN_RESET”은 키워드가 정답을 1위로 올리고, 벡터만 쓰면 비슷한 “연결 끊김” 기억과 경쟁한다. ② “엄마 생일 선물”은 단어가 하나도 겹치지 않아 BM25 점수가 0이다 — 벡터만 찾을 수 있다. ③ 네 질문 모두에서 정답이 1위가 되는 α 구간을 찾아 보자 — 양 끝(키워드만, 벡터만)에는 없다. MRR(평균 역순위)은 1위면 1, 2위면 0.5다. BM25는 실제로 계산하고, 벡터는 손으로 정한 개념 벡터로 흉내 냈다.</div>
+    </div>
+    <div class="callout"><b class="h">메타데이터 필터와 재순위화</b>“지난주에”, “지수 님 관련” 같은 조건은 유사도가 아니라 <b>필터</b>로 거르는 편이 정확하다. 그래서 기억에는 시각, 사용자, 출처, 종류를 함께 저장한다(5장). 그리고 1차 검색으로 넉넉히 30~50개를 뽑은 뒤, 질문과 기억을 함께 읽는 재순위화 모델로 상위 몇 개만 남기면 2장에서 본 방해 정보 문제를 줄일 수 있다.</div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>검색 기반 기억 = 쓰기(청킹 → 임베딩 → 색인) + 읽기(질문 임베딩 → top-k → 재순위화 → 컨텍스트).</li>
+      <li>코사인 유사도는 방향만 비교한다. top-k는 개수를, 임계값은 품질을 제한한다. 둘을 함께 써야 “관련 기억 없음”도 표현할 수 있다.</li>
+      <li>청크가 작으면 사실이 잘리고, 크면 신호가 희석된다. 겹침과 문장 경계가 절충안이다.</li>
+      <li>정확한 식별자는 BM25가, 바꿔 말한 표현은 벡터가 강하다. 하이브리드 검색과 메타데이터 필터, 재순위화로 약점을 메운다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 두 임베딩 벡터의 코사인 유사도가 0이라면?</p><div class="opts">
+        <button class="opt">두 텍스트는 정확히 같다</button>
+        <button class="opt" data-correct>두 벡터는 직각으로, 방향상 관련이 없다</button>
+        <button class="opt">두 텍스트는 정반대 의미다</button>
+      </div><div class="quiz-exp">코사인 1은 같은 방향, 0은 직각, −1은 반대 방향이다. 실제 임베딩에서는 무관한 문장도 0보다 약간 큰 값이 나오는 경우가 많다.</div></div>
+      <div class="quiz-q"><p>2. 사용자가 “E4021 오류 또 떴어”라고 했다. 가장 확실하게 관련 기억을 찾는 방법은?</p><div class="opts">
+        <button class="opt">벡터 검색만 쓴다</button>
+        <button class="opt" data-correct>키워드(BM25)를 포함한 하이브리드 검색을 쓴다</button>
+        <button class="opt">top-k를 크게 늘린다</button>
+      </div><div class="quiz-exp">오류 코드처럼 정확한 문자열은 키워드 검색이 강하다. 벡터 검색은 비슷한 다른 오류를 함께 가져오기 쉽다.</div></div>
+      <div class="quiz-q"><p>3. 청크 크기를 아주 크게(문서 전체) 잡을 때의 주된 문제는?</p><div class="opts">
+        <button class="opt">사실이 경계에서 잘린다</button>
+        <button class="opt" data-correct>여러 주제가 섞여 벡터가 흐려지고 컨텍스트 예산을 많이 쓴다</button>
+        <button class="opt">임베딩을 계산할 수 없다</button>
+      </div><div class="quiz-exp">큰 청크는 사실을 온전히 담지만, 그 사실이 청크 벡터에서 차지하는 비중이 작아져 검색에 덜 걸리고, 걸려도 많은 토큰을 가져온다.</div></div>
+      <div class="quiz-q"><p>4. top-k=5만 쓰고 임계값을 쓰지 않을 때 생기는 일은?</p><div class="opts">
+        <button class="opt" data-correct>관련 기억이 하나도 없어도 가장 덜 무관한 5개를 가져온다</button>
+        <button class="opt">관련 기억이 없으면 아무것도 가져오지 않는다</button>
+        <button class="opt">항상 정확히 관련 기억만 가져온다</button>
+      </div><div class="quiz-exp">top-k는 순위만 본다. 무관한 기억이 컨텍스트에 들어오면 모델이 엉뚱한 기억으로 답을 지어낼 수 있다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 임베딩 공간 ---------------- */
+(function () {
+  const TOPICS = [
+    { name: "여행", col: "work", ang: 0.35, items: ["3월 부산 출장 숙소", "해운대 비즈니스호텔", "KTX 통로석 선호", "제주 가족 여행 계획", "출장비 정산 기한", "숙소는 역 근처"] },
+    { name: "음식", col: "epi", ang: 1.45, items: ["견과류 알레르기", "매운 음식 피하기", "판교 한식당 단골", "회식은 고기집", "커피는 디카페인", "점심 샐러드 선호"] },
+    { name: "업무·코드", col: "proc", ang: 2.6, items: ["배포 ERR_CONN_RESET", "프록시 타임아웃 60초", "keep-alive 설정 문제", "PR 전 lint 실행", "Go 선호", "스테이징 테스트 필수"] },
+    { name: "가족", col: "sem", ang: 3.75, items: ["어머니 생신 5월", "실크 스카프 선물", "아버지 등산 좋아함", "조카 돌잔치 7월", "동생 이사 도움", "가족 단톡방"] },
+    { name: "건강", col: "fail", ang: 4.95, items: ["위염 진단", "주 3회 수영", "수면 7시간 목표", "허리 스트레칭", "건강검진 10월", "비타민 D 복용"] },
+  ];
+  const r = AM.rng(9), P = [];
+  TOPICS.forEach((t, ti) => t.items.forEach((s, i) => {
+    const a = t.ang + (r() - 0.5) * 0.55, len = i === 5 ? 0.25 + r() * 0.1 : 0.55 + r() * 0.4;
+    P.push({ s, ti, x: Math.cos(a) * len, y: Math.sin(a) * len });
+  }));
+  const QS = [{ x: Math.cos(0.4) * 0.8, y: Math.sin(0.4) * 0.8 }, { x: Math.cos(1.4) * 0.7, y: Math.sin(1.4) * 0.7 }, { x: Math.cos(2.62) * 0.85, y: Math.sin(2.62) * 0.85 }, { x: Math.cos(3.8) * 0.7, y: Math.sin(3.8) * 0.7 }];
+  let q = { ...QS[0] }, geo = null;
+  const metric = AM.seg("em-metric", () => cv.redraw());
+  const cv = AM.canvas("em-cv", { height: (w) => Math.min(460, w * 0.86), draw });
+  const cos = (a, b) => (a.x * b.x + a.y * b.y) / (Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y) || 1);
+  function draw(c, w, h) {
+    const cx = w / 2, cy = h / 2, S = Math.min(w, h) * 0.46;
+    geo = { cx, cy, S };
+    const X = (v) => cx + v * S, Y = (v) => cy - v * S;
+    c.strokeStyle = AM.col("grid"); c.lineWidth = 1;
+    [0.5, 1].forEach((rr) => { c.beginPath(); c.arc(cx, cy, rr * S, 0, 7); c.stroke(); });
+    c.beginPath(); c.moveTo(cx - S, cy); c.lineTo(cx + S, cy); c.moveTo(cx, cy - S); c.lineTo(cx, cy + S); c.stroke();
+    TOPICS.forEach((t) => AM.text(c, t.name, AM.clamp(X(Math.cos(t.ang) * 1.06), 28, w - 28), AM.clamp(Y(Math.sin(t.ang) * 1.06), 10, h - 10), { size: 12, weight: 700, align: "center", color: AM.col(t.col) }));
+    const k = AM.val("em-k"), th = AM.val("em-t"), m = metric();
+    const scored = P.map((p) => ({ p, s: m === "cos" ? cos(p, q) : -Math.hypot(p.x - q.x, p.y - q.y), c: cos(p, q) }));
+    scored.sort((a, b) => b.s - a.s);
+    const got = scored.slice(0, k).filter((o) => o.c >= th);
+    const qa = Math.atan2(q.y, q.x);
+    if (m === "cos") {
+      const half = Math.acos(Math.max(-1, Math.min(1, th)));
+      c.fillStyle = AM.alpha(AM.col("accent-2"), 0.08);
+      c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, S * 1.02, -qa - half, -qa + half); c.closePath(); c.fill();
+    }
+    got.forEach((o) => { c.strokeStyle = AM.alpha(AM.col("accent-2"), 0.7); c.lineWidth = 1.5; c.beginPath(); c.moveTo(X(q.x), Y(q.y)); c.lineTo(X(o.p.x), Y(o.p.y)); c.stroke(); });
+    const gotSet = new Set(got.map((o) => o.p));
+    P.forEach((p) => {
+      const col = AM.col(TOPICS[p.ti].col), on = gotSet.has(p);
+      c.fillStyle = on ? col : AM.alpha(col, Math.hypot(p.x, p.y) < 0.4 ? 0.35 : 0.6);
+      c.beginPath(); c.arc(X(p.x), Y(p.y), on ? 7 : 5, 0, 7); c.fill();
+      if (on) { c.strokeStyle = AM.col("text"); c.lineWidth = 1.5; c.stroke(); }
+    });
+    got.forEach((o, i) => { const px = X(o.p.x), py = Y(o.p.y); c.fillStyle = AM.col("bg-elev"); c.beginPath(); c.arc(px + 10, py - 10, 8, 0, 7); c.fill(); AM.text(c, String(i + 1), px + 10, py - 10, { size: 10, weight: 700, align: "center", mono: true, color: AM.col("text") }); });
+    AM.el("em-list").innerHTML = got.length ? got.map((o, i) => `<div class="ln" style="--k:var(--${TOPICS[o.p.ti].col})">${i + 1}. ${AM.esc(o.p.s)} <span class="dim">${o.c.toFixed(2)}</span></div>`).join("") : '<div class="dim">임계값을 넘는 기억이 없습니다 → “관련 기억 없음”</div>';
+    c.strokeStyle = AM.col("accent-2"); c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(X(q.x), Y(q.y)); c.stroke();
+    c.fillStyle = AM.col("accent-2"); c.beginPath(); c.arc(X(q.x), Y(q.y), 7, 0, 7); c.fill();
+    AM.text(c, "질문", X(q.x) + 9, Y(q.y) - 12, { size: 12, weight: 700, color: AM.col("accent-2") });
+    // 질문이 가장 가까운 주제 (각도 기준)
+    let best = 0, bd = 9;
+    TOPICS.forEach((t, i) => { let d = Math.abs(((qa - t.ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI); if (d < bd) { bd = d; best = i; } });
+    const same = got.filter((o) => o.p.ti === best).length;
+    const missed = P.filter((p) => p.ti === best && !gotSet.has(p)).length;
+    AM.set("em-o1", got.length + "개" + (got.length < k ? ` (k=${k} 중)` : ""), got.length ? "" : "warn");
+    AM.set("em-o2", got.length ? AM.pct(same / got.length) : "—", got.length && same / got.length < 0.7 ? "bad" : "good");
+    AM.set("em-o3", missed + " / 6 (" + TOPICS[best].name + ")");
+    AM.set("em-o4", got.length ? got[got.length - 1].c.toFixed(2) : "—");
+  }
+  AM.wire(["em-k", "em-t"], cv.redraw, { "em-t": (v) => v.toFixed(2) });
+  AM.el("em-q").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; q = { ...QS[+b.dataset.q] }; cv.redraw(); });
+  AM.el("em-cv").addEventListener("click", (e) => {
+    const rc = e.target.getBoundingClientRect();
+    const x = (e.clientX - rc.left - geo.cx) / geo.S, y = -(e.clientY - rc.top - geo.cy) / geo.S;
+    if (Math.hypot(x, y) < 0.05) return;
+    q = { x, y }; cv.redraw();
+  });
+})();
+
+/* ---------------- 2. 청킹 ---------------- */
+(function () {
+  const DOC = "5월 8일 결제팀 주간 회의 기록. 참석자는 지수, 서연, 민호였다. 지난주 장애는 결제사 웹훅이 3분간 지연되면서 주문 상태가 갱신되지 않은 것이 원인이었다. 서연은 재시도 로직이 지수 백오프 없이 즉시 반복된 점을 지적했다. 결정 사항: 웹훅 재시도는 최대 5회, 간격은 2배씩 늘린다. 담당은 민호이며 기한은 5월 22일이다. 그 밖에 신규 결제 API 이전은 6월 30일까지 끝내기로 했고, 환불 로직은 이번 범위에서 제외한다. 다음 회의는 장소를 3층 회의실로 옮긴다. 점심은 회의 후 근처 한식당에서 함께 했다.";
+  const KEYS = ["웹훅 재시도는 최대 5회, 간격은 2배씩 늘린다", "담당은 민호이며 기한은 5월 22일이다", "신규 결제 API 이전은 6월 30일까지 끝내기로 했고", "환불 로직은 이번 범위에서 제외한다"];
+  const KR = KEYS.map((k) => { const s = DOC.indexOf(k); return [s, s + k.length]; });
+  function chunks() {
+    const size = AM.val("ck-s"), ov = Math.round(size * AM.val("ck-o")), sent = AM.el("ck-sent").checked;
+    const out = []; let s = 0;
+    while (s < DOC.length) {
+      let e = Math.min(DOC.length, s + size);
+      if (sent && e < DOC.length) {
+        const cut = DOC.lastIndexOf(". ", e);
+        if (cut > s + size * 0.4) e = cut + 2;
+      }
+      out.push([s, e]);
+      if (e >= DOC.length) break;
+      s = Math.max(s + 1, e - ov);
+    }
+    return out;
+  }
+  function render() {
+    const C = chunks();
+    // 글자마다 어느 청크에 속하는지
+    const own = new Array(DOC.length).fill(-1), cnt = new Array(DOC.length).fill(0);
+    C.forEach(([s, e], i) => { for (let j = s; j < e; j++) { if (own[j] < 0) own[j] = i; cnt[j]++; } });
+    const isKey = (j) => KR.some(([a, b]) => j >= a && j < b);
+    const bounds = new Set(C.map((c) => c[1]).slice(0, -1));
+    let html = "", cur = null;
+    for (let j = 0; j < DOC.length; j++) {
+      const cls = cnt[j] > 1 ? "ov" : "c" + (own[j] % 2);
+      const key = isKey(j);
+      const tag = cls + (key ? "k" : "");
+      if (tag !== cur) { if (cur !== null) html += cur.endsWith("k") ? "</b></span>" : "</span>"; html += `<span class="${cls}">` + (key ? '<b class="key">' : ""); cur = tag; }
+      html += AM.esc(DOC[j]);
+      if (bounds.has(j + 1)) html += '<i class="cut"></i>';
+    }
+    html += cur && cur.endsWith("k") ? "</b></span>" : "</span>";
+    AM.el("ck-doc").innerHTML = html;
+    let intact = 0, sig = 0;
+    KR.forEach(([a, b]) => {
+      const c = C.filter(([s, e]) => s <= a && e >= b).sort((x, y) => (x[1] - x[0]) - (y[1] - y[0]))[0];
+      if (c) { intact++; sig += (b - a) / (c[1] - c[0]); }
+    });
+    const stored = C.reduce((s, [a, b]) => s + b - a, 0);
+    AM.set("ck-o1", C.length + "개");
+    AM.set("ck-o2", intact + " / 4", intact === 4 ? "good" : intact < 2 ? "bad" : "warn");
+    AM.set("ck-o3", intact ? AM.pct(sig / intact) : "—", intact && sig / intact < 0.25 ? "warn" : "");
+    AM.set("ck-o4", AM.pct(stored / DOC.length), stored / DOC.length > 1.3 ? "warn" : "");
+  }
+  AM.wire(["ck-s", "ck-o"], render, { "ck-s": (v) => v + "자", "ck-o": (v) => AM.pct(v) });
+  AM.el("ck-sent").addEventListener("change", render);
+})();
+
+/* ---------------- 3. 하이브리드 검색 ---------------- */
+(function () {
+  const CON = ["device", "error", "family", "travel", "food", "schedule", "money", "code", "past", "pref"];
+  const D = [
+    ["노트북 사양: 14인치, 메모리 32GB, SSD 1TB", { device: 0.9, money: 0.1 }],
+    ["4월 2일 노트북 A/S 접수 — 키보드 불량", { device: 0.8, schedule: 0.3, past: 0.5 }],
+    ["배포 중 ERR_CONN_RESET 발생, 프록시 타임아웃을 60초로 늘려 해결", { error: 0.85, code: 0.6, past: 0.4 }],
+    ["연결이 자꾸 끊기는 문제는 keep-alive 설정이 원인이었다", { error: 0.9, code: 0.55, past: 0.4 }],
+    ["어머니 생신에 실크 스카프를 드렸다 (작년 5월)", { family: 0.9, money: 0.2, past: 0.5 }],
+    ["아버지는 등산을 좋아하신다", { family: 0.85, pref: 0.4 }],
+    ["3월 부산 출장: 해운대 근처 비즈니스호텔에 묵음, 조식 별로", { travel: 0.85, past: 0.6 }],
+    ["출장 숙소는 역에서 걸어서 10분 이내를 선호", { travel: 0.9, pref: 0.7 }],
+    ["점심은 매운 음식 피하기 — 위염", { food: 0.85, pref: 0.6 }],
+    ["회의실 예약은 사내 포털에서, 최대 2시간", { schedule: 0.7, code: 0.1 }],
+  ];
+  const Q = [
+    ["노트북 메모리 몇 기가였지?", { device: 0.9 }, 0],
+    ["ERR_CONN_RESET 또 났어", { error: 0.9, code: 0.4 }, 2],
+    ["엄마 생일 선물 뭐 드렸더라", { family: 0.9, money: 0.2, past: 0.4 }, 4],
+    ["지난번 출장 때 묵은 숙소 어땠어?", { travel: 0.9, past: 0.6 }, 6],
+  ];
+  const JOSA = ["에서", "으로", "은", "는", "이", "가", "을", "를", "에", "의", "로", "도", "만", "과", "와"];
+  const tok = (s) => s.toLowerCase().split(/[^\p{L}\p{N}_]+/u).filter(Boolean).map((t) => { for (const j of JOSA) if (t.length > j.length + 1 && t.endsWith(j)) return t.slice(0, -j.length); return t; });
+  const DT = D.map((d) => tok(d[0]));
+  const avg = DT.reduce((s, t) => s + t.length, 0) / DT.length;
+  const df = {}; DT.forEach((t) => new Set(t).forEach((w) => (df[w] = (df[w] || 0) + 1)));
+  const bm25 = (qt, i, k1 = 1.2, b = 0.75) => qt.reduce((s, w) => {
+    const f = DT[i].filter((x) => x === w).length; if (!f) return s;
+    const idf = Math.log(1 + (D.length - df[w] + 0.5) / (df[w] + 0.5));
+    return s + idf * (f * (k1 + 1)) / (f + k1 * (1 - b + (b * DT[i].length) / avg));
+  }, 0);
+  const vec = (o) => CON.map((c) => o[c] || 0);
+  const cos = (a, b) => { const d = a.reduce((s, v, i) => s + v * b[i], 0); return d / (Math.hypot(...a) * Math.hypot(...b) || 1); };
+  const norm = (arr) => { const mx = Math.max(...arr), mn = Math.min(...arr); return arr.map((v) => (mx > mn ? (v - mn) / (mx - mn) : 0)); };
+  let qi = 0;
+  function score(q, a) {
+    const qt = tok(q[0]), bmRaw = D.map((_, i) => bm25(qt, i)), vRaw = D.map((d) => cos(vec(q[1]), vec(d[1])));
+    const bm = bmRaw.every((v) => v === 0) ? bmRaw : norm(bmRaw), vs = norm(vRaw);
+    const mix = D.map((_, i) => a * vs[i] + (1 - a) * bm[i]);
+    return { bm, vs, mix, bmRaw };
+  }
+  const rankOf = (arr, i) => 1 + arr.filter((v, j) => v > arr[i] || (v === arr[i] && j < i)).length;
+  function render() {
+    const a = AM.val("hy-a"), q = Q[qi], S = score(q, a);
+    const order = D.map((_, i) => i).sort((x, y) => S.mix[y] - S.mix[x]);
+    AM.el("hy-list").innerHTML = order.map((i, r) => `<div class="hy-row ${i === q[2] ? "ans" : ""}"><span class="rk">${r + 1}</span><span>${AM.esc(D[i][0])}</span><span class="hy-bars"><i style="width:${S.bm[i] * 100}%;background:var(--epi)"></i><i style="width:${S.vs[i] * 100}%;background:var(--accent-2)"></i></span></div>`).join("");
+    const rb = S.bmRaw[q[2]] > 0 ? rankOf(S.bm, q[2]) : "점수 0";
+    AM.set("hy-o1", typeof rb === "number" ? rb + "위" : rb, rb === 1 ? "good" : "bad");
+    const rv = rankOf(S.vs, q[2]); AM.set("hy-o2", rv + "위", rv === 1 ? "good" : "bad");
+    const rm = rankOf(S.mix, q[2]); AM.set("hy-o3", rm + "위", rm === 1 ? "good" : rm === 2 ? "warn" : "bad");
+    const mrr = Q.reduce((s, qq) => s + 1 / rankOf(score(qq, a).mix, qq[2]), 0) / Q.length;
+    AM.set("hy-o4", mrr.toFixed(2), mrr > 0.9 ? "good" : mrr < 0.7 ? "bad" : "warn");
+    AM.$$("#hy-q button").forEach((b, i) => b.classList.toggle("primary", i === qi));
+  }
+  AM.wire(["hy-a"], render, { "hy-a": (v) => v.toFixed(2) });
+  AM.el("hy-q").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; qi = +b.dataset.q; render(); });
+})();
+</script>
+</body>
+</html>

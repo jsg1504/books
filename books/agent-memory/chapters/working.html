@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업 기억: 컨텍스트 윈도우 · RecallBook</title>
+<meta name="description" content="컨텍스트 윈도우를 작업 기억으로 보고, 버퍼 전략, KV 캐시의 메모리 비용, 긴 입력에서 흐려지는 어텐션을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="working">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 02</div>
+    <h1>작업 기억: 컨텍스트 윈도우</h1>
+    <p class="lead">사람의 작업 기억은 전화번호 몇 자리를 잠깐 붙들고 있는 정도로 작다. 언어 모델의 <span class="term">작업 기억</span><span class="en">working memory</span>, 즉 컨텍스트 윈도우는 수십만 토큰에 이를 만큼 크지만 역시 한계가 있다. 공간의 한계, 하드웨어 메모리의 한계, 그리고 주의의 한계다. 이 장에서는 그 세 가지를 차례로 재 본다.</p>
+    <ul class="objectives">
+      <li>컨텍스트 예산을 고정 영역, 기억 영역, 대화 버퍼, 응답 여유로 나누어 설계할 수 있다.</li>
+      <li>전체 보존, 슬라이딩 윈도우, 요약+윈도우 버퍼가 어떤 사실을 언제 잃는지 예측할 수 있다.</li>
+      <li>층 수, KV 헤드 수, 헤드 차원, 정밀도로 KV 캐시 크기를 계산할 수 있다.</li>
+      <li>입력이 길어질수록 관련 정보 하나에 돌아가는 어텐션이 줄어드는 이유를 소프트맥스로 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="budget">
+    <h2>컨텍스트는 예산이다</h2>
+    <p>윈도우는 공짜 공간이 아니다. 한 칸을 무엇으로 채울지가 곧 설계다. 장기 기억 시스템을 붙인 에이전트의 입력은 대개 네 영역으로 나뉜다. 매 턴 같은 <b>고정 영역</b>, 장기 기억에서 불러온 <b>기억 영역</b>, 최근 대화를 그대로 담은 <b>대화 버퍼</b>, 그리고 모델이 답을 쓸 <b>응답 여유</b>다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 230" role="img" aria-label="컨텍스트 예산 배분">
+        <text x="20" y="24" class="t-b">컨텍스트 윈도우 128K 토큰의 예산 배분 (예)</text>
+        <g transform="translate(20,40)">
+          <rect width="720" height="60" rx="8" class="f-surface"/>
+          <rect width="60" height="60" rx="8" class="c-user" opacity=".8"/>
+          <rect x="60" width="48" height="60" class="c-proc" opacity=".7"/>
+          <rect x="108" width="100" height="60" class="c-sem" opacity=".7"/>
+          <rect x="208" width="60" height="60" class="c-epi" opacity=".7"/>
+          <rect x="268" width="352" height="60" class="c-work" opacity=".7"/>
+          <rect x="620" width="100" height="60" rx="8" fill="none" stroke="var(--text-faint)" stroke-dasharray="5 4"/>
+          <text x="30" y="35" text-anchor="middle" class="t-w">고정</text><text x="84" y="35" text-anchor="middle" class="t-w">지침</text>
+          <text x="158" y="35" text-anchor="middle" class="t-w">사용자 프로필</text><text x="238" y="35" text-anchor="middle" class="t-w">검색</text>
+          <text x="444" y="35" text-anchor="middle" class="t-w">대화 버퍼 (최근 턴 원문)</text><text x="670" y="35" text-anchor="middle" class="t-dim">응답 여유</text>
+        </g>
+        <g class="t-mono" transform="translate(20,118)">
+          <text x="0" y="0">시스템·도구 6K</text><text x="60" y="18">절차 4K</text><text x="108" y="36">의미 기억 8K</text><text x="208" y="54">일화 검색 5K</text><text x="290" y="0">대화 원문 ~90K — 넘치면 요약해 비운다</text><text x="600" y="18">출력 8K + 안전 여유</text>
+        </g>
+        <path d="M20 192 H740" class="s-dash"/>
+        <text x="20" y="214" class="t-dim">왼쪽 영역일수록 매 턴 안정적이다 → 프롬프트 캐시에 유리. 기억 영역은 질문마다 바뀌므로 대화 버퍼 앞에 둔다.</text>
+      </svg>
+      <figcaption><b>그림 2-1.</b> 컨텍스트 예산. 숫자는 예시다. 응답 여유를 남기지 않으면 긴 답이 잘리고, 기억 영역을 너무 크게 잡으면 대화 버퍼가 줄어 방금 한 말을 잊는다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="buffer">
+    <h2>대화 버퍼 전략</h2>
+    <p>대화 버퍼를 관리하는 방법은 크게 세 가지다. <b>전체 보존</b>은 넘칠 때까지 모두 두고, 넘치면 가장 오래된 것부터 잘라 낸다. <span class="term">슬라이딩 윈도우</span><span class="en">sliding window</span>는 최근 <var>N</var>턴만 남긴다. <b>요약+윈도우</b>는 윈도우 밖으로 밀려나는 턴을 요약에 흡수시킨다. 요약은 짧지만 모든 사실을 담지는 못한다.</p>
+    <p>아래 실험은 40턴짜리 대화에 6개의 중요한 사실을 흩어 놓고, 각 전략에서 매 턴 그 사실이 아직 컨텍스트에 있는지 추적한다. 파랑은 원문으로 남아 있음, 초록은 요약 안에 남아 있음, 빨강은 잃어버림이다.</p>
+
+    <div class="sim" id="sim-buffer">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>버퍼 전략 비교 — 어떤 사실을 언제 잃는가</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="bf-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="bf-mode"><button data-v="full" class="on">전체 보존</button><button data-v="win">윈도우</button><button data-v="sum">요약+윈도우</button></div>
+          <label class="ctrl"><span>컨텍스트 한도 (전체 보존) <output id="bf-cap-out"></output></span><input type="range" id="bf-cap" min="2000" max="24000" step="500" value="9000"></label>
+          <label class="ctrl"><span>윈도우 N턴 <output id="bf-n-out"></output></span><input type="range" id="bf-n" min="2" max="20" step="1" value="6"></label>
+          <label class="ctrl"><span>요약 보존율 <output id="bf-p-out"></output></span><input type="range" id="bf-p" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="ctrl"><span>요약 크기 (토큰) <output id="bf-s-out"></output></span><input type="range" id="bf-s" min="100" max="2000" step="50" value="400"></label>
+          <div class="legend"><span><i style="background:var(--work)"></i>원문</span><span><i style="background:var(--sem)"></i>요약 속</span><span><i style="background:var(--fail)"></i>잃음</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">사실 가용률</span><span class="v" id="bf-o1">—</span></div>
+        <div class="stat"><span class="k">마지막 턴에 남은 사실</span><span class="v" id="bf-o2">—</span></div>
+        <div class="stat"><span class="k">평균 입력 토큰</span><span class="v" id="bf-o3">—</span></div>
+        <div class="stat"><span class="k">최대 입력 토큰</span><span class="v" id="bf-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 전체 보존은 한도 안에서는 완벽하지만, 한도를 넘는 순간 <b>가장 오래된 사실부터 통째로</b> 잃는다(첫 줄의 이름). ② 윈도우는 입력이 일정하지만 N턴 전의 사실은 예외 없이 잃는다. ③ 요약+윈도우는 보존율에 따라 일부 사실이 오래 살아남는다 — 어떤 사실이 살아남을지는 요약의 품질에 달렸다(3장). 사실별 보존 여부는 고정된 난수로 정해져 있어, 보존율을 올리면 살아남는 사실이 하나씩 늘어난다.</div>
+    </div>
+  </section>
+
+  <section id="kv">
+    <h2>KV 캐시: 작업 기억의 하드웨어 비용</h2>
+    <p>트랜스포머는 새 토큰을 만들 때마다 앞선 모든 토큰의 <b>키</b>와 <b>값</b> 벡터를 참조한다. 이것을 매번 다시 계산하지 않도록 GPU 메모리에 쌓아 두는 것이 <span class="term">KV 캐시</span><span class="en">KV cache</span>다. 컨텍스트가 길수록 KV 캐시가 선형으로 커지고, 결국 동시에 처리할 수 있는 대화 수와 최대 길이를 제한한다. 작업 기억이 “비싸다”는 말은 토큰 요금뿐 아니라 이 메모리 이야기이기도 하다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 210" role="img" aria-label="층별 KV 캐시">
+        <text x="20" y="22" class="t-b">층마다, 토큰마다, KV 헤드마다 키와 값 벡터 한 쌍</text>
+        <g transform="translate(20,36)">
+          <g>
+            <rect width="90" height="26" rx="5" class="f-elev"/><text x="45" y="18" text-anchor="middle" class="t">층 1</text>
+            <rect y="34" width="90" height="26" rx="5" class="f-elev"/><text x="45" y="52" text-anchor="middle" class="t">층 2</text>
+            <text x="45" y="80" text-anchor="middle" class="t-dim">⋮</text>
+            <rect y="92" width="90" height="26" rx="5" class="f-elev"/><text x="45" y="110" text-anchor="middle" class="t">층 L</text>
+          </g>
+          <g transform="translate(110,0)">
+            <g id="kvrow"><rect width="16" height="12" rx="2" class="c-work" opacity=".85"/><rect y="14" width="16" height="12" rx="2" class="c-sem" opacity=".85"/></g>
+          </g>
+        </g>
+        <g transform="translate(130,36)">
+          <g id="kvcells"></g>
+        </g>
+        <text x="130" y="176" class="t-mono">← 토큰 1 · 2 · 3 · … · n (컨텍스트 길이만큼 늘어난다) →</text>
+        <rect x="560" y="40" width="12" height="10" class="c-work"/><text x="578" y="49" class="t-dim">키 K</text>
+        <rect x="620" y="40" width="12" height="10" class="c-sem"/><text x="638" y="49" class="t-dim">값 V</text>
+        <text x="560" y="78" class="t-dim">각 칸 = H<tspan font-size="9" dy="3">kv</tspan><tspan dy="-3"> × d</tspan><tspan font-size="9" dy="3">head</tspan><tspan dy="-3"> 개의 수</tspan></text>
+        <text x="20" y="200" class="t-dim">GQA는 여러 쿼리 헤드가 KV 헤드 하나를 공유해 H_kv를 줄인다 → 같은 모델 크기에서 KV 캐시가 몇 배 작아진다.</text>
+      </svg>
+      <figcaption><b>그림 2-2.</b> KV 캐시의 구조. 토큰이 하나 늘 때마다 모든 층에 키·값 한 쌍씩이 추가된다.</figcaption>
+    </figure>
+    <div class="formula"><div class="eq">KV 바이트 = 2 × <var>L</var> × <var>H</var><sub>kv</sub> × <var>d</var><sub>head</sub> × <var>b</var> × <var>n</var> × <var>B</var></div>
+      <div class="where">2: 키와 값 · <var>L</var>: 층 수 · <var>H</var><sub>kv</sub>: KV 헤드 수 · <var>d</var><sub>head</sub>: 헤드 차원 · <var>b</var>: 수 하나의 바이트(16비트면 2) · <var>n</var>: 컨텍스트 길이 · <var>B</var>: 동시에 처리하는 대화 수</div></div>
+
+    <div class="sim" id="sim-kv">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>KV 캐시 계산기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="kv-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="btns" id="kv-pre"><button class="btn" data-p="0">소형 MHA</button><button class="btn" data-p="1">중형 GQA</button><button class="btn" data-p="2">대형 GQA</button></div>
+          <label class="ctrl"><span>층 수 L <output id="kv-l-out"></output></span><input type="range" id="kv-l" min="8" max="128" step="2" value="32"></label>
+          <label class="ctrl"><span><span>KV 헤드 H<sub>kv</sub></span><output id="kv-h-out"></output></span><input type="range" id="kv-h" min="1" max="64" step="1" value="8"></label>
+          <label class="ctrl"><span><span>헤드 차원 d<sub>head</sub></span><output id="kv-d-out"></output></span><input type="range" id="kv-d" min="32" max="256" step="32" value="128"></label>
+          <label class="ctrl"><span>정밀도 <output id="kv-b-out"></output></span><input type="range" id="kv-b" min="0" max="2" step="1" value="0"></label>
+          <label class="ctrl"><span>컨텍스트 길이 n <output id="kv-n-out"></output></span><input type="range" id="kv-n" min="0" max="10" step="1" value="5"></label>
+          <label class="ctrl"><span>동시 대화 B <output id="kv-B-out"></output></span><input type="range" id="kv-B" min="1" max="64" step="1" value="8"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">토큰당 KV</span><span class="v" id="kv-o1">—</span></div>
+        <div class="stat"><span class="k">대화 1개</span><span class="v" id="kv-o2">—</span></div>
+        <div class="stat"><span class="k">전체 (B개)</span><span class="v" id="kv-o3">—</span></div>
+        <div class="stat"><span class="k">80 GB에 들어가는 대화 수</span><span class="v" id="kv-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “대형 GQA”에서 KV 헤드를 8 → 64로 바꾸면(MHA처럼) KV 캐시가 8배가 된다. ② 정밀도를 16 → 8 → 4비트로 줄이는 KV 양자화는 같은 메모리에 2배, 4배 긴 기억을 담는다. ③ 컨텍스트 길이를 10배 늘리면 동시에 처리할 수 있는 대화 수는 1/10이 된다 — 긴 작업 기억이 서비스 비용에 직결되는 이유다. 모델 가중치 메모리는 계산에서 뺐다.</div>
+    </div>
+  </section>
+
+  <section id="dilution">
+    <h2>길어질수록 흐려지는 주의</h2>
+    <p>공간과 메모리가 충분해도 문제는 남는다. 어텐션은 소프트맥스로 가중치를 나눠 주므로, 관련 토큰 하나가 받는 비중은 <b>다른 토큰이 많을수록</b> 줄어든다. 관련 토큰의 점수(로짓)가 나머지보다 Δ만큼 높고 나머지 <var>N</var>개의 점수가 평균 0, 표준편차 σ로 흩어져 있다면, 관련 토큰이 받는 비중은 대략 다음과 같다.</p>
+    <div class="formula"><div class="eq"><var>p</var> ≈ <span class="frac"><span><var>e</var><sup>Δ</sup></span><span><var>e</var><sup>Δ</sup> + <var>N</var> · <var>e</var><sup>σ²/2</sup></span></span></div>
+      <div class="where"><var>N</var>이 <var>e</var><sup>Δ</sup>보다 커지면 관련 토큰의 비중은 절반 아래로 떨어진다. 실제 모델은 여러 층과 헤드가 이 문제를 나눠 풀고 학습으로 Δ를 키우므로 이렇게 단순하지 않다. 그래도 “관련 없는 내용을 많이 넣을수록 손해”라는 방향은 여러 실험에서 관찰된다.</div></div>
+
+    <div class="sim" id="sim-attn">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>어텐션 희석 — 관련 토큰 하나가 받는 주의</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="at-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>관련도 우위 Δ <output id="at-d-out"></output></span><input type="range" id="at-d" min="0" max="16" step="0.5" value="8"></label>
+          <label class="ctrl"><span>잡음 점수 σ <output id="at-s-out"></output></span><input type="range" id="at-s" min="0" max="2.5" step="0.1" value="1"></label>
+          <label class="ctrl"><span>비슷한 방해 문장 수 <output id="at-k-out"></output></span><input type="range" id="at-k" min="0" max="20" step="1" value="0"></label>
+          <label class="ctrl"><span>표시할 길이 N <output id="at-n-out"></output></span><input type="range" id="at-n" min="1" max="6" step="0.1" value="4"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>현재 설정</span><span><i style="background:var(--text-faint)"></i>Δ ± 3</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">관련 토큰 비중</span><span class="v" id="at-o1">—</span></div>
+        <div class="stat"><span class="k">비중 50% 아래가 되는 N</span><span class="v" id="at-o2">—</span></div>
+        <div class="stat"><span class="k">방해 문장이 가져간 비중</span><span class="v" id="at-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① N을 늘리면 곡선이 어느 지점에서 급격히 떨어진다 — 그 지점은 <var>e</var><sup>Δ</sup> 근처다. ② <b>비슷한 방해 문장</b>(관련도가 Δ−1인 토큰)은 수가 적어도 비중을 크게 빼앗는다. 검색으로 기억을 여러 개 넣을 때 비슷하지만 틀린 기억이 특히 해로운 이유다(4장). ③ 아래 막대는 길이 N에서 관련 토큰, 방해 문장, 잡음 토큰 일부의 비중이고, 파란 막대는 나머지 토큰 전체가 나눠 가진 비중이다. 하나하나는 작아도 합치면 관련 토큰을 압도한다.</div>
+    </div>
+    <div class="callout"><b class="h">그래서 작업 기억은 “크게”보다 “깨끗하게”</b>윈도우가 커진 덕분에 모든 것을 넣고 싶어지지만, 필요한 기억만 골라 넣는 편이 비용, 속도, 정확도 모두에 유리한 경우가 많다. 다음 장부터는 무엇을 남기고(3장), 무엇을 찾아 넣을지(4장)를 다룬다.</div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>컨텍스트 윈도우는 고정 영역, 기억 영역, 대화 버퍼, 응답 여유로 나누는 예산이다.</li>
+      <li>전체 보존은 한도를 넘으면 가장 오래된 것을, 슬라이딩 윈도우는 N턴 전의 모든 것을, 요약은 요약이 놓친 것을 잃는다.</li>
+      <li>KV 캐시 = 2·<var>L</var>·<var>H</var><sub>kv</sub>·<var>d</var><sub>head</sub>·<var>b</var>·<var>n</var>. GQA와 KV 양자화가 긴 작업 기억의 하드웨어 비용을 줄인다.</li>
+      <li>소프트맥스 어텐션에서는 입력이 길수록, 비슷한 방해 정보가 많을수록 관련 정보 하나에 가는 주의가 줄어든다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 최근 6턴만 남기는 슬라이딩 윈도우에서 10턴 전에 말한 마감일을 묻는다면?</p><div class="opts">
+        <button class="opt">윈도우 크기와 무관하게 기억한다</button>
+        <button class="opt" data-correct>컨텍스트에 없으므로 답할 수 없다</button>
+        <button class="opt">모델이 가중치에 저장해 두었으므로 답한다</button>
+      </div><div class="quiz-exp">윈도우 밖으로 밀려난 턴은 입력에 없다. 장기 기억이나 요약에 따로 적어 두지 않았다면 잃는다.</div></div>
+      <div class="quiz-q"><p>2. L=32, H_kv=8, d_head=128, 16비트일 때 토큰당 KV 캐시는?</p><div class="opts">
+        <button class="opt">64 KB</button>
+        <button class="opt" data-correct>128 KB</button>
+        <button class="opt">1 MB</button>
+      </div><div class="quiz-exp">2 × 32 × 8 × 128 × 2바이트 = 131,072바이트 = 128 KB.</div></div>
+      <div class="quiz-q"><p>3. GQA가 KV 캐시를 줄이는 방법은?</p><div class="opts">
+        <button class="opt">층 수를 줄인다</button>
+        <button class="opt" data-correct>여러 쿼리 헤드가 키·값 헤드를 공유해 H_kv를 줄인다</button>
+        <button class="opt">오래된 토큰을 자동으로 지운다</button>
+      </div><div class="quiz-exp">쿼리 헤드는 그대로 두고 KV 헤드만 줄여 공유한다. 같은 길이에서 KV 캐시가 (쿼리 헤드 수 / KV 헤드 수)배 작아진다.</div></div>
+      <div class="quiz-q"><p>4. 검색으로 기억 20개를 넣었더니 정답 기억과 비슷하지만 틀린 기억이 5개 섞였다. 어텐션 희석의 관점에서 가장 나은 대응은?</p><div class="opts">
+        <button class="opt">윈도우를 더 큰 모델로 바꾼다</button>
+        <button class="opt" data-correct>재순위화나 임계값으로 비슷한 오답 기억을 걸러 넣는 수를 줄인다</button>
+        <button class="opt">기억을 두 번씩 넣어 강조한다</button>
+      </div><div class="quiz-exp">관련도가 비슷한 방해 정보는 적은 수로도 주의를 크게 빼앗는다. 넣는 것을 깨끗하게 만드는 편이 효과적이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 그림 2-2 칸 채우기 ---------------- */
+(function () {
+  const g = document.getElementById("kvcells");
+  let s = "";
+  [0, 34, 92].forEach((y) => { for (let i = 0; i < 22; i++) s += `<rect x="${i * 18}" y="${y}" width="16" height="12" rx="2" class="c-work" opacity="${0.35 + 0.6 * (i / 21)}"/><rect x="${i * 18}" y="${y + 14}" width="16" height="12" rx="2" class="c-sem" opacity="${0.35 + 0.6 * (i / 21)}"/>`; });
+  g.innerHTML = s;
+  document.getElementById("kvrow").remove();
+})();
+
+/* ---------------- 1. 버퍼 전략 ---------------- */
+(function () {
+  const TURNS = 40;
+  const FACTS = [
+    { t: 2, s: "이름: 지수" }, { t: 6, s: "견과류 알레르기" }, { t: 12, s: "마감일 6/30" },
+    { t: 20, s: "선호 언어 Go" }, { t: 27, s: "예산 300만 원" }, { t: 33, s: "회의 3시로 변경" },
+  ];
+  const r = AM.rng(42);
+  const SIZE = Array.from({ length: TURNS }, () => Math.round(150 + r() * 650));
+  const KEEP = FACTS.map(() => r()); // 요약에서 살아남는 문턱 (고정)
+  const mode = AM.seg("bf-mode", () => cv.redraw());
+  const cv = AM.canvas("bf-cv", { aspect: 0.72, draw });
+  function simulate() {
+    const m = mode(), cap = AM.val("bf-cap"), N = AM.val("bf-n"), p = AM.val("bf-p"), S = AM.val("bf-s");
+    const state = [], input = [];
+    for (let t = 1; t <= TURNS; t++) {
+      let lo = 1, extra = 0;
+      if (m === "full") {
+        let sum = 0; lo = t + 1;
+        for (let i = t; i >= 1; i--) { if (sum + SIZE[i - 1] > cap) break; sum += SIZE[i - 1]; lo = i; }
+        input.push(sum);
+      } else {
+        lo = Math.max(1, t - N + 1);
+        let sum = 0; for (let i = lo; i <= t; i++) sum += SIZE[i - 1];
+        if (m === "sum" && lo > 1) { extra = S; sum += S; }
+        input.push(sum);
+      }
+      state.push(FACTS.map((f, j) => {
+        if (f.t > t) return 0;          // 아직 등장 전
+        if (f.t >= lo) return 1;         // 원문으로 있음
+        if (m === "sum" && KEEP[j] < p) return 2; // 요약 속
+        return 3;                         // 잃음
+      }));
+    }
+    return { state, input, cap };
+  }
+  function draw(c, w, h) {
+    const R = simulate();
+    const l = 104, rgt = w - 10, top = 10, chartH = h * 0.36, gridT = top + chartH + 26, rowH = (h - gridT - 24) / FACTS.length;
+    const cw = (rgt - l) / TURNS;
+    const ymax = Math.max(AM.val("bf-cap"), ...R.input) * 1.1;
+    // 입력 토큰 막대
+    R.input.forEach((v, i) => {
+      const bh = (v / ymax) * chartH;
+      c.fillStyle = AM.alpha(AM.col("work"), 0.55); c.fillRect(l + i * cw + 1, top + chartH - bh, cw - 2, bh);
+    });
+    if (mode() === "full") {
+      const y = top + chartH - (AM.val("bf-cap") / ymax) * chartH;
+      AM.line(c, [[l, y], [rgt, y]], AM.col("fail"), 1.2, [5, 4]);
+      AM.text(c, "한도", rgt - 2, y - 8, { size: 11, align: "right", color: AM.col("fail") });
+    }
+    AM.text(c, "턴별 입력", l - 8, top + chartH / 2, { size: 11, align: "right", color: AM.col("text-dim") });
+    AM.text(c, AM.si(ymax), l - 8, top + 6, { size: 10, mono: true, align: "right", color: AM.col("text-faint") });
+    // 사실 격자
+    let avail = 0, tot = 0;
+    FACTS.forEach((f, j) => {
+      const y = gridT + j * rowH;
+      AM.text(c, f.s, l - 8, y + rowH / 2, { size: 11, align: "right", color: AM.col("text") });
+      R.state.forEach((row, i) => {
+        const v = row[j]; if (!v) return;
+        tot++; if (v < 3) avail++;
+        c.fillStyle = v === 1 ? AM.col("work") : v === 2 ? AM.col("sem") : AM.alpha(AM.col("fail"), 0.55);
+        c.fillRect(l + i * cw + 1, y + 2, cw - 2, rowH - 4);
+      });
+      c.fillStyle = AM.col("text"); c.beginPath(); c.arc(l + (f.t - 0.5) * cw, y + rowH / 2, 2.5, 0, 7); c.fill();
+    });
+    [1, 10, 20, 30].forEach((t) => AM.text(c, String(t), l + (t - 0.5) * cw, h - 10, { size: 10, mono: true, align: "center", color: AM.col("text-faint") }));
+    AM.text(c, "40턴", rgt, h - 10, { size: 10, mono: true, align: "right", color: AM.col("text-faint") });
+    const last = R.state[TURNS - 1].filter((v) => v === 1 || v === 2).length;
+    AM.set("bf-o1", AM.pct(avail / tot), avail / tot > 0.9 ? "good" : avail / tot < 0.6 ? "bad" : "warn");
+    AM.set("bf-o2", last + " / 6", last === 6 ? "good" : last < 3 ? "bad" : "warn");
+    AM.set("bf-o3", AM.fmt(R.input.reduce((a, b) => a + b, 0) / TURNS));
+    AM.set("bf-o4", AM.fmt(Math.max(...R.input)));
+  }
+  AM.wire(["bf-cap", "bf-n", "bf-p", "bf-s"], cv.redraw, { "bf-cap": AM.si, "bf-n": (v) => v + "턴", "bf-p": (v) => AM.pct(v) });
+})();
+
+/* ---------------- 2. KV 캐시 계산기 ---------------- */
+(function () {
+  const LENS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1000].map((k) => k * 1024);
+  const PREC = [2, 1, 0.5], PNAME = ["16비트", "8비트", "4비트"];
+  const PRE = [{ l: 32, h: 32, d: 128 }, { l: 32, h: 8, d: 128 }, { l: 80, h: 8, d: 128 }];
+  const cv = AM.canvas("kv-cv", { aspect: 0.66, draw });
+  const per = () => 2 * AM.val("kv-l") * AM.val("kv-h") * AM.val("kv-d") * PREC[AM.val("kv-b")];
+  const gb = (b) => b / 1024 ** 3;
+  const fmtB = (b) => (b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(b >= 10 * 1024 ** 3 ? 0 : 1) + " GB" : b >= 1024 ** 2 ? (b / 1024 ** 2).toFixed(1) + " MB" : (b / 1024).toFixed(0) + " KB");
+  function draw(c, w, h) {
+    const p = per(), B = AM.val("kv-B"), n = LENS[AM.val("kv-n")];
+    const A = AM.axes(c, { box: { l: 58, t: 14, r: w - 14, b: h - 44 }, x: [1024, 1024000], y: [0.01, 10000], logx: true, logy: true, xt: [1024, 8192, 65536, 524288], xf: (v) => v / 1024 + "K", yt: [0.01, 0.1, 1, 10, 100, 1000, 10000], yf: (v) => (v < 1 ? v : AM.si(v)), xl: "컨텍스트 길이 (토큰)", yl: "KV 캐시 (GB)", ylOff: 46 });
+    [24, 80, 640].forEach((g) => {
+      AM.line(c, [[A.X(1024), A.Y(g)], [A.X(1024000), A.Y(g)]], AM.alpha(AM.col("fail"), 0.6), 1, [4, 4]);
+      AM.text(c, g === 640 ? "GPU 8장 (640 GB)" : g + " GB", A.X(1024) + 4, A.Y(g) - 8, { size: 10.5, color: AM.col("fail") });
+    });
+    const curve = (bytes, col, wid, dash) => AM.line(c, LENS.map((L) => [A.X(L), A.Y(Math.max(0.01, gb(bytes * L)))]), col, wid, dash);
+    curve(p, AM.col("text-faint"), 1.5, [3, 3]);
+    curve(p * B, AM.col("accent"), 2.5);
+    const x = A.X(n), y = A.Y(Math.max(0.01, gb(p * n * B)));
+    c.fillStyle = AM.col("accent-2"); c.beginPath(); c.arc(x, y, 5, 0, 7); c.fill();
+    AM.text(c, fmtB(p * n * B), x + 8, y - 10, { size: 12, weight: 700, color: AM.col("accent-2") });
+    AM.text(c, "점선: 대화 1개 · 실선: B개", w - 16, h - 56, { size: 11, align: "right", color: AM.col("text-dim") });
+    AM.set("kv-o1", fmtB(p)); AM.set("kv-o2", fmtB(p * n)); AM.set("kv-o3", fmtB(p * n * B), gb(p * n * B) > 80 ? "bad" : "");
+    const fit = Math.floor((80 * 1024 ** 3) / (p * n));
+    AM.set("kv-o4", fit >= 1 ? AM.fmt(fit) + "개" : "1개도 안 됨", fit < 1 ? "bad" : fit < B ? "warn" : "good");
+  }
+  const up = AM.wire(["kv-l", "kv-h", "kv-d", "kv-b", "kv-n", "kv-B"], cv.redraw, { "kv-b": (v) => PNAME[v], "kv-n": (v) => (LENS[v] >= 1024000 ? "1M" : LENS[v] / 1024 + "K") });
+  AM.el("kv-pre").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const P = PRE[+b.dataset.p];
+    AM.el("kv-l").value = P.l; AM.el("kv-h").value = P.h; AM.el("kv-d").value = P.d; AM.el("kv-b").value = 0;
+    up();
+  });
+})();
+
+/* ---------------- 3. 어텐션 희석 ---------------- */
+(function () {
+  const cv = AM.canvas("at-cv", { aspect: 0.66, draw });
+  const P = (N, d, s, k) => {
+    const rel = Math.exp(d), dis = k * Math.exp(d - 1), noise = Math.max(0, N - 1 - k) * Math.exp((s * s) / 2);
+    return { p: rel / (rel + dis + noise), q: dis / (rel + dis + noise) };
+  };
+  function draw(c, w, h) {
+    const d = AM.val("at-d"), s = AM.val("at-s"), k = AM.val("at-k"), N = Math.round(10 ** AM.val("at-n"));
+    const barH = h * 0.24;
+    const A = AM.axes(c, { box: { l: 58, t: 12, r: w - 14, b: h - barH - 46 }, x: [10, 1e6], y: [0, 1], logx: true, xt: [10, 100, 1000, 1e4, 1e5, 1e6], xf: AM.si, yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "입력 길이 N (토큰)", yl: "관련 토큰 비중", ylOff: 48 });
+    const xs = []; for (let e = 1; e <= 6.001; e += 0.05) xs.push(10 ** e);
+    [d - 3, d + 3].forEach((dd) => { if (dd >= 0) AM.line(c, xs.map((x) => [A.X(x), A.Y(P(x, dd, s, k).p)]), AM.col("text-faint"), 1.2, [3, 3]); });
+    AM.line(c, xs.map((x) => [A.X(x), A.Y(P(x, d, s, k).p)]), AM.col("accent"), 2.5);
+    AM.line(c, [[A.X(10), A.Y(0.5)], [A.X(1e6), A.Y(0.5)]], AM.col("grid"), 1);
+    const cur = P(N, d, s, k);
+    c.fillStyle = AM.col("accent-2"); c.beginPath(); c.arc(A.X(N), A.Y(cur.p), 5, 0, 7); c.fill();
+    // 상위 40개 토큰 비중 막대
+    const r = AM.rng(3), top = h - barH - 4, bw = (w - 64) / 44;
+    const logits = [d]; for (let i = 0; i < Math.min(k, 39); i++) logits.push(d - 1);
+    while (logits.length < 40) { const u = r() || 1e-9, v = r(); logits.push(s * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) + s * 1.2); }
+    const Z = Math.exp(d) + k * Math.exp(d - 1) + Math.max(0, N - 1 - k) * Math.exp((s * s) / 2);
+    const ws = logits.slice(0, Math.min(40, N)).map((x) => Math.exp(x) / Z);
+    const rest = Math.max(0, 1 - ws.reduce((a, b) => a + b, 0));
+    const mx = Math.max(rest, ...ws);
+    ws.forEach((v, i) => {
+      const bh = Math.max(1, (v / mx) * (barH - 18));
+      c.fillStyle = i === 0 ? AM.col("accent-2") : i <= k ? AM.col("epi") : AM.alpha(AM.col("text-faint"), 0.6);
+      c.fillRect(56 + i * bw, top + barH - 14 - bh, bw - 2, bh);
+    });
+    const rh = (rest / mx) * (barH - 18);
+    c.fillStyle = AM.alpha(AM.col("work"), 0.5); c.fillRect(56 + 40 * bw + 6, top + barH - 14 - rh, bw * 3.4, rh);
+    AM.text(c, "나머지 " + AM.pct(rest), 56 + 40 * bw + 4, top + barH - 4, { size: 10, mono: true, color: AM.col("work") });
+    AM.text(c, "길이 " + AM.si(N) + "에서 토큰별 비중 (분홍: 관련 · 주황: 방해 · 회색: 상위 잡음 · 파랑: 나머지 전부)", 56, top + 2, { size: 11, color: AM.col("text-dim") });
+    let half = "—";
+    for (const x of xs) if (P(x, d, s, k).p < 0.5) { half = "≈ " + AM.si(x); break; }
+    AM.set("at-o1", AM.pct(cur.p, 1), cur.p > 0.5 ? "good" : cur.p < 0.1 ? "bad" : "warn");
+    AM.set("at-o2", half);
+    AM.set("at-o3", AM.pct(cur.q, 1), cur.q > 0.3 ? "bad" : "");
+  }
+  AM.wire(["at-d", "at-s", "at-k", "at-n"], cv.redraw, { "at-n": (v) => AM.si(Math.round(10 ** v)), "at-k": (v) => v + "개" });
+})();
+</script>
+</body>
+</html>

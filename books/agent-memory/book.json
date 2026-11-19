@@ -1,0 +1,14 @@
+{
+  "title": "에이전트 메모리 실험 교과서",
+  "topic": "인공지능",
+  "description": "어제 나눈 대화를 에이전트는 어떻게 기억할까요? 컨텍스트 윈도우, 요약, 검색, 기억 쓰기와 망각, 지식 그래프, 경험 학습, 오염과 평가를 애니메이션 도해와 실험으로 배웁니다.",
+  "published": true,
+  "format": "custom",
+  "cover": "cover.svg",
+  "details": ["10개 장", "28개 실험", "3D 기억 성좌"],
+  "links": [
+    {"label": "기억 없는 대화", "href": "chapters/why.html#sim-chat", "kind": "첫 실험"},
+    {"label": "검색 점수 믹서", "href": "chapters/forgetting.html#sim-score", "kind": "실험"},
+    {"label": "메모리 설계 플레이그라운드", "href": "chapters/design.html#sim-play", "kind": "종합"}
+  ]
+}

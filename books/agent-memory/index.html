@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecallBook · 에이전트 메모리 교과서</title>
+<meta name="description" content="어제의 대화를 에이전트는 어떻게 기억할까? 컨텍스트 윈도우, 요약, 검색, 기억 쓰기와 망각, 지식 그래프, 경험 학습, 오염과 평가를 애니메이션 도해와 실험으로 배우는 에이전트 메모리 교과서.">
+<meta name="theme-color" content="#14163a">
+<meta property="og:type" content="website">
+<meta property="og:title" content="RecallBook · 에이전트 메모리 교과서">
+<meta property="og:description" content="상태 없는 모델에 기억을 붙이는 법 — 슬라이더를 움직이며 배우는 에이전트 메모리 교과서.">
+<meta property="og:image" content="cover.svg">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/common.js"></script>
+<style>
+  .chain svg { min-width: 860px; }
+  .chain a:hover rect { filter: brightness(1.06); stroke-width: 2.2; }
+  .chain a { cursor: pointer; }
+</style>
+</head>
+<body data-root="">
+
+<main>
+<section class="home-hero">
+  <div class="inner">
+    <div>
+      <div class="eyebrow">Interactive Agent Memory Textbook</div>
+      <h1>잊어버리는 모델에서<br><span class="grad">기억하는 에이전트로</span></h1>
+      <p>언어 모델은 대화가 끝나면 아무것도 기억하지 못합니다. 그런데 어떤 에이전트는 지난주에 말한 취향을 기억하고, 실패에서 배운 교훈을 다음 작업에 씁니다. 컨텍스트 윈도우와 요약부터 임베딩 검색, 기억 쓰기와 망각, 지식 그래프, 경험 학습, 기억 오염과 평가까지. 슬라이더를 끝까지 밀어 보고 애니메이션을 멈춰 보며 배우는 에이전트 메모리 교과서입니다.</p>
+      <div class="cta">
+        <a class="primary" href="chapters/why.html">1장부터 시작하기 →</a>
+        <a class="ghost" href="chapters/retrieval.html#sim-embed">임베딩 공간 실험</a>
+      </div>
+      <div class="hero-badges">
+        <span>10개 챕터</span><span>28개 인터랙티브 실험</span><span>애니메이션 도해</span><span>개발자 · 학부 수준</span>
+      </div>
+    </div>
+    <div class="hero-viz" id="hero" aria-label="기억 성좌 위에서 질문이 가까운 기억을 찾아 컨텍스트 윈도우로 불러오는 애니메이션">
+      <canvas></canvas>
+      <span class="hint">드래그해서 돌려 보세요 · 질문이 기억을 불러옵니다</span>
+      <div class="term-log" aria-live="off"></div>
+    </div>
+  </div>
+</section>
+
+<section class="home-section">
+  <h2>에이전트 메모리는 무엇을 하는가</h2>
+  <p class="sub">한 문장으로: <b>모델이 다음 턴에 볼 컨텍스트를 고르기 위해, 지난 경험을 적어 두고(쓰기) 필요할 때 찾아 오고(읽기) 쓸모없어진 것은 버린다(망각).</b> 그 세 동작의 각 마디가 이 교과서의 목차입니다. 블록을 누르면 해당 장으로 이동합니다.</p>
+  <figure class="diagram chain">
+    <svg viewBox="0 0 1100 360" role="img" aria-label="에이전트 메모리의 읽기·쓰기 흐름">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent-2)"/></marker>
+      </defs>
+      <!-- user -->
+      <a href="chapters/why.html"><g transform="translate(16,96)">
+        <rect width="120" height="120" rx="12" class="soft-user"/>
+        <rect x="12" y="20" width="96" height="30" rx="8" class="f-elev"/>
+        <text x="60" y="40" text-anchor="middle" class="t-mono">"그거 기억나?"</text>
+        <circle cx="38" cy="80" r="11" class="c-user" opacity=".8"/><path d="M22 104a16 13 0 0 1 32 0" class="c-user" opacity=".8"/>
+        <text x="60" y="146" text-anchor="middle" class="t">새 메시지</text><text x="60" y="164" text-anchor="middle" class="t-mono">Ch.01</text>
+      </g></a>
+      <path d="M142 156 H180" class="s-acc" marker-end="url(#arr)"/>
+      <!-- retrieval -->
+      <a href="chapters/retrieval.html"><g transform="translate(188,96)">
+        <rect width="150" height="120" rx="12" class="f-elev"/>
+        <circle cx="46" cy="52" r="22" fill="none" stroke="var(--accent-2)" stroke-width="3"/><path d="M62 68l16 16" stroke="var(--accent-2)" stroke-width="4" stroke-linecap="round"/>
+        <rect x="88" y="30" width="46" height="8" rx="3" class="c-epi" opacity=".75"/><rect x="88" y="44" width="38" height="8" rx="3" class="c-sem" opacity=".75"/><rect x="88" y="58" width="44" height="8" rx="3" class="c-proc" opacity=".75"/>
+        <text x="75" y="146" text-anchor="middle" class="t">검색 · 점수 매기기</text><text x="75" y="164" text-anchor="middle" class="t-mono">Ch.04 · 06</text>
+      </g></a>
+      <path d="M344 156 H382" class="s-acc" marker-end="url(#arr)"/>
+      <!-- context -->
+      <a href="chapters/working.html"><g transform="translate(390,76)">
+        <rect width="170" height="160" rx="12" class="soft-work"/>
+        <text x="85" y="22" text-anchor="middle" class="t-mono">context window</text>
+        <rect x="14" y="32" width="142" height="14" rx="3" class="c-user" opacity=".6"/>
+        <rect x="14" y="50" width="142" height="20" rx="3" class="c-sem" opacity=".55"/>
+        <rect x="14" y="74" width="100" height="14" rx="3" class="c-epi" opacity=".55"/>
+        <rect x="14" y="92" width="142" height="22" rx="3" class="c-work" opacity=".55"/>
+        <rect x="14" y="118" width="142" height="12" rx="3" fill="none" stroke="var(--text-faint)" stroke-dasharray="3 3"/>
+        <text x="85" y="186" text-anchor="middle" class="t">작업 기억</text><text x="85" y="204" text-anchor="middle" class="t-mono">Ch.02 · 03</text>
+      </g></a>
+      <path d="M566 156 H604" class="s-acc" marker-end="url(#arr)"/>
+      <!-- model -->
+      <g transform="translate(612,96)">
+        <rect width="130" height="120" rx="12" class="f-surface"/>
+        <g transform="translate(65,56)" fill="none" stroke="var(--accent)" stroke-width="2"><circle r="26"/><circle r="12"/><path d="M-26 0H-12M12 0H26M0 -26V-12M0 12V26"/></g>
+        <text x="65" y="146" text-anchor="middle" class="t">모델 (상태 없음)</text><text x="65" y="164" text-anchor="middle" class="t-mono">응답 · 행동</text>
+      </g>
+      <path d="M748 156 H786" class="s-acc" marker-end="url(#arr)"/>
+      <!-- write -->
+      <a href="chapters/writing.html"><g transform="translate(794,96)">
+        <rect width="140" height="120" rx="12" class="f-elev"/>
+        <text x="16" y="30" class="t-mono" style="fill:var(--sem)">+ ADD</text>
+        <text x="16" y="52" class="t-mono" style="fill:var(--epi)">~ UPDATE</text>
+        <text x="16" y="74" class="t-mono" style="fill:var(--fail)">− DELETE</text>
+        <text x="16" y="96" class="t-mono">· NOOP</text>
+        <text x="70" y="146" text-anchor="middle" class="t">기억 쓰기</text><text x="70" y="164" text-anchor="middle" class="t-mono">Ch.05</text>
+      </g></a>
+      <!-- store -->
+      <path d="M864 222 V262" stroke="var(--accent-2)" stroke-width="2" fill="none" marker-end="url(#arr2)"/>
+      <g transform="translate(150,268)">
+        <rect width="840" height="78" rx="14" class="f-acc2-soft"/>
+        <text x="16" y="22" class="t-b">장기 기억 저장소</text>
+        <a href="chapters/structure.html"><rect x="16" y="32" width="190" height="34" rx="8" class="soft-sem"/><text x="111" y="54" text-anchor="middle" class="t">의미 · 그래프 · 시간 (Ch.07)</text></a>
+        <a href="chapters/writing.html"><rect x="216" y="32" width="190" height="34" rx="8" class="soft-epi"/><text x="311" y="54" text-anchor="middle" class="t">일화 · 대화 기록 (Ch.05)</text></a>
+        <a href="chapters/procedural.html"><rect x="416" y="32" width="190" height="34" rx="8" class="soft-proc"/><text x="511" y="54" text-anchor="middle" class="t">절차 · 교훈 · 스킬 (Ch.08)</text></a>
+        <a href="chapters/forgetting.html"><rect x="616" y="32" width="208" height="34" rx="8" class="soft-fail"/><text x="720" y="54" text-anchor="middle" class="t">감쇠 · 정리 · 삭제 (Ch.06 · 09)</text></a>
+      </g>
+      <path d="M262 262 V222" stroke="var(--accent-2)" stroke-width="2" fill="none" marker-end="url(#arr2)" class="flow"/>
+      <text x="276" y="250" class="t-acc" style="fill:var(--accent-2)">읽기</text>
+      <text x="878" y="250" class="t-acc" style="fill:var(--accent-2)">쓰기</text>
+      <text x="560" y="40" text-anchor="middle" class="t-dim">모델은 매 턴 컨텍스트 윈도우에 든 것만 본다 — 메모리 시스템의 일은 그 윈도우를 무엇으로 채울지 고르는 것</text>
+    </svg>
+    <figcaption><b>그림 0-1.</b> 에이전트 메모리의 한 바퀴. 새 메시지가 들어오면 장기 기억에서 관련된 것을 찾아(읽기) 컨텍스트 윈도우에 넣고, 모델이 응답한 뒤에는 대화에서 남길 만한 것을 골라 저장소를 고친다(쓰기). 저장소는 계속 커지므로 점수를 매기고 정리해야 한다(망각).</figcaption>
+  </figure>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>이 책의 색 언어</h2>
+  <p class="sub">모든 그림과 실험에서 같은 색은 같은 종류의 기억을 뜻합니다. 인지과학의 기억 분류를 에이전트 설계에 맞게 빌려 왔습니다.</p>
+  <div class="colorlang">
+    <div style="--k:var(--work)"><b>작업 기억</b>지금 컨텍스트 윈도우에 든 것. 모델이 직접 보는 유일한 기억.</div>
+    <div style="--k:var(--epi)"><b>일화 기억</b>“언제 무슨 일이 있었다”. 대화 기록, 작업 이력, 사건.</div>
+    <div style="--k:var(--sem)"><b>의미 기억</b>시간과 무관한 사실. 취향, 사람, 설정, 지식.</div>
+    <div style="--k:var(--proc)"><b>절차 기억</b>“어떻게 하는가”. 지침, 교훈, 재사용할 스킬.</div>
+    <div style="--k:var(--fail)"><b>망각 · 오염</b>사라진 기억, 틀린 기억, 심어진 기억.</div>
+    <div style="--k:var(--user)"><b>사용자</b>메시지, 요청, 삭제 요구. 기억의 주인.</div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>숫자로 보는 에이전트 메모리</h2>
+  <p class="sub">이 교과서를 끝내면 아래 숫자가 왜 중요한지, 서로 어떻게 얽혀 있는지 설명할 수 있게 됩니다.</p>
+  <div class="numbers">
+    <div><b>O(n²)</b><span>매 턴 대화 전체를 다시 보내면 n턴 동안 보낸 누적 토큰은 제곱으로 자란다 (1장)</span></div>
+    <div><b>≈ 0.33 MB</b><span>GQA를 쓰는 80층급 모델에서 토큰 하나가 차지하는 KV 캐시(16비트). 10만 토큰이면 30 GB를 넘는다 (2장)</span></div>
+    <div><b>p<sup>k</sup></b><span>요약 한 번에 사실이 살아남을 확률이 p면, k번 거듭 요약한 뒤에는 p<sup>k</sup>만 남는다 (3장)</span></div>
+    <div><b>cos θ</b><span>임베딩 검색의 기본 척도. 길이는 무시하고 방향만 비교한다 (4장)</span></div>
+    <div><b>0.995<sup>h</sup></b><span>시간당 감쇠율 0.995로 최근성을 매기면 하루 뒤 점수는 약 0.89, 한 달 뒤에는 약 0.03 (6장)</span></div>
+    <div><b>5가지 능력</b><span>장기 기억 평가가 묻는 것: 정보 추출, 여러 세션 추론, 시간 추론, 지식 갱신, 모르면 모른다고 하기 (9장)</span></div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>전체 챕터</h2>
+  <p class="sub">순서대로 읽어도 좋고, 관심 있는 장부터 골라 읽어도 됩니다. 각 장은 개념 → 그림 → 수식 → 실험 → 퀴즈 순서로 구성됩니다.</p>
+  <div class="ch-grid" id="chgrid"></div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>추천 학습 경로</h2>
+  <p class="sub">목적에 따라 이렇게 읽어 보세요.</p>
+  <div class="paths">
+    <div class="path"><h3>입문 · 전체 그림</h3><p>에이전트가 “기억한다”는 말이 무슨 뜻인지 궁금하다면. 상태 없는 모델과 그 위에 얹는 기억.</p><div class="steps"><a href="chapters/why.html">01</a><a href="chapters/working.html">02</a><a href="chapters/retrieval.html">04</a><a href="chapters/writing.html">05</a></div></div>
+    <div class="path"><h3>챗봇 · 비서를 만드는 개발자</h3><p>사용자를 기억하는 서비스를 만든다면. 무엇을 쓰고, 어떻게 찾고, 언제 지울지.</p><div class="steps"><a href="chapters/compress.html">03</a><a href="chapters/writing.html">05</a><a href="chapters/forgetting.html">06</a><a href="chapters/risks.html">09</a><a href="chapters/design.html">10</a></div></div>
+    <div class="path"><h3>자율 에이전트 엔지니어</h3><p>긴 작업을 혼자 수행하는 에이전트라면. 작업 기억 관리, 계층형 기억, 경험에서 배우기.</p><div class="steps"><a href="chapters/working.html">02</a><a href="chapters/compress.html">03</a><a href="chapters/structure.html">07</a><a href="chapters/procedural.html">08</a></div></div>
+    <div class="path"><h3>평가 · 연구</h3><p>메모리 시스템을 비교하고 개선해야 한다면. 검색 품질, 점수 함수, 평가 설계.</p><div class="steps"><a href="chapters/retrieval.html">04</a><a href="chapters/forgetting.html">06</a><a href="chapters/risks.html">09</a><a href="../coding-agents/chapters/context.html">LoopBook 2장 ↗</a></div></div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0;padding-bottom:20px">
+  <h2>이 사이트 사용법</h2>
+  <div class="flow">
+    <div><b>읽기</b>개념과 직관을 먼저. 영어 용어는 괄호로 병기합니다.</div>
+    <div><b>보기</b>SVG 도해와 애니메이션으로 기억의 흐름을 그립니다.</div>
+    <div><b>만지기</b>실험의 슬라이더를 끝까지 움직여 보세요. 극단에서 배웁니다.</div>
+    <div><b>예측하기</b>버튼을 누르기 전에 결과를 먼저 짐작해 보세요.</div>
+    <div><b>확인하기</b>장마다 퀴즈, 마지막 장에서 종합 퀴즈로 마무리합니다.</div>
+  </div>
+</section>
+</main>
+
+<script src="js/hero.js"></script>
+<script>
+(function () {
+  const ICON = {
+    why: '<rect x="6" y="10" width="26" height="34" rx="6" class="soft-user"/><path d="M36 27h10" class="s-acc"/><circle cx="58" cy="27" r="13" fill="none" stroke="var(--accent)" stroke-width="2"/><text x="53" y="32" class="t-b" style="fill:var(--fail)">?</text>',
+    working: '<rect x="4" y="12" width="66" height="30" rx="5" fill="none" stroke="var(--text-faint)" stroke-width="2"/><rect x="8" y="16" width="14" height="22" class="c-user" opacity=".7"/><rect x="22" y="16" width="22" height="22" class="c-work" opacity=".7"/><rect x="44" y="16" width="12" height="22" class="c-sem" opacity=".7"/>',
+    compress: '<rect x="4" y="8" width="26" height="38" rx="4" class="soft-epi"/><path d="M34 27h8" class="s-acc"/><path d="M38 22l5 5-5 5" class="s-acc"/><rect x="48" y="18" width="22" height="18" rx="4" class="soft-sem"/>',
+    retrieval: '<circle cx="24" cy="24" r="13" fill="none" stroke="var(--accent-2)" stroke-width="4"/><path d="M34 34l10 10" stroke="var(--accent-2)" stroke-width="5" stroke-linecap="round"/><circle cx="56" cy="12" r="4" class="c-epi"/><circle cx="64" cy="26" r="4" class="c-sem"/><circle cx="54" cy="40" r="4" class="c-proc"/>',
+    writing: '<rect x="6" y="8" width="62" height="10" rx="2" class="soft-sem"/><rect x="6" y="22" width="62" height="10" rx="2" class="soft-epi"/><rect x="6" y="36" width="40" height="10" rx="2" class="soft-fail"/>',
+    forgetting: '<path d="M6 10 C18 34, 34 40, 70 44" fill="none" stroke="var(--fail)" stroke-width="3"/><path d="M6 46h64" stroke="var(--axis)"/><circle cx="30" cy="30" r="4" class="c-sem"/><path d="M30 30 C38 14, 50 22, 70 26" fill="none" stroke="var(--sem)" stroke-width="2" stroke-dasharray="3 3"/>',
+    structure: '<path d="M14 14L38 28L62 12M38 28L26 44M38 28L58 42" stroke="var(--axis)" stroke-width="2" fill="none"/><circle cx="14" cy="14" r="6" class="c-sem"/><circle cx="38" cy="28" r="7" class="c-epi"/><circle cx="62" cy="12" r="6" class="c-sem"/><circle cx="26" cy="44" r="5" class="c-proc"/><circle cx="58" cy="42" r="5" class="c-work"/>',
+    procedural: '<path d="M40 12a16 16 0 1 0 6 18" class="sc-proc" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M46 6v10H36" class="sc-proc" stroke-width="4" fill="none" stroke-linecap="round"/><rect x="52" y="34" width="18" height="14" rx="3" class="soft-sem"/>',
+    risks: '<path d="M37 6l24 9v14c0 12-10 19-24 22-14-3-24-10-24-22V15z" class="soft-fail" stroke-width="2"/><circle cx="37" cy="26" r="6" class="c-epi"/><path d="M33 36h8" stroke="var(--fail)" stroke-width="3"/>',
+    design: '<rect x="4" y="8" width="20" height="16" rx="3" class="soft-work"/><rect x="28" y="8" width="20" height="16" rx="3" class="soft-epi"/><rect x="52" y="8" width="18" height="16" rx="3" class="soft-sem"/><rect x="4" y="30" width="44" height="16" rx="3" class="soft-proc"/><rect x="52" y="30" width="18" height="16" rx="3" class="soft-fail"/>',
+  };
+  const tagName = { sim: "실험", anim: "애니메이션", viz: "시각화", game: "게임" };
+  document.getElementById("chgrid").innerHTML = AM.CHAPTERS.map((c) => `
+    <a class="ch-card" href="chapters/${c.slug}.html">
+      <svg class="ico" viewBox="0 0 74 54" aria-hidden="true">${ICON[c.slug] || ""}</svg>
+      <span class="num">CHAPTER ${c.num}</span>
+      <h3>${c.title}</h3>
+      <p>${c.desc}</p>
+      <span class="tags">${c.tags.map((t) => `<span>${tagName[t] || t}</span>`).join("")}</span>
+    </a>`).join("");
+})();
+</script>
+</body>
+</html>

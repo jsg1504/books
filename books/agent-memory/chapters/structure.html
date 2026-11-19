@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>구조화된 기억: 그래프·시간·계층 · RecallBook</title>
+<meta name="description" content="지식 그래프로 여러 단계를 잇는 기억, 유효 기간이 있는 사실, 운영체제처럼 기억을 컨텍스트 안팎으로 페이징하는 계층형 기억을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #kg-add { display: flex; flex-wrap: wrap; gap: 6px; }
+  #kg-add input { flex: 1 1 80px; }
+  #tm-q { display: grid; gap: 6px; }
+  #tm-q .mem { font-size: 13.5px; }
+</style>
+</head>
+<body data-root="../" data-chapter="structure">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>구조화된 기억: 그래프·시간·계층</h1>
+    <p class="lead">문장 조각을 벡터로 저장하는 방식은 단순하고 강력하지만 세 가지에 약하다. 여러 사실을 이어야 답이 나오는 질문, 시간이 지나며 바뀐 사실, 그리고 어떤 기억을 언제 컨텍스트에 올려 둘지에 대한 관리다. 이 장에서는 각각에 대한 구조적 해법인 지식 그래프, 유효 기간이 있는 사실, 계층형 기억을 다룬다.</p>
+    <ul class="objectives">
+      <li>여러 단계를 거쳐야 하는 질문에서 벡터 검색이 실패하고 그래프 탐색이 성공하는 이유를 설명할 수 있다.</li>
+      <li>사실을 덮어쓰는 저장과 유효 기간을 보존하는 저장의 차이를 시간 질문으로 보일 수 있다.</li>
+      <li>핵심 기억, 대화 기억, 보관 기억으로 나누는 계층형 기억과 운영체제 메모리의 유사점을 설명할 수 있다.</li>
+      <li>상주 기억의 크기와 교체 정책이 적중률과 추가 도구 호출에 미치는 영향을 예측할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="graph">
+    <h2>지식 그래프: 사실을 잇기</h2>
+    <p>“지수의 팀장은 어느 도시에 살아?”에 답하려면 세 사실이 필요하다. 지수는 결제팀 소속이다. 결제팀의 팀장은 박서연이다. 박서연은 대전에 산다. 벡터 검색은 질문과 비슷한 기억을 찾으므로 앞의 두 사실은 찾을 수 있다(“지수”, “팀장”이 겹친다). 하지만 세 번째 사실에는 질문의 단어가 하나도 없다. <span class="term">지식 그래프</span><span class="en">knowledge graph</span>는 사실을 (주어, 관계, 목적어) <span class="term">트리플</span><span class="en">triple</span>로 저장하고 간선을 따라 걸어가므로 이런 <b>다단계 질문</b>에 강하다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 220" role="img" aria-label="벡터 검색과 그래프 탐색의 비교">
+        <text x="20" y="22" class="t-b">벡터 검색: 질문과 비슷한 조각</text>
+        <g transform="translate(20,34)">
+          <rect width="330" height="30" rx="7" class="soft-sem"/><text x="12" y="20" class="t">지수는 결제팀 소속이다 <tspan class="t-mono">0.82</tspan></text>
+          <rect y="36" width="330" height="30" rx="7" class="soft-sem"/><text x="12" y="56" class="t">결제팀의 팀장은 박서연이다 <tspan class="t-mono">0.71</tspan></text>
+          <rect y="72" width="330" height="30" rx="7" class="f-surface"/><text x="12" y="92" class="t-dim">지수는 판교 사무실에 출근한다 <tspan class="t-mono">0.66</tspan></text>
+          <rect y="108" width="330" height="30" rx="7" fill="none" stroke="var(--fail)" stroke-dasharray="4 3"/><text x="12" y="128" class="t" style="fill:var(--fail)">박서연은 대전에 산다 — 0.18로 순위 밖</text>
+        </g>
+        <text x="400" y="22" class="t-b">그래프 탐색: 간선을 따라 3단계</text>
+        <g transform="translate(400,40)">
+          <circle cx="30" cy="40" r="24" class="soft-user"/><text x="30" y="45" text-anchor="middle" class="t">지수</text>
+          <circle cx="140" cy="40" r="24" class="soft-epi"/><text x="140" y="45" text-anchor="middle" class="t">결제팀</text>
+          <circle cx="250" cy="40" r="24" class="soft-user"/><text x="250" y="45" text-anchor="middle" class="t">박서연</text>
+          <circle cx="250" cy="130" r="24" class="soft-sem"/><text x="250" y="135" text-anchor="middle" class="t">대전</text>
+          <path d="M54 40 H116 M164 40 H226 M250 64 V106" stroke="var(--accent-2)" stroke-width="2.5" fill="none"/>
+          <text x="85" y="32" text-anchor="middle" class="t-mono">소속</text><text x="195" y="32" text-anchor="middle" class="t-mono">팀장</text><text x="262" y="90" class="t-mono">거주</text>
+          <circle cx="30" cy="130" r="18" class="f-surface"/><text x="30" y="134" text-anchor="middle" class="t-dim">판교</text><path d="M30 64 V112" class="s-dash"/>
+        </g>
+        <text x="20" y="200" class="t-dim">그래프는 “누가 누구와 어떤 관계인가”를 명시적으로 저장한다. 대신 쓸 때 개체와 관계를 정확히 뽑아내야 하는 부담이 있다.</text>
+      </svg>
+      <figcaption><b>그림 7-1.</b> 같은 질문, 두 가지 검색. 실제 시스템은 둘을 섞어 쓴다. 벡터 검색으로 시작 개체를 찾고, 그래프에서 이웃을 넓혀 맥락을 모은다.</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-graph">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>지식 그래프 기억 — 질문을 따라 걷기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="kg-cv" style="touch-action:none;cursor:grab"></canvas></div>
+        <div class="sim-controls">
+          <div class="btns" id="kg-q" style="flex-direction:column;align-items:stretch">
+            <button class="btn" data-q="0">지수의 팀장은 어느 도시에 살아?</button>
+            <button class="btn" data-q="1">결제 API 이전에 참여한 사람은?</button>
+            <button class="btn" data-q="2">민호와 같은 팀의 팀장이 맡은 프로젝트는?</button>
+          </div>
+          <div class="pane" id="kg-ans" style="font-family:var(--font);font-size:13.5px;min-height:60px">질문을 고르세요.</div>
+          <div id="kg-add"><input type="text" id="kg-s" placeholder="주어" aria-label="주어"><input type="text" id="kg-r" placeholder="관계" aria-label="관계"><input type="text" id="kg-o" placeholder="목적어" aria-label="목적어"><button class="btn" id="kg-go">트리플 추가</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">노드 · 간선</span><span class="v" id="kg-o1">—</span></div>
+        <div class="stat"><span class="k">탐색 단계 (홉)</span><span class="v" id="kg-o2">—</span></div>
+        <div class="stat"><span class="k">벡터 top-3에 정답 경로가 다 있나</span><span class="v" id="kg-o3">—</span></div>
+      </div>
+      <div class="sim-note">노드를 끌어 배치를 바꿀 수 있다. 해볼 것: ① 세 질문의 경로를 차례로 보자. 홉이 늘수록 벡터 검색 top-3만으로는 경로를 다 갖추지 못한다. ② “박서연 / 거주 / 대전”을 “박서연 / 거주 / 세종”으로 추가하면? 같은 관계에 값이 둘이 되어 모순이 생긴다 — 다음 절의 시간 문제로 이어진다.</div>
+    </div>
+  </section>
+
+  <section id="time">
+    <h2>시간이 있는 사실</h2>
+    <p>“사는 곳: 서울”은 틀린 사실이 아니라 <b>예전에 참이던</b> 사실이다. 5장에서 UPDATE로 값을 바꿀 때 이전 값을 버리면 “부산 오기 전엔 어디 살았지?”에 답할 수 없다. 그래서 사실마다 <b>유효 기간</b>(valid_from, valid_to)을 두고, 바뀌면 이전 사실을 지우는 대신 기간을 닫는다. 더 나아가 <span class="term">이중 시간</span><span class="en">bi-temporal</span> 모델은 “그 사실이 참이었던 기간”과 “시스템이 그 사실을 알게 된 시점”을 따로 기록한다. 그러면 “3월 당시 우리가 알던 정보로는?” 같은 감사 질문에도 답할 수 있다.</p>
+
+    <div class="sim" id="sim-time">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>유효 기간이 있는 사실 — 덮어쓰기 vs 이력 보존</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="tm-mode"><button data-v="hist" class="on">유효 기간 보존</button><button data-v="over">덮어쓰기</button></div>
+        <div class="sim-view"><canvas id="tm-cv"></canvas></div>
+        <label class="ctrl"><span>지금 시점 <output id="tm-t-out"></output></span><input type="range" id="tm-t" min="0" max="35" step="1" value="35"></label>
+        <div id="tm-q"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">맞힌 질문</span><span class="v" id="tm-o1">—</span></div>
+        <div class="stat"><span class="k">저장된 레코드</span><span class="v" id="tm-o2">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 덮어쓰기 모드에서는 “현재” 질문만 맞히고 과거를 묻는 질문은 최신 값으로 틀리게 답한다. ② 지금 시점 슬라이더를 2025년으로 돌리면, 그 시점에 시스템이 알던 사실만으로 답한다 — 이중 시간 모델의 “그때 알던 것”이다.</div>
+    </div>
+  </section>
+
+  <section id="hier">
+    <h2>계층형 기억: 운영체제처럼</h2>
+    <p>MemGPT 연구는 컨텍스트 윈도우를 운영체제의 메인 메모리처럼, 외부 저장소를 디스크처럼 다루자고 제안했다. 이른바 <span class="term">가상 컨텍스트 관리</span><span class="en">virtual context management</span>다. 컨텍스트 안에는 항상 상주하는 작은 <span class="term">핵심 기억</span><span class="en">core memory</span>(사용자 프로필, 에이전트 페르소나)이 있고, 에이전트는 도구 호출로 바깥의 <b>대화 기억</b>(지난 메시지 기록)과 <span class="term">보관 기억</span><span class="en">archival memory</span>을 검색하거나, 핵심 기억을 직접 고쳐 쓴다. 무엇을 안에 둘지 에이전트가 스스로 관리하는 셈이다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 240" role="img" aria-label="계층형 기억과 운영체제 메모리 계층의 비교">
+        <text x="20" y="22" class="t-b">운영체제</text><text x="420" y="22" class="t-b">에이전트 메모리</text>
+        <g transform="translate(20,34)">
+          <rect width="320" height="40" rx="8" class="soft-proc"/><text x="160" y="25" text-anchor="middle" class="t">레지스터 · CPU 캐시 (아주 작고 빠름)</text>
+          <rect x="30" y="50" width="260" height="40" rx="8" class="soft-work"/><text x="160" y="75" text-anchor="middle" class="t">메인 메모리 (RAM)</text>
+          <rect x="60" y="100" width="200" height="40" rx="8" class="f-surface"/><text x="160" y="125" text-anchor="middle" class="t">디스크 (크고 느림)</text>
+          <text x="160" y="164" text-anchor="middle" class="t-dim">페이지 폴트 → 디스크에서 불러옴</text>
+        </g>
+        <g transform="translate(420,34)">
+          <rect width="320" height="40" rx="8" class="soft-proc"/><text x="160" y="25" text-anchor="middle" class="t">핵심 기억 (컨텍스트 상주, 수백 토큰)</text>
+          <rect x="30" y="50" width="260" height="40" rx="8" class="soft-work"/><text x="160" y="75" text-anchor="middle" class="t">대화 버퍼 (최근 메시지)</text>
+          <rect x="60" y="100" width="200" height="40" rx="8" class="soft-sem"/><text x="160" y="118" text-anchor="middle" class="t">대화 기억 · 보관 기억</text><text x="160" y="133" text-anchor="middle" class="t-mono">검색 도구로 접근</text>
+          <text x="160" y="164" text-anchor="middle" class="t-dim">핵심 기억에 없음 → 검색 도구 호출 (추가 턴)</text>
+        </g>
+        <path d="M350 54 H410 M350 104 H410 M350 154 H410" class="s-dash"/>
+        <text x="20" y="226" class="t-dim">차이: 운영체제는 하드웨어가 자동으로 페이징하지만, 에이전트는 모델이 도구 호출로 직접 결정한다. 잘못 판단하면 필요한 기억을 찾지 않고 지어낸다.</text>
+      </svg>
+      <figcaption><b>그림 7-2.</b> 메모리 계층의 비유. 위로 갈수록 작고 빠르고 비싸다. 좋은 설계는 자주 쓰는 것을 위에 둔다.</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-page">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>핵심 기억 페이징 — 적중과 페이지 폴트</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="pg-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="pg-pol"><button data-v="lru" class="on">LRU</button><button data-v="lfu">LFU</button><button data-v="fixed">고정</button></div>
+          <label class="ctrl"><span>핵심 기억 칸 수 <output id="pg-c-out"></output></span><input type="range" id="pg-c" min="1" max="12" step="1" value="4"></label>
+          <label class="ctrl"><span>참조 집중도 (Zipf s) <output id="pg-s-out"></output></span><input type="range" id="pg-s" min="0" max="2" step="0.1" value="1.1"></label>
+          <label class="ctrl"><span>주제 전환 (요청 30 이후) <output id="pg-z-out"></output></span><input type="range" id="pg-z" min="0" max="1" step="1" value="1"></label>
+          <div class="btns"><button class="btn primary" id="pg-play">재생 ▶</button><button class="btn" id="pg-seed">다른 순서 ↻</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">적중률</span><span class="v" id="pg-o1">—</span></div>
+        <div class="stat"><span class="k">추가 검색 호출</span><span class="v" id="pg-o2">—</span></div>
+        <div class="stat"><span class="k">평균 지연 (가정)</span><span class="v" id="pg-o3">—</span></div>
+        <div class="stat"><span class="k">상주 토큰 (칸당 150)</span><span class="v" id="pg-o4">—</span></div>
+      </div>
+      <div class="sim-note">가로는 60번의 요청, 세로는 핵심 기억의 칸이다. 색은 그 칸에 든 기억이고, 아래 점은 적중(초록)과 폴트(빨강)다. 폴트가 나면 검색 도구를 한 번 더 부르고(지연 +0.8초 가정) 그 기억을 칸에 올린다. 해볼 것: ① 집중도 s를 0으로 하면(모든 기억이 고르게 쓰임) 칸을 늘려도 적중률이 잘 오르지 않는다. ② 주제 전환을 켜면 30번째 요청부터 다른 기억들이 쓰인다. <b>고정</b> 정책(처음 칸을 바꾸지 않음)은 전환 뒤 무너지고, LRU는 빠르게 적응한다. ③ LFU는 과거의 인기에 붙들려 전환에 느리다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>지식 그래프는 사실을 트리플로 저장해 간선을 따라 걷는다. 다단계 질문에서 벡터 검색이 놓치는 마지막 고리를 찾는다.</li>
+      <li>사실은 덮어쓰지 말고 유효 기간을 닫는다. 이중 시간은 “참이던 때”와 “알게 된 때”를 따로 기록한다.</li>
+      <li>계층형 기억은 작은 상주 영역과 검색으로 접근하는 큰 저장소로 나뉜다. 운영체제의 메모리 계층과 같은 트레이드오프다.</li>
+      <li>상주 영역의 적중률은 칸 수, 참조의 집중도, 교체 정책에 달렸다. 폴트는 추가 도구 호출과 지연을 부른다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 다음 중 지식 그래프가 벡터 검색보다 특히 유리한 질문은?</p><div class="opts">
+        <button class="opt">“지난번 회의 분위기 어땠어?”</button>
+        <button class="opt" data-correct>“내 팀장의 팀장은 누구야?”</button>
+        <button class="opt">“비슷한 오류 본 적 있어?”</button>
+      </div><div class="quiz-exp">관계를 두 번 따라가야 하는 질문이다. 두 번째 고리의 사실은 질문 문장과 단어가 겹치지 않는다.</div></div>
+      <div class="quiz-q"><p>2. “부산 오기 전엔 어디 살았어?”에 답하려면 저장소에 무엇이 필요한가?</p><div class="opts">
+        <button class="opt">최신 주소 하나</button>
+        <button class="opt" data-correct>유효 기간이 닫힌 이전 주소 레코드</button>
+        <button class="opt">더 큰 임베딩 모델</button>
+      </div><div class="quiz-exp">덮어쓰기 저장은 이전 값을 잃는다. 기간을 닫아 이력으로 남겨야 과거 시점의 질문에 답할 수 있다.</div></div>
+      <div class="quiz-q"><p>3. MemGPT식 계층형 기억에서 “페이지 폴트”에 해당하는 것은?</p><div class="opts">
+        <button class="opt">컨텍스트 윈도우가 넘쳐 요청이 거절됨</button>
+        <button class="opt" data-correct>핵심 기억에 없는 정보가 필요해 검색 도구를 호출함</button>
+        <button class="opt">모델이 답을 거부함</button>
+      </div><div class="quiz-exp">필요한 기억이 상주 영역에 없으면 바깥 저장소에서 가져와야 한다. 그 비용이 추가 턴과 지연이다.</div></div>
+      <div class="quiz-q"><p>4. 대화 주제가 자주 바뀌는 비서 에이전트의 상주 기억 교체 정책으로 가장 적절한 것은?</p><div class="opts">
+        <button class="opt">처음에 채운 내용을 고정</button>
+        <button class="opt" data-correct>최근에 쓴 것을 남기는 LRU (중요 프로필은 고정 칸으로 별도)</button>
+        <button class="opt">가장 오래된 것부터 남기기</button>
+      </div><div class="quiz-exp">LRU는 주제 전환에 빠르게 적응한다. 이름이나 알레르기처럼 항상 필요한 것은 교체 대상에서 빼 고정 칸에 둔다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 지식 그래프 ---------------- */
+(function () {
+  const T = [
+    ["지수", "소속", "결제팀"], ["민호", "소속", "결제팀"], ["서연", "소속", "결제팀"], ["결제팀", "팀장", "박서연"],
+    ["박서연", "거주", "대전"], ["지수", "거주", "부산"], ["민호", "거주", "판교"], ["지수", "근무지", "판교"],
+    ["결제 API 이전", "담당팀", "결제팀"], ["지수", "참여", "결제 API 이전"], ["민호", "참여", "결제 API 이전"],
+    ["박서연", "책임", "결제 API 이전"], ["박서연", "책임", "환불 개선"], ["검색팀", "팀장", "이준"], ["이준", "거주", "서울"], ["하은", "소속", "검색팀"],
+  ];
+  const QS = [
+    { path: [["지수", "소속"], ["결제팀", "팀장"], ["박서연", "거주"]], ans: "대전", words: ["지수", "팀장", "도시", "거주"] },
+    { inbound: ["참여", "결제 API 이전"], ans: "지수, 민호", words: ["결제", "API", "이전", "참여"] },
+    { path: [["민호", "소속"], ["결제팀", "팀장"], ["박서연", "책임"]], ans: "결제 API 이전, 환불 개선", words: ["민호", "팀", "팀장", "프로젝트"] },
+  ];
+  const nodes = new Map(), edges = [];
+  const r = AM.rng(2);
+  function node(n) { if (!nodes.has(n)) nodes.set(n, { n, x: (r() - 0.5) * 300, y: (r() - 0.5) * 220, vx: 0, vy: 0 }); return nodes.get(n); }
+  function addT(s, rel, o) { edges.push({ a: node(s), b: node(o), rel }); }
+  T.forEach((t) => addT(...t));
+  let hl = { nodes: new Set(), edges: new Set() }, drag = null, settle = 260;
+  const cv = AM.canvas("kg-cv", { height: (w) => Math.min(420, w * 0.82), draw });
+  function physics() {
+    const N = [...nodes.values()];
+    for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
+      const a = N[i], b = N[j]; let dx = b.x - a.x, dy = b.y - a.y; const d2 = dx * dx + dy * dy + 0.01, f = 5200 / d2, d = Math.sqrt(d2);
+      dx /= d; dy /= d; a.vx -= dx * f; a.vy -= dy * f; b.vx += dx * f; b.vy += dy * f;
+    }
+    edges.forEach((e) => { const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx, dy) || 1, f = (d - 85) * 0.02; e.a.vx += (dx / d) * f; e.a.vy += (dy / d) * f; e.b.vx -= (dx / d) * f; e.b.vy -= (dy / d) * f; });
+    N.forEach((n) => { if (n === drag) return; n.vx -= n.x * 0.004; n.vy -= n.y * 0.004; n.x += n.vx * 0.5; n.y += n.vy * 0.5; n.vx *= 0.7; n.vy *= 0.7; });
+  }
+  for (let i = 0; i < 500; i++) physics();
+  let view = { s: 1, cx: 0, cy: 0 };
+  function draw(c, w, h) {
+    const N = [...nodes.values()];
+    const xs = N.map((n) => n.x), ys = N.map((n) => n.y);
+    const bw = Math.max(...xs) - Math.min(...xs) + 120, bh = Math.max(...ys) - Math.min(...ys) + 80;
+    view.s = Math.min(1.4, w / bw, h / bh); view.cx = w / 2 - ((Math.max(...xs) + Math.min(...xs)) / 2) * view.s; view.cy = h / 2 - ((Math.max(...ys) + Math.min(...ys)) / 2) * view.s;
+    const P = (n) => [view.cx + n.x * view.s, view.cy + n.y * view.s];
+    edges.forEach((e, i) => {
+      const [x1, y1] = P(e.a), [x2, y2] = P(e.b), on = hl.edges.has(i);
+      c.strokeStyle = on ? AM.col("accent-2") : AM.col("border"); c.lineWidth = on ? 3 : 1.4;
+      c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+      const ang = Math.atan2(y2 - y1, x2 - x1), ex = x2 - Math.cos(ang) * 16, ey = y2 - Math.sin(ang) * 16;
+      c.fillStyle = on ? AM.col("accent-2") : AM.col("text-faint");
+      c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex - Math.cos(ang - 0.4) * 8, ey - Math.sin(ang - 0.4) * 8); c.lineTo(ex - Math.cos(ang + 0.4) * 8, ey - Math.sin(ang + 0.4) * 8); c.fill();
+      AM.text(c, e.rel, (x1 + x2) / 2, (y1 + y2) / 2 - 7, { size: 10.5, align: "center", color: on ? AM.col("accent-2") : AM.col("text-faint"), weight: on ? 700 : 400 });
+    });
+    N.forEach((n) => {
+      const [x, y] = P(n), on = hl.nodes.has(n.n);
+      const kind = /팀$/.test(n.n) ? "epi" : /이전|개선/.test(n.n) ? "proc" : /대전|부산|판교|서울|세종/.test(n.n) ? "sem" : "work";
+      c.fillStyle = on ? AM.col(kind) : AM.alpha(AM.col(kind), 0.22); c.strokeStyle = AM.col(kind); c.lineWidth = on ? 3 : 1.5;
+      c.beginPath(); c.arc(x, y, 14, 0, 7); c.fill(); c.stroke();
+      AM.text(c, n.n, x, y + 24, { size: 12, align: "center", weight: on ? 700 : 500, color: AM.col("text") });
+    });
+    AM.set("kg-o1", nodes.size + " · " + edges.length);
+  }
+  const loop = AM.loop(AM.el("kg-cv"), () => { if (settle > 0 || drag) { physics(); settle--; cv.redraw(); } });
+  loop.start();
+  function vectorTop3(words) {
+    const sc = edges.map((e, i) => ({ i, s: words.filter((w) => (e.a.n + e.rel + e.b.n).includes(w)).length }));
+    return sc.sort((a, b) => b.s - a.s).slice(0, 3).map((o) => o.i);
+  }
+  AM.el("kg-q").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    AM.$$("#kg-q button").forEach((x) => x.classList.toggle("primary", x === b));
+    const q = QS[+b.dataset.q];
+    hl = { nodes: new Set(), edges: new Set() };
+    const steps = [];
+    let hops = 0;
+    if (q.path) {
+      q.path.forEach(([s, rel]) => {
+        const es = edges.map((e, i) => [e, i]).filter(([e]) => e.a.n === s && e.rel === rel);
+        es.forEach(([e, i]) => { steps.push([i, e]); });
+      });
+      hops = q.path.length;
+    } else {
+      edges.forEach((e, i) => { if (e.rel === q.inbound[0] && e.b.n === q.inbound[1]) steps.push([i, e]); });
+      hops = 1;
+    }
+    AM.el("kg-ans").innerHTML = "탐색 중…";
+    steps.forEach(([i, e], k) => setTimeout(() => {
+      hl.edges.add(i); hl.nodes.add(e.a.n); hl.nodes.add(e.b.n); cv.redraw();
+      if (k === steps.length - 1) {
+        const ans = q.path ? steps.filter(([, e]) => e.a.n === q.path[q.path.length - 1][0] && e.rel === q.path[q.path.length - 1][1]).map(([, e]) => e.b.n).join(", ") : steps.map(([, e]) => e.a.n).join(", ");
+        AM.el("kg-ans").innerHTML = steps.map(([, e]) => `${AM.esc(e.a.n)} —${AM.esc(e.rel)}→ ${AM.esc(e.b.n)}`).join("<br>") + `<br><b>답: ${AM.esc(ans)}</b>`;
+      }
+    }, 450 * k));
+    const top = vectorTop3(q.words), need = steps.map(([i]) => i);
+    const all = need.every((i) => top.includes(i));
+    AM.set("kg-o2", hops + "홉"); AM.set("kg-o3", all ? "예" : "아니요 — 고리 누락", all ? "good" : "bad");
+  });
+  AM.el("kg-go").addEventListener("click", () => {
+    const s = AM.el("kg-s").value.trim(), rel = AM.el("kg-r").value.trim(), o = AM.el("kg-o").value.trim();
+    if (!s || !rel || !o) { AM.el("kg-ans").textContent = "주어, 관계, 목적어를 모두 입력하세요."; return; }
+    addT(s, rel, o); for (let i = 0; i < 200; i++) physics(); settle = 40; cv.redraw();
+    const same = edges.filter((e) => e.a.n === s && e.rel === rel);
+    AM.el("kg-ans").innerHTML = `추가: ${AM.esc(s)} —${AM.esc(rel)}→ ${AM.esc(o)}` + (same.length > 1 && ["거주", "팀장", "소속"].includes(rel) ? `<br><b style="color:var(--fail)">주의: “${AM.esc(s)}”의 “${AM.esc(rel)}” 값이 ${same.length}개입니다. 하나만 참이라면 유효 기간으로 구분해야 합니다.</b>` : "");
+    ["kg-s", "kg-r", "kg-o"].forEach((id) => (AM.el(id).value = ""));
+  });
+  // 노드 끌기
+  const cvs = AM.el("kg-cv");
+  const pick = (e) => { const rc = cvs.getBoundingClientRect(); const x = (e.clientX - rc.left - view.cx) / view.s, y = (e.clientY - rc.top - view.cy) / view.s; let best = null, bd = 400 / (view.s * view.s); nodes.forEach((n) => { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n; } }); return { best, x, y }; };
+  cvs.addEventListener("pointerdown", (e) => { const p = pick(e); if (p.best) { drag = p.best; cvs.setPointerCapture(e.pointerId); } });
+  cvs.addEventListener("pointermove", (e) => { if (!drag) return; const rc = cvs.getBoundingClientRect(); drag.x = (e.clientX - rc.left - view.cx) / view.s; drag.y = (e.clientY - rc.top - view.cy) / view.s; });
+  const end = () => { if (drag) { drag = null; settle = 60; } };
+  cvs.addEventListener("pointerup", end); cvs.addEventListener("pointercancel", end);
+})();
+
+/* ---------------- 2. 시간이 있는 사실 ---------------- */
+(function () {
+  // 월 인덱스: 0 = 2024-01 ... 35 = 2026-12
+  const mlab = (m) => `${2024 + Math.floor(m / 12)}.${String((m % 12) + 1).padStart(2, "0")}`;
+  const F = [
+    { attr: "사는 곳", vals: [["서울 마포", -99, 28], ["부산", 28, 99]] },
+    { attr: "직장", vals: [["A사", -99, 14], ["B사", 14, 99]] },
+    { attr: "팀장", vals: [["김도윤", -99, 14], ["박서연", 14, 25], ["이준", 25, 99]] },
+    { attr: "선호 언어", vals: [["Python", -99, 27], ["Go", 27, 99]] },
+  ];
+  const COLS = ["work", "epi", "sem", "proc"];
+  const mode = AM.seg("tm-mode", () => cv.redraw());
+  const cv = AM.canvas("tm-cv", { aspect: 0.36, draw });
+  // 시점 now에 시스템이 아는 값 (알게 된 시점 = valid_from 이후)
+  function known(f, now, at) {
+    const vs = f.vals.filter((v) => v[1] <= now);
+    if (mode() === "over") return vs.length ? vs[vs.length - 1][0] : "—";
+    const v = vs.find((v) => v[1] <= at && at < v[2]);
+    return v ? v[0] : "—";
+  }
+  const truth = (f, at) => { const v = f.vals.find((v) => v[1] <= at && at < v[2]); return v ? v[0] : "—"; };
+  function draw(c, w, h) {
+    const now = AM.val("tm-t"), l = 80, r = w - 12, cw = (r - l) / 36, rowH = (h - 30) / F.length;
+    F.forEach((f, j) => {
+      const y = 6 + j * rowH;
+      AM.text(c, f.attr, l - 8, y + rowH / 2, { size: 12, align: "right", color: AM.col("text") });
+      f.vals.forEach((v, k) => {
+        const a = Math.max(0, v[1]), b = Math.min(36, v[2]);
+        if (v[1] > now) return; // 아직 모름
+        const last = k === f.vals.filter((x) => x[1] <= now).length - 1;
+        const ghost = mode() === "over" && !last;
+        const bEnd = Math.min(b, now + 1);
+        c.fillStyle = ghost ? AM.alpha(AM.col("text-faint"), 0.15) : AM.alpha(AM.col(COLS[j]), 0.75);
+        c.fillRect(l + a * cw + 1, y + 4, (bEnd - a) * cw - 2, rowH - 8);
+        if (ghost) { c.strokeStyle = AM.col("fail"); c.beginPath(); c.moveTo(l + a * cw, y + rowH / 2); c.lineTo(l + bEnd * cw, y + rowH / 2); c.stroke(); }
+        AM.text(c, v[0], l + a * cw + 6, y + rowH / 2, { size: 11.5, weight: 600, color: ghost ? AM.col("text-faint") : "#fff" });
+      });
+    });
+    [0, 12, 24, 35].forEach((m) => AM.text(c, mlab(m), l + m * cw + cw / 2, h - 10, { size: 10, mono: true, align: "center", color: AM.col("text-faint") }));
+    const x = l + (now + 1) * cw;
+    AM.line(c, [[x, 0], [x, h - 22]], AM.col("accent-2"), 2);
+    AM.text(c, "지금", x - 4, h - 34, { size: 11, align: "right", weight: 700, color: AM.col("accent-2") });
+    // 질문
+    const QS = [
+      ["지금 사는 곳은?", F[0], now], ["1년 전 팀장은?", F[2], now - 12], ["B사 입사할 때 선호 언어는?", F[3], 14], ["부산 이사 전 주소는?", F[0], 27],
+    ];
+    let ok = 0, asked = 0;
+    AM.el("tm-q").innerHTML = QS.map(([q, f, at]) => {
+      if (at > now) return `<div class="mem"><span class="t">${AM.esc(q)} <small>(${mlab(at)} 기준)</small></span><span class="sc" style="min-width:90px">아직 미래</span><span>·</span></div>`;
+      asked++;
+      const a = known(f, now, at), t = truth(f, at);
+      const right = a === t && t !== "—"; if (right) ok++;
+      return `<div class="mem" style="--k:var(--${right ? "sem" : "fail"})"><span class="t">${AM.esc(q)} <small>(${at >= 0 ? mlab(at) : "2024년 이전"} 기준)</small></span><span class="sc" style="min-width:90px">${AM.esc(a)}</span><span>${right ? "✓" : "✗"}</span></div>`;
+    }).join("");
+    AM.set("tm-o1", ok + " / " + asked, ok === asked ? "good" : ok < asked / 2 ? "bad" : "warn");
+    const rec = F.reduce((s, f) => s + (mode() === "over" ? (f.vals.some((v) => v[1] <= now) ? 1 : 0) : f.vals.filter((v) => v[1] <= now).length), 0);
+    AM.set("tm-o2", rec + "개");
+  }
+  AM.wire(["tm-t"], cv.redraw, { "tm-t": mlab });
+})();
+
+/* ---------------- 3. 핵심 기억 페이징 ---------------- */
+(function () {
+  const N = 60, ITEMS = 16;
+  let seed = 3, playing = 0, shown = N;
+  const pol = AM.seg("pg-pol", () => { shown = N; cv.redraw(); });
+  const cv = AM.canvas("pg-cv", { aspect: 0.44, draw });
+  function seq() {
+    const s = AM.val("pg-s"), shift = AM.val("pg-z"), r = AM.rng(seed * 31);
+    const w = Array.from({ length: ITEMS / 2 }, (_, i) => 1 / Math.pow(i + 1, s)), Z = w.reduce((a, b) => a + b, 0);
+    return Array.from({ length: N }, (_, t) => {
+      let u = r() * Z, k = 0; while (u > w[k] && k < w.length - 1) { u -= w[k]; k++; }
+      return shift && t >= 30 ? k + ITEMS / 2 : k;
+    });
+  }
+  function run() {
+    const C = AM.val("pg-c"), p = pol(), S = seq();
+    let core = [], last = {}, freq = {};
+    const frames = [], hits = [];
+    S.forEach((it, t) => {
+      freq[it] = (freq[it] || 0) + 1;
+      let hit = core.includes(it);
+      if (!hit) {
+        if (core.length < C) core.push(it);
+        else if (p !== "fixed") {
+          let vi = 0;
+          if (p === "lru") core.forEach((x, i) => { if ((last[x] ?? -1) < (last[core[vi]] ?? -1)) vi = i; });
+          else core.forEach((x, i) => { if ((freq[x] || 0) < (freq[core[vi]] || 0)) vi = i; });
+          core[vi] = it;
+        }
+      }
+      last[it] = t;
+      hits.push(hit); frames.push(core.slice());
+    });
+    return { frames, hits, S, C };
+  }
+  function draw(c, w, h) {
+    const R = run(), l = 10, r = w - 10, cw = (r - l) / N, top = 8, rowH = Math.min(40, (h - 50) / R.C);
+    const hue = (k) => `hsl(${(k * 47) % 360} 62% ${AM.isDark() ? 60 : 52}%)`;
+    for (let t = 0; t < Math.min(shown, N); t++) {
+      R.frames[t].forEach((it, s) => { c.fillStyle = hue(it); c.globalAlpha = 0.75; c.fillRect(l + t * cw + 0.5, top + s * rowH + 1, cw - 1, rowH - 2); });
+      c.globalAlpha = 1;
+      c.fillStyle = R.hits[t] ? AM.col("sem") : AM.col("fail");
+      c.beginPath(); c.arc(l + t * cw + cw / 2, top + R.C * rowH + 12, Math.min(4, cw / 2.4), 0, 7); c.fill();
+    }
+    if (AM.val("pg-z")) { const x = l + 30 * cw; AM.line(c, [[x, top], [x, top + R.C * rowH + 20]], AM.col("text"), 1.5, [4, 3]); AM.text(c, "주제 전환", x + 4, top + R.C * rowH + 30, { size: 11, color: AM.col("text-dim") }); }
+    AM.text(c, "요청 →", r, h - 8, { size: 10.5, align: "right", color: AM.col("text-faint") });
+    const k = Math.min(shown, N), hit = R.hits.slice(0, k).filter(Boolean).length;
+    AM.set("pg-o1", AM.pct(hit / k), hit / k > 0.7 ? "good" : hit / k < 0.4 ? "bad" : "warn");
+    AM.set("pg-o2", k - hit + "회");
+    AM.set("pg-o3", (0.6 + (0.8 * (k - hit)) / k).toFixed(2) + "초");
+    AM.set("pg-o4", AM.fmt(R.C * 150));
+  }
+  AM.wire(["pg-c", "pg-s", "pg-z"], () => { shown = N; cv.redraw(); }, { "pg-s": (v) => v.toFixed(1), "pg-z": (v) => (v ? "켬" : "끔") });
+  AM.el("pg-seed").addEventListener("click", () => { seed++; shown = N; cv.redraw(); });
+  AM.el("pg-play").addEventListener("click", () => {
+    clearInterval(playing); shown = 0; cv.redraw();
+    playing = setInterval(() => { shown++; cv.redraw(); if (shown >= N) clearInterval(playing); }, 70);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>압축과 요약 · RecallBook</title>
+<meta name="description" content="요약을 거듭할수록 사라지고 왜곡되는 사실, 압축 시점의 트레이드오프, 예산 안에서 무엇을 남길지 고르는 법을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="compress">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>압축과 요약</h1>
+    <p class="lead">윈도우가 차면 무언가를 버려야 한다. 가장 흔한 방법은 지난 대화를 요약해 짧게 바꾸는 <span class="term">압축</span><span class="en">compaction</span>이다. 요약은 공간을 되찾아 주지만 손실이 있고, 거듭할수록 손실이 쌓인다. 이 장에서는 요약이 무엇을 잃는지, 언제 압축해야 하는지, 그리고 무엇을 요약에 맡기지 말아야 하는지를 다룬다.</p>
+    <ul class="objectives">
+      <li>요약을 반복할 때 사실의 생존 확률이 곱으로 줄어드는 이유와, 수치·이름 같은 세부가 특히 잘 사라지거나 왜곡되는 이유를 설명할 수 있다.</li>
+      <li>압축 임계와 요약 비율이 비용과 정보 보존에 미치는 영향을 예측할 수 있다.</li>
+      <li>롤링 요약, 계층 요약, 고정 메모의 구조를 비교할 수 있다.</li>
+      <li>제한된 예산 안에서 미래에 필요할 정보를 고르는 기준을 세울 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="rolling">
+    <h2>롤링 요약의 구조</h2>
+    <p>가장 단순한 압축은 <b>롤링 요약</b>이다. 컨텍스트에 “지금까지의 요약” 한 덩어리와 최근 턴 원문을 함께 두고, 원문이 넘치면 오래된 턴을 요약에 흡수시킨다. 새 요약은 <em>이전 요약 + 밀려난 턴</em>을 입력으로 다시 만들어진다. 즉 초반 대화의 사실은 압축이 일어날 때마다 다시 요약된다. 이것이 <span class="term">재귀 요약</span><span class="en">recursive summarization</span>이다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 250" role="img" aria-label="롤링 요약 구조">
+        <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+        <g transform="translate(20,20)">
+          <text x="0" y="12" class="t-b">압축 전</text>
+          <rect y="22" width="80" height="44" rx="6" class="soft-sem"/><text x="40" y="49" text-anchor="middle" class="t">요약 v1</text>
+          <rect x="84" y="22" width="60" height="44" rx="6" class="soft-epi"/><rect x="148" y="22" width="60" height="44" rx="6" class="soft-epi"/><rect x="212" y="22" width="60" height="44" rx="6" class="soft-epi"/>
+          <rect x="276" y="22" width="60" height="44" rx="6" class="soft-work"/><rect x="340" y="22" width="60" height="44" rx="6" class="soft-work"/><rect x="404" y="22" width="60" height="44" rx="6" class="soft-work"/><rect x="468" y="22" width="60" height="44" rx="6" class="soft-work"/>
+          <text x="178" y="84" text-anchor="middle" class="t-mono">밀려날 턴 1~3</text><text x="402" y="84" text-anchor="middle" class="t-mono">최근 턴 4~7 (원문 유지)</text>
+          <rect x="540" y="22" width="180" height="44" rx="6" fill="none" stroke="var(--fail)" stroke-dasharray="4 3"/><text x="630" y="49" text-anchor="middle" class="t" style="fill:var(--fail)">임계 초과!</text>
+        </g>
+        <path d="M110 112 C 110 140, 60 140, 60 160" class="s-acc" marker-end="url(#a3)"/>
+        <path d="M200 112 C 200 140, 70 140, 70 160" class="s-acc" marker-end="url(#a3)"/>
+        <text x="220" y="146" class="t-acc">요약 모델 호출: (요약 v1 + 턴 1~3) → 요약 v2</text>
+        <g transform="translate(20,160)">
+          <rect y="4" width="90" height="44" rx="6" class="soft-sem"/><text x="45" y="31" text-anchor="middle" class="t">요약 v2</text>
+          <rect x="94" y="4" width="60" height="44" rx="6" class="soft-work"/><rect x="158" y="4" width="60" height="44" rx="6" class="soft-work"/><rect x="222" y="4" width="60" height="44" rx="6" class="soft-work"/><rect x="286" y="4" width="60" height="44" rx="6" class="soft-work"/>
+          <rect x="350" y="4" width="370" height="44" rx="6" fill="none" stroke="var(--text-faint)" stroke-dasharray="5 4"/><text x="535" y="31" text-anchor="middle" class="t-dim">되찾은 공간</text>
+          <text x="0" y="72" class="t-dim">턴 1의 사실은 요약 v1에 한 번, v2에 또 한 번 요약되었다. 압축이 k번 일어나면 초반 사실은 k번 요약을 거친다.</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 3-1.</b> 롤링 요약. 압축할 때마다 이전 요약이 다시 요약의 입력이 된다. 요약 한 번에 어떤 사실이 살아남을 확률이 <var>p</var>라면 <var>k</var>번 뒤에는 대략 <var>p</var><sup><var>k</var></sup>만 남는다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="telephone">
+    <h2>요약의 전화 게임</h2>
+    <p>요약 모델은 “중요해 보이는 것”을 남긴다. 목표나 사람 이름처럼 두드러지는 사실은 잘 살아남지만, 브랜치 이름, 숫자 한도, 빌드 명령 같은 세부는 쉽게 빠진다. 더 나쁜 경우는 <b>왜곡</b>이다. “6월 30일”이 “6월 3일”이 되거나 “200ms”가 “2초”가 되면, 차라리 잊은 것보다 해롭다. 틀린 기억을 자신 있게 쓰기 때문이다.</p>
+    <p>아래 실험에서 사실마다 <b>두드러짐</b>(salience)이 정해져 있다. 한 번 요약할 때 생존 확률은 <var>p</var> = <var>s</var> + (1 − <var>s</var>)·<var>c</var>다. <var>s</var>는 두드러짐, <var>c</var>는 요약 비율(원문 대비 요약 길이)이다. 살아남은 사실도 일정 확률로 왜곡된다.</p>
+
+    <div class="sim" id="sim-tele">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>재귀 요약 — 몇 번의 요약 뒤에 무엇이 남는가</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="te-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>요약 비율 c <output id="te-c-out"></output></span><input type="range" id="te-c" min="0.02" max="0.8" step="0.02" value="0.15"></label>
+          <label class="ctrl"><span>요약 횟수 k <output id="te-k-out"></output></span><input type="range" id="te-k" min="1" max="12" step="1" value="6"></label>
+          <label class="ctrl"><span>왜곡 확률 (회당) <output id="te-e-out"></output></span><input type="range" id="te-e" min="0" max="0.15" step="0.01" value="0.04"></label>
+          <label class="check"><input type="checkbox" id="te-pin"> 고정 메모 사용 (★ 표시 사실은 요약하지 않음)</label>
+          <div class="btns"><button class="btn primary" id="te-run">다시 실행 ↻</button><button class="btn" id="te-anim">한 회씩 재생 ▶</button></div>
+          <div class="legend"><span><i style="background:var(--sem)"></i>보존</span><span><i style="background:var(--epi)"></i>왜곡</span><span><i style="background:var(--fail)"></i>사라짐</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">살아남은 사실 (이번 실행)</span><span class="v" id="te-o1">—</span></div>
+        <div class="stat"><span class="k">왜곡된 사실</span><span class="v" id="te-o2">—</span></div>
+        <div class="stat"><span class="k">기대 생존 수 Σp<sup>k</sup></span><span class="v" id="te-o3">—</span></div>
+        <div class="stat"><span class="k">요약 길이</span><span class="v" id="te-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 요약 비율을 0.15에 두고 k를 1 → 12로 올리면 아래쪽(두드러짐이 낮은) 사실부터 차례로 사라진다. ② 오른쪽 막대는 기대 생존 확률 <var>p</var><sup><var>k</var></sup>다. 막대가 같아도 실행마다 결과가 다르다. ③ <b>고정 메모</b>를 켜면 ★ 사실은 요약을 거치지 않고 원문으로 유지된다 — 중요한 제약과 결정은 요약에 맡기지 말고 따로 적어 두라는 교훈이다.</div>
+    </div>
+  </section>
+
+  <section id="when">
+    <h2>언제 압축할 것인가</h2>
+    <p>압축 임계 θ(윈도우의 몇 %가 차면 압축할지)는 두 가지를 맞바꾼다. θ가 낮으면 압축이 잦아 요약을 많이 거치므로 정보가 더 많이 사라진다. θ가 높으면 압축은 드물지만 매 턴 긴 입력을 보내므로 비용이 커지고, 2장에서 본 어텐션 희석도 심해진다. 요약 자체도 모델 호출이라 비용이 든다.</p>
+
+    <div class="sim" id="sim-when">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>압축 임계의 트레이드오프 — 200턴 세션</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="wh-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>압축 임계 θ <output id="wh-t-out"></output></span><input type="range" id="wh-t" min="0.3" max="0.98" step="0.01" value="0.8"></label>
+          <label class="ctrl"><span>요약 비율 <output id="wh-r-out"></output></span><input type="range" id="wh-r" min="0.03" max="0.5" step="0.01" value="0.1"></label>
+          <label class="ctrl"><span>턴당 증가 토큰 <output id="wh-m-out"></output></span><input type="range" id="wh-m" min="500" max="8000" step="100" value="2500"></label>
+          <label class="ctrl"><span>윈도우 <output id="wh-w-out"></output></span><input type="range" id="wh-w" min="32000" max="400000" step="8000" value="128000"></label>
+          <div class="legend"><span><i style="background:var(--work)"></i>사용량</span><span><i style="background:var(--accent-2)"></i>비용</span><span><i style="background:var(--sem)"></i>보존율</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">압축 횟수</span><span class="v" id="wh-o1">—</span></div>
+        <div class="stat"><span class="k">총 처리 토큰 (요약 포함)</span><span class="v" id="wh-o2">—</span></div>
+        <div class="stat"><span class="k">평균 사실 보존율</span><span class="v" id="wh-o3">—</span></div>
+        <div class="stat"><span class="k">평균 입력 길이</span><span class="v" id="wh-o4">—</span></div>
+      </div>
+      <div class="sim-note">위: 턴별 컨텍스트 사용량(톱니 모양). 아래: θ를 0.3~0.98로 바꿨을 때의 총 비용(분홍, 최댓값 기준)과 세션 끝의 평균 사실 보존율(초록). 점은 현재 θ다. 해볼 것: ① 요약 비율을 올리면 한 번의 압축으로 되찾는 공간이 줄어 압축이 잦아진다. ② 사실 보존율 모델은 요약 비율이 낮을수록 요약 한 번의 생존율이 낮다고 가정한다(<var>p</var> = 1 − 0.45(1 − 비율)<sup>3</sup>).</div>
+    </div>
+  </section>
+
+  <section id="hier">
+    <h2>계층 요약과 고정 메모</h2>
+    <p>재귀 요약의 손실을 줄이는 방법은 두 가지다. 첫째, <span class="term">계층 요약</span><span class="en">hierarchical summary</span>은 원본을 버리지 않고 외부 저장소에 둔 채, 세션 요약 → 일 단위 요약 → 주 단위 요약처럼 해상도가 다른 요약을 쌓는다. 상위 요약이 놓친 세부는 필요할 때 하위 요약이나 원문을 검색해 되찾는다. 둘째, <b>고정 메모</b>는 목표, 제약, 결정, 할 일처럼 잃으면 안 되는 것을 요약과 별도로 구조화해 두는 것이다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 260" role="img" aria-label="계층 요약 트리">
+        <rect x="300" y="12" width="160" height="40" rx="8" class="soft-sem"/><text x="380" y="37" text-anchor="middle" class="t-b">주간 요약</text>
+        <path d="M340 52 V70 H160 V86 M380 52 V86 M420 52 V70 H600 V86" class="s-line"/>
+        <g class="t">
+          <rect x="90" y="86" width="140" height="36" rx="8" class="soft-sem"/><text x="160" y="109" text-anchor="middle">월요일 요약</text>
+          <rect x="310" y="86" width="140" height="36" rx="8" class="soft-sem"/><text x="380" y="109" text-anchor="middle">화요일 요약</text>
+          <rect x="530" y="86" width="140" height="36" rx="8" class="soft-sem"/><text x="600" y="109" text-anchor="middle">수요일 요약</text>
+        </g>
+        <path d="M130 122 V140 H70 V154 M160 122 V154 M190 122 V140 H250 V154" class="s-line"/>
+        <g>
+          <rect x="40" y="154" width="60" height="30" rx="6" class="soft-epi"/><rect x="130" y="154" width="60" height="30" rx="6" class="soft-epi"/><rect x="220" y="154" width="60" height="30" rx="6" class="soft-epi"/>
+          <text x="160" y="204" text-anchor="middle" class="t-mono">세션 원문 (외부 저장소)</text>
+        </g>
+        <path d="M380 122 V154 M600 122 V154" class="s-dash"/><text x="380" y="172" text-anchor="middle" class="t-mono">…</text><text x="600" y="172" text-anchor="middle" class="t-mono">…</text>
+        <g transform="translate(560,186)"><rect width="190" height="66" rx="8" class="soft-proc"/><text x="12" y="20" class="t-b">고정 메모 (요약 안 함)</text><text x="12" y="38" class="t-mono">goal: 결제 모듈 이전</text><text x="12" y="54" class="t-mono">never: calc_v2 수정 금지</text></g>
+        <text x="20" y="240" class="t-dim">위로 갈수록 짧고 흐리다. 질문이 세부를 요구하면 아래 층으로 내려가 찾는다.</text>
+      </svg>
+      <figcaption><b>그림 3-2.</b> 계층 요약과 고정 메모. 원문이 사라지지 않으므로 손실은 “지금 컨텍스트에 없다”이지 “영영 없다”가 아니다.</figcaption>
+    </figure>
+    <p>무엇을 고정 메모로 남길지는 결국 판단의 문제다. 아래 게임에서 직접 골라 보자. 미래에 어떤 질문이 올지는 모른다는 점이 핵심이다.</p>
+
+    <div class="sim" id="sim-keep">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>400토큰 안에 무엇을 남길까</h3></div>
+      <div class="sim-body">
+        <div class="tiles" id="kp-items"></div>
+        <div><div class="budget" id="kp-bar"><i style="width:0"></i></div><div class="legend" style="margin-top:4px"><span id="kp-used">0 / 400 토큰</span></div></div>
+        <div class="btns"><button class="btn primary" id="kp-go">미래 질문 확인하기</button><button class="btn" id="kp-reset">다시 고르기</button></div>
+        <div class="pane" id="kp-out" style="font-family:var(--font);font-size:14px;min-height:46px">세션이 끝나 압축됩니다. 다음 세션으로 가져갈 항목을 고르세요(클릭).</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">답한 질문</span><span class="v" id="kp-o1">—</span></div>
+        <div class="stat"><span class="k">사용 토큰</span><span class="v" id="kp-o2">0</span></div>
+        <div class="stat"><span class="k">감점</span><span class="v" id="kp-o3">—</span></div>
+      </div>
+      <div class="sim-note">기준을 세워 보자: <b>다시 얻을 수 있는 것</b>(파일 내용, 전체 로그)은 위치만 남기면 된다. <b>다시 얻을 수 없는 것</b>(사용자의 결정, 시도했다 실패한 방법, 선호)은 짧게라도 남긴다. <b>남기면 안 되는 것</b>(비밀값)도 있다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>롤링 요약은 이전 요약을 다시 요약한다. 한 번의 생존 확률이 <var>p</var>면 <var>k</var>번 뒤에는 <var>p</var><sup><var>k</var></sup>.</li>
+      <li>요약은 두드러지지 않는 세부(숫자, 이름, 명령)부터 잃고, 때로 왜곡한다. 틀린 기억은 빠진 기억보다 해롭다.</li>
+      <li>압축 임계는 정보 손실(낮은 θ)과 비용·희석(높은 θ)을 맞바꾼다.</li>
+      <li>원문을 외부 저장소에 남기는 계층 요약과, 요약하지 않는 고정 메모가 손실을 줄인다. 다시 얻을 수 있는 것은 위치만, 다시 얻을 수 없는 것은 내용을 남긴다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 요약 한 번의 생존 확률이 0.8인 사실이 롤링 요약을 5번 거친 뒤 남아 있을 확률은?</p><div class="opts">
+        <button class="opt">80%</button>
+        <button class="opt" data-correct>약 33%</button>
+        <button class="opt">약 4%</button>
+      </div><div class="quiz-exp">0.8<sup>5</sup> ≈ 0.328.</div></div>
+      <div class="quiz-q"><p>2. 요약 과정에서 “마감 6월 30일”이 “마감 6월 3일”로 바뀌었다. 이것이 단순 누락보다 위험한 이유는?</p><div class="opts">
+        <button class="opt">토큰을 더 많이 쓰기 때문에</button>
+        <button class="opt" data-correct>에이전트가 틀린 정보를 확신을 갖고 사용하기 때문에</button>
+        <button class="opt">요약 모델이 더 비싸지기 때문에</button>
+      </div><div class="quiz-exp">빠진 정보는 다시 묻거나 찾을 계기가 되지만, 왜곡된 정보는 그럴듯해서 검증 없이 쓰인다.</div></div>
+      <div class="quiz-q"><p>3. 다음 세션에 가져갈 메모로 가장 적절하지 않은 것은?</p><div class="opts">
+        <button class="opt">“동기 호출로 바꾸는 방법은 타임아웃으로 실패했다”</button>
+        <button class="opt">“환불 로직은 이번 범위에서 제외하기로 했다”</button>
+        <button class="opt" data-correct>“payment.py 파일 전체 내용”</button>
+      </div><div class="quiz-exp">파일은 저장소에서 다시 읽을 수 있다. 메모에는 경로와 핵심 변경점만 남기면 된다. 시도와 결정은 다시 얻을 수 없다.</div></div>
+      <div class="quiz-q"><p>4. 압축 임계 θ를 0.95로 높였을 때 일어나지 않는 일은?</p><div class="opts">
+        <button class="opt">압축 횟수가 줄어든다</button>
+        <button class="opt">평균 입력 길이가 늘어 비용이 커진다</button>
+        <button class="opt" data-correct>요약을 거치는 횟수가 늘어 초반 사실이 더 빨리 사라진다</button>
+      </div><div class="quiz-exp">θ가 높으면 압축이 드물어 요약을 덜 거친다. 대신 긴 입력의 비용과 희석을 감수한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 재귀 요약 ---------------- */
+(function () {
+  const F = [
+    ["목표: 결제 모듈 리팩터링", 0.95, null, true], ["사용자 이름: 지수", 0.9, null, false],
+    ["DB 비밀번호는 환경 변수로만", 0.7, null, true], ["마감 6월 30일", 0.6, "마감 6월 3일", true],
+    ["테스트는 pytest", 0.55, "테스트는 unittest", false], ["calc_v2는 수정 금지", 0.5, "calc_v1은 수정 금지", true],
+    ["응답 한도 200ms", 0.45, "응답 한도 2초", false], ["캐시 도입은 이미 실패", 0.4, null, false],
+    ["로그 포맷 JSON", 0.35, null, false], ["리뷰어: 박서연", 0.3, "리뷰어: 박서현", false],
+    ["빌드 명령 make ci", 0.3, "빌드 명령 make all", false], ["브랜치 feat/pay-v3", 0.25, "브랜치 feat/pay-v2", false],
+  ];
+  let seed = 1, shown = 99, timer = 0;
+  const cv = AM.canvas("te-cv", { aspect: 0.78, draw });
+  function run() {
+    const c = AM.val("te-c"), k = AM.val("te-k"), e = AM.val("te-e"), pin = AM.el("te-pin").checked;
+    const r = AM.rng(seed * 977);
+    return F.map(([s, sal, alt, star]) => {
+      const p = sal + (1 - sal) * c;
+      const row = []; let st = 1; // 1 보존, 2 왜곡, 3 사라짐
+      for (let i = 0; i < k; i++) {
+        if (pin && star) { row.push(1); continue; }
+        if (st === 3) { row.push(3); continue; }
+        if (r() > p) st = 3; else if (alt && st === 1 && r() < e) st = 2;
+        row.push(st);
+      }
+      return { s, alt, star, p: pin && star ? 1 : p, row, final: row[k - 1] };
+    });
+  }
+  function draw(ctx, w, h) {
+    const R = run(), k = AM.val("te-k");
+    const l = Math.min(200, w * 0.36), barW = Math.min(90, w * 0.16), r = w - barW - 18, top = 24, rowH = (h - top - 10) / F.length;
+    const cw = (r - l) / k;
+    for (let i = 0; i < k; i++) AM.text(ctx, "요약 " + (i + 1), l + i * cw + cw / 2, 10, { size: 10, align: "center", mono: true, color: AM.col("text-faint") });
+    AM.text(ctx, "기대 생존 pᵏ", r + 12 + barW / 2, 10, { size: 10, align: "center", color: AM.col("text-faint") });
+    R.forEach((f, j) => {
+      const y = top + j * rowH;
+      const lab = (f.star ? "★ " : "") + (f.final === 2 ? f.alt : f.s);
+      AM.text(ctx, lab, l - 8, y + rowH / 2, { size: 11.5, align: "right", color: f.final === 3 && shown >= k ? AM.col("text-faint") : f.final === 2 && shown >= k ? AM.col("epi") : AM.col("text") });
+      f.row.forEach((v, i) => {
+        if (i >= shown) return;
+        ctx.fillStyle = v === 1 ? AM.alpha(AM.col("sem"), 0.8) : v === 2 ? AM.col("epi") : AM.alpha(AM.col("fail"), 0.35);
+        ctx.fillRect(l + i * cw + 1, y + 2, cw - 2, rowH - 4);
+      });
+      const ev = Math.pow(f.p, k);
+      ctx.fillStyle = AM.col("surface-2"); ctx.fillRect(r + 12, y + 4, barW, rowH - 8);
+      ctx.fillStyle = AM.col("accent"); ctx.fillRect(r + 12, y + 4, barW * ev, rowH - 8);
+      AM.text(ctx, AM.pct(ev), r + 14, y + rowH / 2, { size: 10, mono: true, color: ev > 0.45 ? "#fff" : AM.col("text") });
+    });
+    const alive = R.filter((f) => f.final !== 3).length, bent = R.filter((f) => f.final === 2).length;
+    AM.set("te-o1", alive + " / 12", alive > 8 ? "good" : alive < 5 ? "bad" : "warn");
+    AM.set("te-o2", bent + "개", bent ? "bad" : "");
+    AM.set("te-o3", R.reduce((s, f) => s + Math.pow(f.p, k), 0).toFixed(1));
+    AM.set("te-o4", "원문의 " + AM.pct(AM.val("te-c")));
+  }
+  AM.wire(["te-c", "te-k", "te-e"], () => { shown = 99; cv.redraw(); }, { "te-c": (v) => AM.pct(v), "te-e": (v) => AM.pct(v) });
+  AM.el("te-pin").addEventListener("change", cv.redraw);
+  AM.el("te-run").addEventListener("click", () => { seed++; shown = 99; cv.redraw(); });
+  AM.el("te-anim").addEventListener("click", () => {
+    clearInterval(timer); seed++; shown = 0; cv.redraw();
+    timer = setInterval(() => { shown++; cv.redraw(); if (shown >= AM.val("te-k")) clearInterval(timer); }, 420);
+  });
+})();
+
+/* ---------------- 2. 압축 임계 ---------------- */
+(function () {
+  const TURNS = 200, BASE = 10000;
+  const cv = AM.canvas("wh-cv", { aspect: 0.78, draw });
+  function sim(th) {
+    const r = AM.val("wh-r"), m = AM.val("wh-m"), W = AM.val("wh-w");
+    const pk = 1 - 0.45 * Math.pow(1 - r, 3);
+    let used = BASE, cost = 0, comps = 0, sumIn = 0;
+    const usage = [], compAt = [];
+    const intro = []; // 각 턴의 사실이 겪은 압축 횟수
+    for (let t = 1; t <= TURNS; t++) {
+      used += m;
+      if (used > th * W) {
+        cost += used; // 요약 모델이 읽는 양
+        used = BASE + (used - BASE) * r; comps++; compAt.push(t);
+        for (let i = 0; i < intro.length; i++) intro[i]++;
+      }
+      intro.push(0);
+      usage.push(used); cost += used; sumIn += used;
+    }
+    const keep = intro.reduce((s, c) => s + Math.pow(pk, c), 0) / intro.length;
+    return { usage, compAt, comps, cost, keep, avg: sumIn / TURNS, W };
+  }
+  function draw(c, w, h) {
+    const th = AM.val("wh-t"), R = sim(th);
+    const midY = h * 0.48;
+    const A = AM.axes(c, { box: { l: 62, t: 12, r: w - 14, b: midY - 26 }, x: [0, TURNS], y: [0, R.W], xt: [0, 50, 100, 150, 200], yt: [0, R.W / 2, R.W], yf: AM.si, xl: "턴", yl: "사용량", ylOff: 44 });
+    c.fillStyle = AM.alpha(AM.col("work"), 0.25);
+    c.beginPath(); c.moveTo(A.X(0), A.Y(0)); R.usage.forEach((u, i) => c.lineTo(A.X(i + 1), A.Y(u))); c.lineTo(A.X(TURNS), A.Y(0)); c.fill();
+    AM.line(c, R.usage.map((u, i) => [A.X(i + 1), A.Y(u)]), AM.col("work"), 1.6);
+    AM.line(c, [[A.X(0), A.Y(th * R.W)], [A.X(TURNS), A.Y(th * R.W)]], AM.col("epi"), 1, [5, 4]);
+    // 아래: θ 스윕
+    const ths = []; for (let t = 0.3; t <= 0.981; t += 0.02) ths.push(t);
+    const S = ths.map((t) => ({ t, ...sim(t) }));
+    const cmax = Math.max(...S.map((s) => s.cost));
+    const B = AM.axes(c, { box: { l: 62, t: midY + 16, r: w - 14, b: h - 40 }, x: [0.3, 0.98], y: [0, 1], xt: [0.3, 0.5, 0.7, 0.9], xf: (v) => AM.pct(v), yt: [0, 0.5, 1], yf: (v) => AM.pct(v), xl: "압축 임계 θ", yl: "상대값", ylOff: 44 });
+    AM.line(c, S.map((s) => [B.X(s.t), B.Y(s.cost / cmax)]), AM.col("accent-2"), 2.2);
+    AM.line(c, S.map((s) => [B.X(s.t), B.Y(s.keep)]), AM.col("sem"), 2.2);
+    [[R.cost / cmax, "accent-2"], [R.keep, "sem"]].forEach(([v, col]) => { c.fillStyle = AM.col(col); c.beginPath(); c.arc(B.X(th), B.Y(v), 5, 0, 7); c.fill(); });
+    AM.set("wh-o1", R.comps + "회"); AM.set("wh-o2", AM.si(R.cost));
+    AM.set("wh-o3", AM.pct(R.keep), R.keep > 0.8 ? "good" : R.keep < 0.5 ? "bad" : "warn"); AM.set("wh-o4", AM.si(R.avg));
+  }
+  AM.wire(["wh-t", "wh-r", "wh-m", "wh-w"], cv.redraw, { "wh-t": (v) => AM.pct(v), "wh-r": (v) => AM.pct(v), "wh-m": AM.si, "wh-w": AM.si });
+})();
+
+/* ---------------- 3. 남길 것 고르기 ---------------- */
+(function () {
+  const IT = [
+    ["사용자 목표: 결제 모듈을 새 API로 이전", 60, "epi"], ["전체 테스트 로그 (4,200줄 중 실패 3건)", 400, "work"],
+    ["실패한 테스트 3개의 이름과 원인 한 줄씩", 90, "epi"], ["결정: 환불 로직은 이번 범위에서 제외", 40, "sem"],
+    ["payment.py 파일 전체 내용", 350, "work"], ["선호: 커밋 메시지는 영어로", 30, "proc"],
+    ["잡담: 점심 메뉴 이야기", 50, "epi"], ["다음 할 일: 웹훅 서명 검증 추가", 45, "epi"],
+    ["실패한 시도: 동기 호출로 바꾸기 (타임아웃)", 60, "proc"], ["결제사 API 키 값 sk-live-…", 30, "fail"],
+  ];
+  const Q = [["이번 작업의 목표가 뭐였지?", [0]], ["어떤 테스트가 실패하고 있었지?", [2, 1]], ["환불 로직도 고쳐야 해?", [3]], ["커밋 메시지는 어떤 언어로?", [5]], ["다음에 할 일은?", [7]], ["타임아웃 해결로 동기 호출은 해 봤어?", [8]]];
+  const BUD = 400;
+  let sel = new Set(), checked = false;
+  const used = () => [...sel].reduce((s, i) => s + IT[i][1], 0);
+  function render() {
+    AM.el("kp-items").innerHTML = IT.map((it, i) => {
+      let cls = sel.has(i) ? "sel" : "";
+      if (checked) { const need = Q.some((q) => q[1].includes(i)); cls = sel.has(i) ? (it[2] === "fail" ? "no" : need ? "ok" : "sel") : ""; }
+      return `<button class="tile ${cls}" data-i="${i}"><span class="cost">${it[1]} tok</span>${AM.esc(it[0])}</button>`;
+    }).join("");
+    const u = used();
+    AM.el("kp-bar").classList.toggle("over", u > BUD);
+    AM.el("kp-bar").firstElementChild.style.width = Math.min(100, (u / BUD) * 100) + "%";
+    AM.el("kp-used").textContent = `${u} / ${BUD} 토큰${u > BUD ? " — 예산 초과!" : ""}`;
+    AM.set("kp-o2", u, u > BUD ? "bad" : "");
+  }
+  AM.el("kp-items").addEventListener("click", (e) => {
+    const b = e.target.closest(".tile"); if (!b) return;
+    const i = +b.dataset.i; checked = false;
+    sel.has(i) ? sel.delete(i) : sel.add(i); render();
+  });
+  AM.el("kp-go").addEventListener("click", () => {
+    if (used() > BUD) { AM.el("kp-out").innerHTML = "<b>예산을 넘었습니다.</b> 몇 개를 빼 주세요."; return; }
+    checked = true; render();
+    let ok = 0;
+    const lines = Q.map(([q, need]) => { const hit = need.some((i) => sel.has(i)); if (hit) ok++; return `${hit ? "✓" : "✗"} ${q}`; });
+    const pen = sel.has(9);
+    if (sel.has(1) || sel.has(4)) lines.push("· 전체 로그나 파일 원문은 다시 읽을 수 있어서 위치만 남겨도 충분합니다.");
+    if (pen) lines.push("⚠ 비밀값(API 키)을 기억에 남겼습니다. 메모는 다른 세션과 사람에게 노출될 수 있습니다 — 감점.");
+    AM.el("kp-out").innerHTML = lines.map((l) => AM.esc(l)).join("<br>") + (ok === 6 && !pen ? "<br><b>완벽합니다! 최적 조합은 325토큰입니다.</b>" : "");
+    AM.set("kp-o1", ok + " / 6", ok === 6 ? "good" : ok < 4 ? "bad" : "warn");
+    AM.set("kp-o3", pen ? "−1 (비밀값)" : "없음", pen ? "bad" : "good");
+  });
+  AM.el("kp-reset").addEventListener("click", () => { sel = new Set(); checked = false; AM.el("kp-out").textContent = "세션이 끝나 압축됩니다. 다음 세션으로 가져갈 항목을 고르세요(클릭)."; AM.set("kp-o1", "—"); AM.set("kp-o3", "—"); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

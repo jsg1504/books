@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>왜 에이전트에게 기억이 필요한가 · RecallBook</title>
+<meta name="description" content="상태 없는 언어 모델, 매 턴 다시 보내는 대화의 비용, 기억이 사는 세 곳과 네 가지 종류를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #ch-input .ln { font-size: 12px; }
+  #ch-wrap { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { #ch-wrap { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
+  #ch-input { max-height: 360px; min-height: 200px; }
+  #sort-cards .tile { cursor: pointer; }
+</style>
+</head>
+<body data-root="../" data-chapter="why">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 01</div>
+    <h1>왜 에이전트에게 기억이 필요한가</h1>
+    <p class="lead">언어 모델에게 “어제 내가 뭐라고 했지?”라고 물으면 모델은 답할 수 없다. 모델은 호출과 호출 사이에 아무것도 저장하지 않기 때문이다. 우리가 “기억하는 챗봇”이라고 부르는 것은 모델 바깥의 프로그램이 매 턴 필요한 과거를 골라 입력에 다시 넣어 주는 시스템이다. 이 장에서는 그 사실을 실험으로 확인하고, 기억이 어디에 살 수 있으며 어떤 종류로 나뉘는지 지도를 그린다.</p>
+    <ul class="objectives">
+      <li>언어 모델이 상태 없음(stateless)이라는 말의 뜻과, 대화가 이어지는 것처럼 보이는 이유를 설명할 수 있다.</li>
+      <li>대화 전체를 매 턴 다시 보내는 방식의 누적 비용이 턴 수의 제곱으로 자라는 이유를 계산할 수 있다.</li>
+      <li>기억이 사는 세 곳(가중치, 컨텍스트, 외부 저장소)의 장단점을 비교할 수 있다.</li>
+      <li>작업·일화·의미·절차 기억을 구분하고 에이전트 설계의 예로 연결할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="stateless">
+    <h2>상태 없는 모델</h2>
+    <p>API로 모델을 부를 때 우리가 보내는 것은 <b>메시지의 목록</b>이다. 모델은 그 목록 전체를 읽고 다음에 올 메시지 하나를 생성한 뒤 잊는다. 다음 호출에서 모델이 이전 대화를 “기억”하는 것처럼 보이는 이유는 단 하나, 프로그램이 지난 메시지를 목록에 다시 넣어 보냈기 때문이다. 이 성질을 <span class="term">상태 없음</span><span class="en">stateless</span>이라고 한다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 270" role="img" aria-label="세 번의 독립된 모델 호출">
+        <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+        <g class="t-b"><text x="20" y="24">호출 1</text><text x="270" y="24">호출 2</text><text x="520" y="24">호출 3</text></g>
+        <g transform="translate(20,36)">
+          <rect width="220" height="120" rx="10" class="f-surface"/>
+          <rect x="12" y="12" width="196" height="22" rx="5" class="soft-user"/><text x="20" y="27" class="t-mono">user: 나는 지수야</text>
+          <text x="110" y="110" text-anchor="middle" class="t-dim">입력 토큰 ≈ 20</text>
+        </g>
+        <g transform="translate(270,36)">
+          <rect width="220" height="120" rx="10" class="f-surface"/>
+          <rect x="12" y="12" width="196" height="22" rx="5" class="soft-user"/><text x="20" y="27" class="t-mono">user: 나는 지수야</text>
+          <rect x="12" y="38" width="196" height="22" rx="5" class="f-elev"/><text x="20" y="53" class="t-mono">asst: 반가워요, 지수님</text>
+          <rect x="12" y="64" width="196" height="22" rx="5" class="soft-user"/><text x="20" y="79" class="t-mono">user: 견과류 알레르기 있어</text>
+          <text x="110" y="110" text-anchor="middle" class="t-dim">입력 토큰 ≈ 55</text>
+        </g>
+        <g transform="translate(520,36)">
+          <rect width="220" height="120" rx="10" class="f-surface"/>
+          <rect x="12" y="8" width="196" height="16" rx="4" class="soft-user"/><rect x="12" y="27" width="196" height="16" rx="4" class="f-elev"/>
+          <rect x="12" y="46" width="196" height="16" rx="4" class="soft-user"/><rect x="12" y="65" width="196" height="16" rx="4" class="f-elev"/>
+          <rect x="12" y="84" width="196" height="16" rx="4" class="soft-user"/><text x="20" y="96" class="t-mono">user: 내 이름 뭐였지?</text>
+          <text x="110" y="114" text-anchor="middle" class="t-dim">입력 토큰 ≈ 95</text>
+        </g>
+        <g transform="translate(0,170)">
+          <rect x="20" y="0" width="720" height="44" rx="10" class="f-acc-soft"/>
+          <text x="380" y="20" text-anchor="middle" class="t-b">하네스 (모델 바깥의 프로그램)</text>
+          <text x="380" y="36" text-anchor="middle" class="t-dim">지난 메시지를 보관했다가 다음 호출의 입력에 다시 붙인다 — 기억은 여기에 있다</text>
+        </g>
+        <path d="M130 158 V168" class="s-acc"/><path d="M380 158 V168" class="s-acc"/><path d="M630 158 V168" class="s-acc"/>
+        <path d="M200 218 C 260 250, 330 250, 380 218" class="s-acc flow" marker-end="url(#a1)"/>
+        <path d="M450 218 C 510 250, 580 250, 630 218" class="s-acc flow" marker-end="url(#a1)"/>
+        <text x="380" y="262" text-anchor="middle" class="t-acc">매 호출마다 목록 전체를 다시 보낸다</text>
+      </svg>
+      <figcaption><b>그림 1-1.</b> 세 번의 독립된 호출. 모델 쪽에는 아무것도 남지 않는다. 대화가 이어지는 것처럼 보이는 것은 하네스가 지난 메시지를 다시 넣어 주기 때문이고, 그래서 입력은 턴마다 길어진다.</figcaption>
+    </figure>
+    <p>그렇다면 하네스가 <em>무엇을</em> 다시 넣느냐가 곧 에이전트의 기억력이다. 아래 실험에서 같은 대화를 네 가지 방식으로 진행해 보자. 6~8번째 턴의 질문은 앞에서 들은 정보가 있어야 답할 수 있다.</p>
+
+    <div class="sim" id="sim-chat">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>기억 없는 대화 — 하네스가 다시 보내는 것</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="ch-mode"><button data-v="none" class="on">기억 없음</button><button data-v="full">전체 기록 재전송</button><button data-v="window">최근 2턴만</button><button data-v="notes">기억 메모</button></div>
+        <div id="ch-wrap">
+          <div class="chat" id="ch-chat" aria-live="polite"></div>
+          <div><div class="legend" style="margin-bottom:6px"><span><i style="background:var(--user)"></i>시스템</span><span><i style="background:var(--accent)"></i>이번 메시지</span><span><i style="background:var(--epi)"></i>지난 대화</span><span><i style="background:var(--sem)"></i>기억 메모</span></div>
+          <div class="pane" id="ch-input" aria-label="이번 턴에 모델이 받은 입력"></div></div>
+        </div>
+        <div class="btns"><button class="btn primary" id="ch-next">다음 턴 ▶</button><button class="btn" id="ch-all">끝까지</button><button class="btn" id="ch-reset">처음부터</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">턴</span><span class="v" id="ch-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">이번 턴 입력 토큰</span><span class="v" id="ch-o2">—</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="ch-o3">0</span></div>
+        <div class="stat"><span class="k">기억이 필요한 질문</span><span class="v" id="ch-o4">0 / 3</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>기억 없음</b>으로 끝까지 진행하면 6~8턴의 답이 모두 빗나간다. ② <b>전체 기록</b>은 모두 맞히지만 오른쪽 입력 창이 계속 길어진다. ③ <b>최근 2턴만</b>은 싸지만 2턴 전에 들은 알레르기를 잊는다. ④ <b>기억 메모</b>는 중요한 사실만 따로 적어 두어 짧은 입력으로도 모두 맞힌다 — 이 책 전체가 이 메모를 잘 만드는 방법에 관한 이야기다.</div>
+    </div>
+  </section>
+
+  <section id="cost">
+    <h2>다시 보내기의 비용</h2>
+    <p>가장 단순한 기억, 즉 대화 전체를 매 턴 다시 보내는 방식은 정확하지만 비싸다. 시스템 프롬프트가 <var>b</var> 토큰이고 한 턴(사용자 메시지와 응답)이 평균 <var>m</var> 토큰이라면, <var>t</var>번째 턴의 입력은 <var>b</var> + <var>t</var>·<var>m</var>이다. <var>n</var>턴 동안 보낸 입력을 모두 더하면 다음과 같다.</p>
+    <div class="formula"><div class="eq">Σ<sub><var>t</var>=1..<var>n</var></sub> (<var>b</var> + <var>t</var><var>m</var>) = <var>n</var><var>b</var> + <var>m</var> · <span class="frac"><span><var>n</var>(<var>n</var>+1)</span><span>2</span></span> ≈ <var>m</var><var>n</var>²/2</div>
+      <div class="where">턴 수가 두 배가 되면 누적 비용은 네 배가 된다. 게다가 언젠가는 한 턴의 입력 <var>b</var> + <var>n</var><var>m</var>이 컨텍스트 윈도우를 넘는다. 반대로 핵심만 담은 기억 메모나 검색으로 가져온 상위 <var>k</var>개 기억은 턴 수와 거의 무관한 크기를 유지한다.</div></div>
+
+    <div class="sim" id="sim-cost">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>재전송 비용 — 세 가지 기억 방식의 누적 토큰</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="co-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>대화 길이 (턴) <output id="co-n-out"></output></span><input type="range" id="co-n" min="10" max="400" step="10" value="120"></label>
+          <label class="ctrl"><span>턴당 토큰 m <output id="co-m-out"></output></span><input type="range" id="co-m" min="50" max="3000" step="50" value="600"></label>
+          <label class="ctrl"><span>시스템 프롬프트 b <output id="co-b-out"></output></span><input type="range" id="co-b" min="200" max="20000" step="200" value="3000"></label>
+          <label class="ctrl"><span>기억 메모 크기 <output id="co-note-out"></output></span><input type="range" id="co-note" min="200" max="8000" step="100" value="1500"></label>
+          <label class="ctrl"><span>검색 기억 k × 200토큰 <output id="co-k-out"></output></span><input type="range" id="co-k" min="1" max="20" step="1" value="5"></label>
+          <div class="seg" id="co-view"><button data-v="cum" class="on">누적</button><button data-v="per">턴당</button></div>
+          <div class="legend"><span><i style="background:var(--epi)"></i>전체 기록</span><span><i style="background:var(--sem)"></i>메모 + 최근 3턴</span><span><i style="background:var(--accent-2)"></i>검색 + 최근 3턴</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전체 기록 누적</span><span class="v" id="co-o1">—</span></div>
+        <div class="stat"><span class="k">메모 방식 누적</span><span class="v" id="co-o2">—</span></div>
+        <div class="stat"><span class="k">전체 ÷ 메모</span><span class="v" id="co-o3">—</span></div>
+        <div class="stat"><span class="k">200K 윈도우 초과 턴</span><span class="v" id="co-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 턴당 보기에서 전체 기록은 직선으로, 누적 보기에서는 포물선으로 자란다. ② 대화 길이를 두 배로 늘리고 “전체 ÷ 메모” 비율이 어떻게 변하는지 보자. ③ 턴이 짧으면(10~20턴) 전체 기록이 오히려 메모 방식과 비슷하거나 싸다 — 짧은 대화에 복잡한 기억 시스템은 필요 없다.</div>
+    </div>
+    <div class="callout"><b class="h">프롬프트 캐시가 바꾸는 것</b>많은 API는 지난 호출과 똑같은 앞부분을 다시 계산하지 않도록 캐시해 주고, 캐시된 입력 토큰은 훨씬 싸게 받는다. 그러면 전체 기록 방식의 <em>요금</em>은 크게 줄어든다. 하지만 컨텍스트 윈도우의 한도와, 긴 입력에서 모델이 정보를 덜 활용하는 문제(2장)는 그대로 남는다. 캐시는 비용 문제를 덜어 줄 뿐 기억 문제를 풀지는 않는다.</div>
+  </section>
+
+  <section id="where">
+    <h2>기억이 사는 세 곳</h2>
+    <p>에이전트가 무언가를 “안다”고 할 때 그 지식은 세 곳 중 하나에 있다. 모델의 <b>가중치</b>, 지금 입력된 <b>컨텍스트</b>, 그리고 모델 바깥의 <b>외부 저장소</b>다. 셋은 용량과 갱신 속도, 정확도가 크게 다르다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 262" role="img" aria-label="기억이 사는 세 곳">
+        <g transform="translate(20,20)">
+          <rect width="220" height="170" rx="12" class="soft-proc"/>
+          <text x="110" y="26" text-anchor="middle" class="t-b">가중치 (파라미터)</text>
+          <g transform="translate(40,44)" stroke="var(--proc)" stroke-opacity=".6">
+            <path d="M0 10L70 0M0 10L70 40M0 10L70 80M0 50L70 0M0 50L70 40M0 50L70 80M0 90L70 0M0 90L70 40M0 90L70 80M70 0L140 30M70 40L140 30M70 80L140 30M70 0L140 70M70 40L140 70M70 80L140 70"/>
+            <g fill="var(--proc)" stroke="none"><circle cx="0" cy="10" r="5"/><circle cx="0" cy="50" r="5"/><circle cx="0" cy="90" r="5"/><circle cx="70" cy="0" r="5"/><circle cx="70" cy="40" r="5"/><circle cx="70" cy="80" r="5"/><circle cx="140" cy="30" r="5"/><circle cx="140" cy="70" r="5"/></g>
+          </g>
+          <text x="110" y="160" text-anchor="middle" class="t-dim">학습 때 새겨진 일반 지식</text>
+        </g>
+        <g transform="translate(270,20)">
+          <rect width="220" height="170" rx="12" class="soft-work"/>
+          <text x="110" y="26" text-anchor="middle" class="t-b">컨텍스트 윈도우</text>
+          <g transform="translate(24,42)"><rect width="172" height="96" rx="6" class="f-elev"/>
+            <rect x="8" y="8" width="156" height="12" rx="3" class="c-user" opacity=".6"/><rect x="8" y="24" width="120" height="12" rx="3" class="c-sem" opacity=".6"/><rect x="8" y="40" width="156" height="12" rx="3" class="c-epi" opacity=".6"/><rect x="8" y="56" width="100" height="12" rx="3" class="c-work" opacity=".6"/><rect x="8" y="72" width="156" height="14" rx="3" fill="none" stroke="var(--text-faint)" stroke-dasharray="3 3"/></g>
+          <text x="110" y="160" text-anchor="middle" class="t-dim">지금 이 호출에서 보는 것</text>
+        </g>
+        <g transform="translate(520,20)">
+          <rect width="220" height="170" rx="12" class="soft-sem"/>
+          <text x="110" y="26" text-anchor="middle" class="t-b">외부 저장소</text>
+          <g transform="translate(60,44)"><ellipse cx="50" cy="10" rx="50" ry="12" class="f-elev"/><path d="M0 10V80a50 12 0 0 0 100 0V10" class="f-elev"/><path d="M0 34a50 12 0 0 0 100 0M0 58a50 12 0 0 0 100 0" fill="none" stroke="var(--border)"/></g>
+          <text x="110" y="160" text-anchor="middle" class="t-dim">파일 · DB · 벡터 색인 · 그래프</text>
+        </g>
+        <text x="515" y="254" text-anchor="middle" class="t-acc" style="fill:var(--accent-2)">외부 저장소의 기억은 검색되어 컨텍스트에 들어와야만 쓰인다</text>
+        <path d="M630 196 C 630 236, 400 236, 400 196" stroke="var(--accent-2)" stroke-width="2" fill="none" class="flow"/>
+      </svg>
+      <figcaption><b>그림 1-2.</b> 기억의 세 거처. 가중치는 크지만 고치기 어렵고, 컨텍스트는 정확하지만 좁고 비싸며, 외부 저장소는 무한히 크지만 찾아 와야 쓸 수 있다. 실용적인 에이전트 메모리는 대부분 “외부 저장소 → 컨텍스트”의 길을 설계하는 일이다.</figcaption>
+    </figure>
+    <table class="tbl">
+      <tr><th></th><th>가중치</th><th>컨텍스트</th><th>외부 저장소</th></tr>
+      <tr><td>용량</td><td>매우 큼 (학습 데이터 전체)</td><td>윈도우 크기로 제한</td><td>사실상 무제한</td></tr>
+      <tr><td>새 정보 반영</td><td>재학습·미세조정 필요 (느림)</td><td>즉시 (다음 호출)</td><td>즉시 (쓰기 한 번)</td></tr>
+      <tr><td>정확도</td><td>흐릿함, 출처 없음, 환각 위험</td><td>그대로 보임 (가장 정확)</td><td>검색이 맞으면 정확</td></tr>
+      <tr><td>비용</td><td>학습 비용, 호출 시 추가 비용 없음</td><td>토큰마다 매 호출 비용</td><td>저장·검색 비용 (작음)</td></tr>
+      <tr><td>개인화</td><td>사용자마다 따로 두기 어려움</td><td>쉬움</td><td>쉬움 (사용자별 저장소)</td></tr>
+      <tr><td>지우기</td><td>사실상 불가능</td><td>다음 호출에서 빼면 끝</td><td>가능하지만 사본을 모두 찾아야 함 (9장)</td></tr>
+    </table>
+  </section>
+
+  <section id="kinds">
+    <h2>기억의 네 가지 종류</h2>
+    <p>인지과학은 사람의 기억을 여러 종류로 나눈다. 언어 에이전트 연구에서도 이 분류를 빌려 와 설계를 설명하는 일이 많다(예: CoALA 프레임워크). 이 책도 같은 분류를 쓴다. 중요한 것은 이름이 아니라 <b>종류마다 쓰는 법, 찾는 법, 버리는 법이 다르다</b>는 점이다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 300" role="img" aria-label="기억의 분류">
+        <rect x="290" y="10" width="180" height="40" rx="10" class="f-acc-soft"/><text x="380" y="35" text-anchor="middle" class="t-b">에이전트의 기억</text>
+        <path d="M380 50 V70 H150 V90 M380 70 H560 V90" class="s-line"/>
+        <rect x="60" y="90" width="180" height="52" rx="10" class="soft-work"/><text x="150" y="112" text-anchor="middle" class="t-b">작업 기억</text><text x="150" y="130" text-anchor="middle" class="t-dim">단기 · 컨텍스트 윈도우</text>
+        <rect x="470" y="90" width="180" height="52" rx="10" class="f-surface"/><text x="560" y="112" text-anchor="middle" class="t-b">장기 기억</text><text x="560" y="130" text-anchor="middle" class="t-dim">외부 저장소 · 세션을 넘어 유지</text>
+        <path d="M560 142 V160 H380 V180 M560 160 H690 V180 M560 160 V180" class="s-line"/>
+        <rect x="300" y="180" width="160" height="62" rx="10" class="soft-epi"/><text x="380" y="202" text-anchor="middle" class="t-b">일화 기억</text><text x="380" y="220" text-anchor="middle" class="t-dim">무슨 일이 있었나</text><text x="380" y="234" text-anchor="middle" class="t-mono">대화 기록, 작업 로그</text>
+        <rect x="480" y="180" width="160" height="62" rx="10" class="soft-sem"/><text x="560" y="202" text-anchor="middle" class="t-b">의미 기억</text><text x="560" y="220" text-anchor="middle" class="t-dim">무엇이 참인가</text><text x="560" y="234" text-anchor="middle" class="t-mono">사용자 프로필, 사실</text>
+        <rect x="660" y="180" width="94" height="62" rx="10" class="soft-proc"/><text x="707" y="202" text-anchor="middle" class="t-b">절차 기억</text><text x="707" y="220" text-anchor="middle" class="t-dim">어떻게 하나</text><text x="707" y="234" text-anchor="middle" class="t-mono">지침, 스킬</text>
+        <path d="M60 270 H700" class="s-dash"/>
+        <text x="60" y="290" class="t-dim">일화 → 의미: 여러 사건에서 공통된 사실을 뽑아낸다 (5장 성찰) · 일화 → 절차: 실패와 성공에서 방법을 뽑아낸다 (8장)</text>
+        <path d="M150 142 V190 Q150 210 170 210 H290" class="s-dash"/><text x="160" y="200" class="t-mono">검색되면 들어온다</text>
+      </svg>
+      <figcaption><b>그림 1-3.</b> 이 책의 기억 지도. 장기 기억은 내용에 따라 셋으로 나뉘고, 무엇이든 쓰이려면 작업 기억(컨텍스트)으로 들어와야 한다. 일화 기억은 다른 두 종류의 원료가 된다.</figcaption>
+    </figure>
+    <p>분류가 손에 익었는지 게임으로 확인해 보자. 카드를 하나 고른 뒤 아래 상자 중 하나를 누른다. 경계가 애매한 카드도 있는데, 해설을 읽으며 왜 그쪽으로 분류하는지 생각해 보자.</p>
+
+    <div class="sim" id="sim-sort">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>기억 분류하기 — 이 정보는 어느 기억에 둘까?</h3></div>
+      <div class="sim-body">
+        <div class="tiles" id="sort-cards"></div>
+        <div class="bins" id="sort-bins">
+          <button data-k="work" style="--k:var(--work)">작업 기억</button>
+          <button data-k="epi" style="--k:var(--epi)">일화 기억</button>
+          <button data-k="sem" style="--k:var(--sem)">의미 기억</button>
+          <button data-k="proc" style="--k:var(--proc)">절차 기억</button>
+        </div>
+        <div class="pane" id="sort-exp" style="font-family:var(--font);font-size:14px;min-height:46px">카드를 먼저 고르세요.</div>
+        <div class="btns"><button class="btn" id="sort-reset">다시 하기</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">맞힘</span><span class="v" id="so-o1">0</span></div>
+        <div class="stat"><span class="k">틀림</span><span class="v" id="so-o2">0</span></div>
+        <div class="stat"><span class="k">남은 카드</span><span class="v" id="so-o3">12</span></div>
+      </div>
+      <div class="sim-note">기준: <b>지금 이 작업에서만</b> 쓰이면 작업 기억, <b>특정 시점의 사건</b>이면 일화 기억, <b>시간이 지나도 참인 사실</b>이면 의미 기억, <b>일하는 방법</b>이면 절차 기억.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>언어 모델은 상태가 없다. 기억은 모델 바깥의 하네스가 매 턴 입력을 구성하는 방식에 있다.</li>
+      <li>대화 전체를 다시 보내면 정확하지만 누적 입력이 <var>m</var><var>n</var>²/2로 자라고, 결국 컨텍스트 윈도우를 넘는다.</li>
+      <li>기억은 가중치, 컨텍스트, 외부 저장소에 산다. 실용적인 메모리 시스템은 외부 저장소에서 컨텍스트로 가는 길을 설계한다.</li>
+      <li>작업·일화·의미·절차 기억은 쓰고 찾고 버리는 방식이 다르다. 일화 기억은 의미·절차 기억의 원료다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 챗봇이 3턴 전에 들은 이름을 기억해 답했다. 그 이름은 어디에 있었을까?</p><div class="opts">
+        <button class="opt">모델 가중치가 대화 중에 갱신되어 저장되었다</button>
+        <button class="opt" data-correct>하네스가 이번 호출의 입력에 지난 메시지를 다시 넣었다</button>
+        <button class="opt">모델 서버가 사용자별 숨은 상태를 유지했다</button>
+      </div><div class="quiz-exp">추론 중에 가중치는 바뀌지 않는다. 모델이 “기억”하는 것은 이번 입력에 들어 있는 것뿐이다.</div></div>
+      <div class="quiz-q"><p>2. 턴당 500토큰, 시스템 프롬프트를 무시할 때, 대화 전체를 매 턴 다시 보내면 100턴 동안의 누적 입력은 대략?</p><div class="opts">
+        <button class="opt">5만 토큰</button>
+        <button class="opt" data-correct>250만 토큰</button>
+        <button class="opt">5억 토큰</button>
+      </div><div class="quiz-exp">500 × 100 × 101 / 2 ≈ 2,525,000. 턴 수가 늘면 제곱으로 자란다.</div></div>
+      <div class="quiz-q"><p>3. “사용자가 지난달 회의에서 예산 삭감을 반대했다”는 어떤 기억에 가장 가까운가?</p><div class="opts">
+        <button class="opt" data-correct>일화 기억</button>
+        <button class="opt">의미 기억</button>
+        <button class="opt">절차 기억</button>
+      </div><div class="quiz-exp">특정 시점에 일어난 사건이다. 이런 사건이 여러 번 쌓이면 “사용자는 비용 절감에 신중하다” 같은 의미 기억을 뽑아낼 수 있다.</div></div>
+      <div class="quiz-q"><p>4. 회사의 새 보안 규정을 에이전트에게 오늘부터 바로 적용하려면 어디에 두는 것이 가장 알맞을까?</p><div class="opts">
+        <button class="opt">미세조정으로 가중치에 학습시킨다</button>
+        <button class="opt" data-correct>외부 저장소(지침 파일)에 두고 매 세션 컨텍스트에 넣는다</button>
+        <button class="opt">한 번 말해 두면 모델이 알아서 기억한다</button>
+      </div><div class="quiz-exp">가중치는 갱신이 느리고 정확히 고치기 어렵다. 규칙은 정확해야 하고 바로 반영되어야 하므로 지침 파일 같은 절차 기억으로 두고 컨텍스트에 넣는 것이 맞다(8장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 기억 없는 대화 ---------------- */
+(function () {
+  const SYS = "당신은 친절한 비서입니다.";
+  const T = [
+    { u: "안녕! 나는 지수야. 판교에서 백엔드 개발자로 일해.", a: "반가워요, 지수님! 무엇을 도와드릴까요?", note: "이름: 지수 · 판교 근무 · 백엔드 개발자" },
+    { u: "참, 나 견과류 알레르기가 있어.", a: "알겠습니다. 음식 관련 추천 때 꼭 고려할게요.", note: "견과류 알레르기" },
+    { u: "다음 주 금요일에 팀 회식이 있어.", a: "즐거운 회식 되세요!", note: "다음 주 금요일 팀 회식" },
+    { u: "난 파이썬보다 Go를 더 좋아해.", a: "Go 좋죠. 간결하고 빠르니까요.", note: "선호 언어: Go" },
+    { u: "오늘 날씨 진짜 좋다.", a: "산책하기 좋은 날이네요!" },
+    { u: "회식 장소 추천해 줄래? 내가 조심해야 할 거 알지?", need: [0, 1, 2], ok: "판교역 근처 한식당은 어떨까요? 견과류가 들어가는 메뉴는 미리 빼 달라고 요청하세요.", bad: "어느 지역에서 찾으시나요? 그리고 조심해야 할 것이 무엇인지 알려 주시겠어요?" },
+    { u: "내 이름 기억해?", need: [0], ok: "물론이죠, 지수님.", bad: "죄송하지만 이름을 알려 주신 적이 없는 것 같아요." },
+    { u: "내가 좋아하는 언어로 HTTP 서버 예제 짜 줘.", need: [3], ok: "Go로 작성할게요: http.HandleFunc(\"/\", ...) ...", bad: "어떤 언어를 원하시나요? 파이썬으로 작성해 볼게요." },
+  ];
+  const mode = AM.seg("ch-mode", reset);
+  let turn = 0, cum = 0, right = 0;
+  const chat = AM.el("ch-chat"), inp = AM.el("ch-input");
+  function visible(t, m) {
+    // t번째 턴(0부터)에 모델이 보는 지난 턴 목록
+    if (m === "none" || m === "notes") return [];
+    if (m === "full") return T.slice(0, t).map((_, i) => i);
+    return T.slice(Math.max(0, t - 2), t).map((_, i) => Math.max(0, t - 2) + i);
+  }
+  function notes(t) { return T.slice(0, t).filter((x) => x.note).map((x) => x.note); }
+  function step() {
+    if (turn >= T.length) return;
+    const m = mode(), cur = T[turn], seen = visible(turn, m);
+    const known = new Set(seen);
+    if (m === "notes") T.slice(0, turn).forEach((x, i) => x.note && known.add(i));
+    let reply = cur.a, cls = "";
+    if (cur.need) {
+      const ok = cur.need.every((i) => known.has(i));
+      reply = ok ? cur.ok : cur.bad; cls = ok ? "hit" : "miss";
+      if (ok) right++;
+    }
+    const lines = [{ k: "user", s: "system: " + SYS }];
+    if (m === "notes" && notes(turn).length) lines.push({ k: "sem", s: "memory: " + notes(turn).join(" / ") });
+    seen.forEach((i) => { lines.push({ k: "epi", s: "user: " + T[i].u }); lines.push({ k: "epi", s: "asst: " + (T[i].need ? "(이전 답변)" : T[i].a) }); });
+    lines.push({ k: "accent", s: "user: " + cur.u });
+    const tok = lines.reduce((s, l) => s + AM.estTokens(l.s) + 4, 0);
+    cum += tok;
+    inp.innerHTML = lines.map((l) => `<div class="ln new" style="--k:var(--${l.k})">${AM.esc(l.s)}</div>`).join("");
+    chat.querySelectorAll(".new").forEach((e) => e.classList.remove("new"));
+    chat.insertAdjacentHTML("beforeend", `<div class="bub u new">${AM.esc(cur.u)}</div><div class="bub a new ${cls}">${AM.esc(reply)}<span class="meta">입력 ${tok} 토큰${cur.need ? (cls === "hit" ? " · 기억 활용 ✓" : " · 필요한 정보 없음 ✗") : ""}</span></div>`);
+    chat.scrollTop = chat.scrollHeight;
+    turn++;
+    AM.set("ch-o1", `${turn} / ${T.length}`);
+    AM.set("ch-o2", AM.fmt(tok));
+    AM.set("ch-o3", AM.fmt(cum));
+    const asked = T.slice(0, turn).filter((x) => x.need).length;
+    AM.set("ch-o4", `${right} / ${asked || 3}`, asked ? (right === asked ? "good" : "bad") : "");
+    AM.el("ch-next").disabled = turn >= T.length;
+  }
+  function reset() {
+    turn = 0; cum = 0; right = 0;
+    chat.innerHTML = `<div class="bub a">모드: <b>${{ none: "기억 없음", full: "전체 기록 재전송", window: "최근 2턴만", notes: "기억 메모" }[mode()]}</b>. ‘다음 턴’을 눌러 대화를 진행하세요.</div>`;
+    inp.innerHTML = '<div class="dim">이번 턴에 모델이 받은 입력이 여기에 표시됩니다.</div>';
+    AM.set("ch-o1", `0 / ${T.length}`); AM.set("ch-o2", "—"); AM.set("ch-o3", "0"); AM.set("ch-o4", "0 / 3", "");
+    AM.el("ch-next").disabled = false;
+  }
+  AM.el("ch-next").addEventListener("click", step);
+  AM.el("ch-all").addEventListener("click", () => { while (turn < T.length) step(); });
+  AM.el("ch-reset").addEventListener("click", reset);
+  reset();
+})();
+
+/* ---------------- 2. 재전송 비용 ---------------- */
+(function () {
+  const view = AM.seg("co-view", () => cv.redraw());
+  const cv = AM.canvas("co-cv", { aspect: 0.62, draw });
+  function series() {
+    const n = AM.val("co-n"), m = AM.val("co-m"), b = AM.val("co-b"), note = AM.val("co-note"), k = AM.val("co-k");
+    const S = { full: [], note: [], rag: [] };
+    let cf = 0, cn = 0, cr = 0, over = 0;
+    for (let t = 1; t <= n; t++) {
+      const recent = Math.min(t - 1, 3) * m + m;
+      const pf = b + t * m, pn = b + note + recent, pr = b + k * 200 + recent;
+      if (!over && pf > 200000) over = t;
+      cf += pf; cn += pn; cr += pr;
+      S.full.push([t, pf, cf]); S.note.push([t, pn, cn]); S.rag.push([t, pr, cr]);
+    }
+    return { S, cf, cn, cr, over, n };
+  }
+  function draw(c, w, h) {
+    const R = series(), cum = view() === "cum", idx = cum ? 2 : 1;
+    const ymax = Math.max(...R.S.full.map((p) => p[idx]), ...R.S.note.map((p) => p[idx])) * 1.08;
+    const yt = [0, ymax / 4, ymax / 2, (3 * ymax) / 4];
+    const A = AM.axes(c, { box: { l: 64, t: 14, r: w - 14, b: h - 44 }, x: [0, R.n], y: [0, ymax], xt: [0, R.n / 4, R.n / 2, (3 * R.n) / 4, R.n].map(Math.round), yt, yf: AM.si, xl: "턴", yl: cum ? "누적 입력 토큰" : "턴당 입력 토큰", ylOff: 52 });
+    [["full", "epi"], ["note", "sem"], ["rag", "accent-2"]].forEach(([k, col]) => {
+      AM.line(c, R.S[k].map((p) => [A.X(p[0]), A.Y(p[idx])]), AM.col(col), 2.5);
+    });
+    if (!cum && R.over) {
+      AM.line(c, [[A.X(0), A.Y(200000)], [A.X(R.n), A.Y(200000)]], AM.col("fail"), 1.2, [5, 4]);
+      AM.text(c, "200K 윈도우", A.X(R.n) - 4, A.Y(200000) - 9, { size: 11, align: "right", color: AM.col("fail") });
+    }
+    AM.set("co-o1", AM.si(R.cf)); AM.set("co-o2", AM.si(R.cn));
+    AM.set("co-o3", (R.cf / R.cn).toFixed(1) + "×", R.cf / R.cn > 3 ? "bad" : "");
+    AM.set("co-o4", R.over ? "턴 " + R.over : "넘지 않음", R.over ? "bad" : "good");
+  }
+  AM.wire(["co-n", "co-m", "co-b", "co-note", "co-k"], cv.redraw, { "co-m": AM.si, "co-b": AM.si, "co-note": AM.si, "co-k": (v) => v + "개 = " + AM.si(v * 200) });
+})();
+
+/* ---------------- 3. 기억 분류 게임 ---------------- */
+(function () {
+  const CARDS = [
+    ["지금 편집 중인 파일 300줄의 내용", "work", "이번 작업이 끝나면 필요 없는 정보다. 파일 자체는 디스크에 있으니 기억으로 따로 저장할 필요도 없다."],
+    ["사용자의 이름은 지수다", "sem", "시간이 지나도 참인 사실이다. 사용자 프로필에 둔다."],
+    ["어제 배포가 실패해서 롤백했다", "epi", "특정 시점의 사건이다. 나중에 ‘지난번 배포 때 무슨 일이 있었지?’에 답하는 데 쓰인다."],
+    ["PR을 올리기 전에는 항상 lint를 돌린다", "proc", "일하는 방법에 관한 규칙이다. 지침 파일에 둔다."],
+    ["방금 받은 웹 검색 결과 5개", "work", "현재 질문에 답하기 위한 재료다. 답이 끝나면 대부분 버려도 된다."],
+    ["사용자는 견과류 알레르기가 있다", "sem", "안정적인 사실이다. 바뀔 수 있지만(드물게) 시점에 묶인 사건은 아니다."],
+    ["3월 4일 회의에서 출시일을 6월로 미뤘다", "epi", "날짜가 있는 결정 사건이다. ‘현재 출시일은 6월’이라는 의미 기억은 여기서 뽑아낼 수 있다."],
+    ["배포 실패 시 롤백 절차: 태그 확인 → 이전 이미지 → 헬스체크", "proc", "반복해서 쓸 수 있는 행동 순서다."],
+    ["사내 위키 API의 주소", "sem", "환경에 관한 사실이다. 바뀌면 갱신(UPDATE)해야 한다."],
+    ["지난 세션에서 사용자가 테스트 실패 로그를 보여 줬다", "epi", "지난 대화에서 일어난 일이다. 세션 요약에 남는 종류다."],
+    ["SQL을 쓸 때는 항상 파라미터 바인딩을 쓴다", "proc", "코딩 규칙, 즉 방법이다."],
+    ["현재 할 일 목록 (5개 중 3개 완료)", "work", "진행 중인 작업 상태다. 다만 긴 작업에서는 압축에서 살아남도록 파일에 적어 두기도 한다(3장)."],
+  ];
+  const NAME = { work: "작업", epi: "일화", sem: "의미", proc: "절차" };
+  let sel = -1, ok = 0, no = 0, done = new Set();
+  const order = CARDS.map((_, i) => i).sort((a, b) => ((a * 7) % 12) - ((b * 7) % 12));
+  function render() {
+    AM.el("sort-cards").innerHTML = order.map((i) => {
+      const d = done.has(i);
+      return `<button class="tile ${sel === i ? "sel" : ""} ${d ? (CARDS[i].res ? "ok" : "no") : ""}" data-i="${i}" ${d ? "disabled" : ""}>${AM.esc(CARDS[i][0])}${d ? `<span class="tag" style="--k:var(--${CARDS[i][1]})">${NAME[CARDS[i][1]]} 기억</span>` : ""}</button>`;
+    }).join("");
+    AM.set("so-o1", ok, "good"); AM.set("so-o2", no, no ? "bad" : ""); AM.set("so-o3", CARDS.length - done.size);
+  }
+  AM.el("sort-cards").addEventListener("click", (e) => {
+    const b = e.target.closest(".tile"); if (!b || b.disabled) return;
+    sel = +b.dataset.i; render();
+    AM.el("sort-exp").textContent = "선택: “" + CARDS[sel][0] + "” — 이제 아래 상자를 고르세요.";
+  });
+  AM.el("sort-bins").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (sel < 0) { AM.el("sort-exp").textContent = "카드를 먼저 고르세요."; return; }
+    const c = CARDS[sel], right = b.dataset.k === c[1];
+    c.res = right; done.add(sel); right ? ok++ : no++;
+    AM.el("sort-exp").innerHTML = `${right ? "✓ 맞았습니다." : `✗ 정답은 <b>${NAME[c[1]]} 기억</b>.`} ${AM.esc(c[2])}`;
+    sel = -1; render();
+    if (done.size === CARDS.length) AM.el("sort-exp").innerHTML += `<br><b>끝! ${CARDS.length}개 중 ${ok}개를 맞혔습니다.</b>`;
+  });
+  AM.el("sort-reset").addEventListener("click", () => { sel = -1; ok = 0; no = 0; done = new Set(); CARDS.forEach((c) => delete c.res); AM.el("sort-exp").textContent = "카드를 먼저 고르세요."; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

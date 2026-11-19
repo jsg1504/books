@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기억 쓰기: 추출·통합·갱신 · RecallBook</title>
+<meta name="description" content="대화에서 기억할 사실을 뽑고, 기존 기억과 비교해 ADD·UPDATE·DELETE·NOOP를 결정하고, 중복을 합치고, 성찰로 상위 기억을 만드는 과정을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #wr-wrap { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 760px) { #wr-wrap { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .wr-step { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); font-size: 14px; margin-bottom: 8px; }
+  .wr-step h5 { margin: 0 0 4px; font-size: 11.5px; letter-spacing: 0.1em; color: var(--text-faint); font-family: var(--mono); }
+  .wr-step.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  #rf-out { max-height: 150px; }
+</style>
+</head>
+<body data-root="../" data-chapter="writing">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 05</div>
+    <h1>기억 쓰기: 추출·통합·갱신</h1>
+    <p class="lead">검색이 좋아도 저장소에 쓰레기가 쌓이면 소용없다. 대화를 통째로 저장하면 같은 사실이 수십 번 반복되고, 옛 정보와 새 정보가 충돌한다. 좋은 메모리 시스템은 쓸 때 일한다. 기억할 만한 사실을 <b>추출</b>하고, 기존 기억과 비교해 <b>통합</b>하고, 바뀐 것은 <b>갱신</b>한다. 이 장은 그 쓰기 경로를 다룬다.</p>
+    <ul class="objectives">
+      <li>기억 레코드에 내용 외에 어떤 메타데이터(종류, 출처, 시각, 중요도)가 필요한지 설명할 수 있다.</li>
+      <li>대화 중에 쓰는 방식과 대화 뒤에 몰아서 쓰는 방식의 장단점을 비교할 수 있다.</li>
+      <li>새 사실과 기존 기억을 비교해 ADD·UPDATE·DELETE·NOOP 중 하나를 고를 수 있다.</li>
+      <li>중복 병합 임계값과 성찰 주기가 저장소 품질과 비용에 미치는 영향을 예측할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="record">
+    <h2>기억 한 줄의 해부</h2>
+    <p>기억은 문장 하나가 아니라 <b>레코드</b>다. 같은 “서울에 산다”라도 언제 들었는지, 사용자가 직접 말했는지 웹 문서에서 읽었는지, 지금도 유효한지에 따라 쓰임이 다르다. 내용만 저장하면 나중에 갱신, 정리, 삭제, 감사가 모두 어려워진다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 250" role="img" aria-label="기억 레코드의 필드">
+        <rect x="20" y="16" width="400" height="220" rx="12" class="f-elev"/>
+        <rect x="20" y="16" width="400" height="34" rx="12" class="soft-sem"/><text x="36" y="38" class="t-b">memory #m_2087</text><text x="404" y="38" text-anchor="end" class="t-mono">type: semantic</text>
+        <g class="t-mono" transform="translate(36,74)">
+          <text y="0">content    "사는 곳: 부산 (5월 이사)"</text>
+          <text y="22">subject    user:jisu</text>
+          <text y="44">source     chat · 2026-05-10 · turn 14</text>
+          <text y="66">valid_from 2026-05-01   valid_to —</text>
+          <text y="88">importance 6 / 10</text>
+          <text y="110">embedding  [0.031, −0.127, … ×1024]</text>
+          <text y="132">replaces   m_0412 ("서울 마포")</text>
+          <text y="154">last_used  2026-05-18</text>
+        </g>
+        <g class="t-dim">
+          <path d="M424 70 H470" class="s-dash"/><text x="476" y="74">무엇을: 짧고 자기완결적인 문장</text>
+          <path d="M424 114 H470" class="s-dash"/><text x="476" y="118">출처: 신뢰도와 감사의 근거 (9장)</text>
+          <path d="M424 136 H470" class="s-dash"/><text x="476" y="140">유효 기간: 시간 추론 (7장)</text>
+          <path d="M424 158 H470" class="s-dash"/><text x="476" y="162">중요도: 점수와 성찰 (6장)</text>
+          <path d="M424 180 H470" class="s-dash"/><text x="476" y="184">임베딩: 검색 (4장)</text>
+          <path d="M424 202 H470" class="s-dash"/><text x="476" y="206">이력: 갱신을 되돌리고 추적</text>
+          <path d="M424 224 H470" class="s-dash"/><text x="476" y="228">마지막 사용: 망각과 정리 (6장)</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 5-1.</b> 기억 레코드의 예. 내용은 “그것”, “그 사람” 같은 지시어 없이 그 자체로 읽히도록 다시 쓴다. 대화에서 떼어 내 검색되기 때문이다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="when">
+    <h2>언제 쓸 것인가: 대화 중과 대화 뒤</h2>
+    <p>기억을 쓰는 시점은 크게 둘이다. <b>대화 중</b>(hot path)에는 에이전트가 “기억하기” 도구를 직접 호출한다. 바로 반영되지만 응답이 느려지고, 에이전트가 기억할지 말지 판단하느라 본래 작업에서 주의가 분산된다. <b>대화 뒤</b>(background)에는 세션이 끝나거나 잠시 멈췄을 때 별도의 추출 작업이 대화 전체를 읽고 몰아서 쓴다. 응답에는 영향이 없고 전체 맥락을 보고 판단할 수 있지만, 같은 세션 안에서는 반영되지 않는다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 210" role="img" aria-label="대화 중 쓰기와 대화 뒤 쓰기">
+        <text x="20" y="22" class="t-b">대화 중 쓰기</text>
+        <g transform="translate(20,32)">
+          <rect width="80" height="34" rx="7" class="soft-user"/><text x="40" y="22" text-anchor="middle" class="t">메시지</text>
+          <path d="M84 17 H110" class="s-acc"/>
+          <rect x="114" width="120" height="34" rx="7" class="f-surface"/><text x="174" y="22" text-anchor="middle" class="t">모델 판단</text>
+          <path d="M238 17 H264" class="s-acc"/>
+          <rect x="268" width="150" height="34" rx="7" class="soft-sem"/><text x="343" y="22" text-anchor="middle" class="t-mono">remember("…")</text>
+          <path d="M422 17 H448" class="s-acc"/>
+          <rect x="452" width="80" height="34" rx="7" class="f-elev"/><text x="492" y="22" text-anchor="middle" class="t">응답</text>
+          <text x="548" y="14" class="t-dim">+ 즉시 반영, 같은 세션에서 사용</text><text x="548" y="30" class="t-dim">− 응답 지연, 주의 분산</text>
+        </g>
+        <text x="20" y="112" class="t-b">대화 뒤 쓰기</text>
+        <g transform="translate(20,122)">
+          <rect width="80" height="34" rx="7" class="soft-user"/><text x="40" y="22" text-anchor="middle" class="t">메시지</text>
+          <path d="M84 17 H110" class="s-acc"/>
+          <rect x="114" width="80" height="34" rx="7" class="f-elev"/><text x="154" y="22" text-anchor="middle" class="t">응답</text>
+          <path d="M198 17 H224" class="s-dash"/><text x="214" y="50" class="t-mono">… 세션 종료</text>
+          <rect x="228" width="190" height="34" rx="7" class="soft-proc"/><text x="323" y="22" text-anchor="middle" class="t">추출 작업 (전체 대화)</text>
+          <path d="M422 17 H448" class="s-acc"/>
+          <rect x="452" width="80" height="34" rx="7" class="soft-sem"/><text x="492" y="22" text-anchor="middle" class="t">저장소</text>
+          <text x="548" y="14" class="t-dim">+ 응답 영향 없음, 전체 맥락</text><text x="548" y="30" class="t-dim">− 다음 세션부터 반영</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 5-2.</b> 두 쓰기 시점. 실제 시스템은 둘을 섞는 경우가 많다. 사용자가 “이거 기억해 줘”라고 명시하면 바로 쓰고, 나머지는 뒤에서 추출한다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="consolidate">
+    <h2>통합: ADD · UPDATE · DELETE · NOOP</h2>
+    <p>새로 추출한 사실을 무조건 추가하면 저장소에 “서울 마포에 산다”와 “부산에 산다”가 함께 남는다. 그래서 쓰기 전에 <b>비슷한 기존 기억을 검색해 비교</b>하고, 네 가지 연산 중 하나를 고른다. 새로운 사실이면 <b>ADD</b>, 같은 대상의 값이 바뀌었으면 <b>UPDATE</b>, 사용자가 철회했거나 틀렸음이 밝혀지면 <b>DELETE</b>, 이미 아는 내용이면 <b>NOOP</b>이다. 이 판단은 보통 모델에게 기존 기억 몇 개와 새 사실을 함께 보여 주고 고르게 한다.</p>
+
+    <div class="sim" id="sim-write">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>기억 쓰기 파이프라인 — 한 메시지씩 따라가기</h3></div>
+      <div class="sim-body">
+        <div id="wr-wrap">
+          <div>
+            <div class="wr-step" id="wr-s1"><h5>① 새 메시지</h5><div id="wr-msg">—</div></div>
+            <div class="wr-step" id="wr-s2"><h5>② 추출된 사실</h5><div id="wr-fact">—</div></div>
+            <div class="wr-step" id="wr-s3"><h5>③ 비슷한 기존 기억 (유사도)</h5><div id="wr-sim">—</div></div>
+            <div class="wr-step" id="wr-s4"><h5>④ 결정</h5><div id="wr-dec">—</div></div>
+          </div>
+          <div><div class="legend" style="margin-bottom:6px"><span><i style="background:var(--sem)"></i>의미 기억</span><span><i style="background:var(--epi)"></i>일화 기억</span></div><div class="memlist" id="wr-store"></div></div>
+        </div>
+        <div class="btns"><button class="btn primary" id="wr-next">다음 단계 ▶</button><button class="btn" id="wr-auto">자동 재생</button><button class="btn" id="wr-reset">처음부터</button><label class="check"><input type="checkbox" id="wr-naive"> 통합 없이 전부 ADD (비교용)</label></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">메시지</span><span class="v" id="wr-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">저장된 기억</span><span class="v" id="wr-o2">4</span></div>
+        <div class="stat"><span class="k">서로 모순되는 쌍</span><span class="v" id="wr-o3">0</span></div>
+        <div class="stat"><span class="k">연산 내역</span><span class="v" id="wr-o4" style="font-size:14px">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본 모드로 끝까지 진행해 연산 내역을 보자. 8개 메시지 중 2개는 기억할 것이 없거나 이미 아는 것이다. ② <b>통합 없이 전부 ADD</b>를 켜고 다시 하면 저장소가 커지고 “사는 곳: 서울”과 “사는 곳: 부산”처럼 모순되는 쌍이 생긴다. 검색은 둘 중 무엇을 가져올지 모른다. ③ 마지막 메시지는 사용자의 삭제 요청이다 — 일반 대화와 다르게 다뤄야 한다(9장).</div>
+    </div>
+  </section>
+
+  <section id="dedup">
+    <h2>중복 병합의 임계값</h2>
+    <p>“같은 사실”인지 판단하는 가장 싼 방법은 임베딩 유사도에 임계값 τ를 두는 것이다. τ가 낮으면 같은 사실의 다른 표현을 잘 합치지만, <b>값만 다른 비슷한 문장</b>까지 합쳐 버린다. “선호 언어: Go”와 “선호 언어: Rust”는 문장 구조가 같아 유사도가 매우 높다. τ가 높으면 그런 실수는 줄지만 중복이 쌓인다. 그래서 유사도는 후보를 고르는 데만 쓰고, 최종 판단은 모델이나 규칙(같은 대상·같은 속성인가)에 맡기는 경우가 많다.</p>
+
+    <div class="sim" id="sim-dedup">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>중복 병합 임계값 — 합칠 것과 합치면 안 되는 것</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="dd-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>병합 임계값 τ <output id="dd-t-out"></output></span><input type="range" id="dd-t" min="0.6" max="0.99" step="0.01" value="0.85"></label>
+          <label class="check"><input type="checkbox" id="dd-rule"> 같은 속성·다른 값이면 병합 금지 (규칙 검사)</label>
+          <div class="legend"><span><i style="background:var(--sem)"></i>실제로 같은 사실</span><span><i style="background:var(--fail)"></i>다른 사실</span></div>
+          <div class="pane" id="dd-bad" style="font-size:12px;max-height:150px"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">올바른 병합</span><span class="v" id="dd-o1">—</span></div>
+        <div class="stat"><span class="k">잘못된 병합 (정보 손실)</span><span class="v" id="dd-o2">—</span></div>
+        <div class="stat"><span class="k">남은 중복</span><span class="v" id="dd-o3">—</span></div>
+        <div class="stat"><span class="k">F1</span><span class="v" id="dd-o4">—</span></div>
+      </div>
+      <div class="sim-note">점 하나가 기억 쌍 하나다. 가로축은 두 기억의 유사도, 세로는 보기 좋게 흩뜨린 것이다. 선 오른쪽의 쌍이 병합된다. 해볼 것: ① τ를 0.7로 내리면 빨간 점(다른 사실)이 대거 합쳐진다. ② 0.95로 올리면 초록 점 상당수가 중복으로 남는다. ③ 규칙 검사를 켜면 낮은 τ에서도 “값만 다른” 쌍을 지킨다 — 유사도 하나로는 풀 수 없는 문제다.</div>
+    </div>
+  </section>
+
+  <section id="reflect">
+    <h2>성찰: 관찰에서 통찰로</h2>
+    <p>일화 기억이 쌓이면 그 위에서 더 높은 수준의 기억을 만들 수 있다. 시뮬레이션 마을의 에이전트들을 다룬 연구(Generative Agents)는 최근 관찰들의 <b>중요도 합이 임계값을 넘으면</b> 에이전트가 “최근 무엇을 알게 되었나”를 스스로 묻고 답하게 했다. 그렇게 얻은 <span class="term">성찰</span><span class="en">reflection</span>은 다시 기억으로 저장되어 이후 검색에 쓰인다. 예를 들어 “3일 연속 야근”, “커피 주문이 늘었다”, “마감 일정 질문”이라는 관찰에서 “지수는 이번 주 마감 압박을 받고 있다”를 끌어낸다.</p>
+
+    <div class="sim" id="sim-reflect">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>성찰 주기 — 중요도가 쌓이면 생각한다</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rf-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>성찰 임계값 (중요도 합) <output id="rf-t-out"></output></span><input type="range" id="rf-t" min="10" max="200" step="5" value="60"></label>
+          <label class="ctrl"><span>관찰 수 <output id="rf-n-out"></output></span><input type="range" id="rf-n" min="20" max="120" step="5" value="80"></label>
+          <div class="btns"><button class="btn" id="rf-seed">다른 하루 ↻</button></div>
+          <div class="pane" id="rf-out"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">성찰 횟수</span><span class="v" id="rf-o1">—</span></div>
+        <div class="stat"><span class="k">성찰당 관찰 수</span><span class="v" id="rf-o2">—</span></div>
+        <div class="stat"><span class="k">추가 모델 호출</span><span class="v" id="rf-o3">—</span></div>
+        <div class="stat"><span class="k">큰 사건 직후 성찰</span><span class="v" id="rf-o4">—</span></div>
+      </div>
+      <div class="sim-note">막대는 관찰 하나의 중요도(1~10), 계단선은 마지막 성찰 이후 쌓인 중요도 합, 보라 세로선이 성찰 시점이다. 해볼 것: ① 임계값을 낮추면 성찰이 잦아 비용이 늘고, 사소한 일로도 “통찰”을 만든다. ② 높이면 중요한 사건(높은 막대) 뒤에도 한참 성찰하지 않는다. ③ 중요도가 높은 관찰이 몰리면 임계값에 빨리 닿는다 — 큰 일이 있었던 날 더 많이 생각하는 셈이다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>기억은 레코드다. 내용과 함께 종류, 대상, 출처, 시각, 유효 기간, 중요도, 이력을 저장해야 갱신과 삭제가 가능하다.</li>
+      <li>대화 중 쓰기는 즉시 반영되지만 느리고, 대화 뒤 쓰기는 정확하지만 늦다. 명시적 요청은 즉시, 나머지는 뒤에서.</li>
+      <li>쓰기 전에 비슷한 기억을 찾아 ADD·UPDATE·DELETE·NOOP를 고른다. 그렇지 않으면 저장소에 모순이 쌓인다.</li>
+      <li>유사도 임계값만으로는 “값만 다른” 기억을 구분하지 못한다. 성찰은 일화에서 의미 기억을 만들지만 호출 비용이 든다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 저장소에 “선호 언어: Python”이 있고 사용자가 “요즘은 Rust만 써”라고 했다. 알맞은 연산은?</p><div class="opts">
+        <button class="opt">ADD</button>
+        <button class="opt" data-correct>UPDATE</button>
+        <button class="opt">NOOP</button>
+      </div><div class="quiz-exp">같은 대상(사용자)의 같은 속성(선호 언어) 값이 바뀌었다. 이전 값은 이력으로 남겨 두면 “예전엔 Python을 썼다”에도 답할 수 있다.</div></div>
+      <div class="quiz-q"><p>2. 기억 내용을 “그 사람이 다음 주에 온대”처럼 저장하면 안 되는 이유는?</p><div class="opts">
+        <button class="opt">문장이 너무 짧아서</button>
+        <button class="opt" data-correct>검색되어 단독으로 읽힐 때 “그 사람”과 “다음 주”가 무엇인지 알 수 없어서</button>
+        <button class="opt">임베딩할 수 없어서</button>
+      </div><div class="quiz-exp">기억은 원래 대화에서 떼어져 검색된다. 지시어와 상대적 시각은 이름과 절대 날짜로 바꿔 자기완결적으로 쓴다.</div></div>
+      <div class="quiz-q"><p>3. 유사도 0.93인 “회의는 화요일 3시”와 “회의는 화요일 4시”를 임계값 0.9로 자동 병합하면?</p><div class="opts">
+        <button class="opt">올바른 중복 제거다</button>
+        <button class="opt" data-correct>서로 다른 사실이 합쳐져 한쪽 정보가 사라진다</button>
+        <button class="opt">아무 일도 일어나지 않는다</button>
+      </div><div class="quiz-exp">값만 다른 문장은 유사도가 매우 높다. 같은 속성에 다른 값이면 병합이 아니라 UPDATE인지(시간이 바뀜) 둘 다 유효한지(다른 회의) 판단해야 한다.</div></div>
+      <div class="quiz-q"><p>4. 성찰 임계값을 크게 낮추면?</p><div class="opts">
+        <button class="opt">성찰이 드물어져 비용이 준다</button>
+        <button class="opt" data-correct>성찰이 잦아져 모델 호출이 늘고, 사소한 관찰에서도 통찰을 만든다</button>
+        <button class="opt">성찰의 품질이 반드시 좋아진다</button>
+      </div><div class="quiz-exp">중요도 합이 작은 값에도 쉽게 도달하므로 성찰이 자주 일어난다. 근거가 부족한 일반화가 기억에 남을 위험도 커진다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 쓰기 파이프라인 ---------------- */
+(function () {
+  const INIT = [
+    { id: "m1", k: "sem", t: "사는 곳: 서울 마포", attr: "home" },
+    { id: "m2", k: "sem", t: "선호 언어: Python", attr: "lang" },
+    { id: "m3", k: "sem", t: "반려동물: 고양이 1마리", attr: "pet" },
+    { id: "m4", k: "epi", t: "4/2 노트북 A/S 접수", attr: "laptop" },
+  ];
+  const S = [
+    { m: "이번 달에 부산으로 이사했어!", f: "사는 곳: 부산 (5월 이사)", k: "sem", attr: "home", sim: [["m1", 0.88], ["m4", 0.21]], op: "UPDATE", tgt: "m1", why: "같은 속성(사는 곳)의 값이 바뀌었다. 이전 값은 이력으로 남긴다." },
+    { m: "요즘은 Go로 주로 개발해. 파이썬은 거의 안 써.", f: "선호 언어: Go", k: "sem", attr: "lang", sim: [["m2", 0.91]], op: "UPDATE", tgt: "m2", why: "선호 언어가 Python에서 Go로 바뀌었다." },
+    { m: "고양이 한 마리 더 입양했어, 이름은 보리야.", f: "반려동물: 고양이 2마리 (보리 포함)", k: "sem", attr: "pet", sim: [["m3", 0.86]], op: "UPDATE", tgt: "m3", why: "기존 사실을 보강한다. 별도 ADD면 1마리와 2마리가 함께 남는다." },
+    { m: "오늘 날씨 진짜 좋다.", f: null, op: "NOOP", why: "오래 기억할 가치가 있는 사실이 없다. 추출 단계에서 걸러진다." },
+    { m: "나 고양이 키운다고 했었지?", f: "반려동물: 고양이", k: "sem", attr: "pet", sim: [["m3", 0.95]], op: "NOOP", tgt: "m3", why: "이미 저장된 내용의 확인일 뿐 새 정보가 없다. 마지막 사용 시각만 갱신한다." },
+    { m: "노트북 수리 끝나서 오늘 찾아왔어.", f: "5/10 노트북 수리 완료, 수령", k: "epi", attr: "laptop2", sim: [["m4", 0.74]], op: "ADD", why: "A/S 접수와는 다른 사건이다. 일화 기억은 덮어쓰지 않고 쌓는다." },
+    { m: "아 그리고 나 견과류 알레르기 있어.", f: "알레르기: 견과류", k: "sem", attr: "allergy", sim: [["m3", 0.32]], op: "ADD", why: "비슷한 기존 기억이 없다. 안전과 관련되어 중요도가 높다." },
+    { m: "고양이 얘기는 기억에서 지워 줘.", f: "(삭제 요청) 반려동물 관련 기억", k: "sem", attr: "pet", sim: [["m3", 0.9]], op: "DELETE", tgt: "m3", why: "사용자의 명시적 삭제 요청. 이력과 다른 사본까지 지워야 한다(9장)." },
+  ];
+  let store, i, sub, timer = 0, ops;
+  const naive = () => AM.el("wr-naive").checked;
+  function reset() {
+    clearInterval(timer); timer = 0; AM.el("wr-auto").textContent = "자동 재생";
+    store = INIT.map((m) => ({ ...m })); i = 0; sub = 0; ops = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
+    ["wr-msg", "wr-fact", "wr-sim", "wr-dec"].forEach((id) => (AM.el(id).textContent = "—"));
+    render(); hl(0);
+  }
+  function hl(n) { [1, 2, 3, 4].forEach((k) => AM.el("wr-s" + k).classList.toggle("on", k === n)); }
+  function render(flash) {
+    AM.el("wr-store").innerHTML = store.map((m) => `<div class="mem ${m.gone ? "gone" : ""} ${m.id === flash ? "flash" : ""}" style="--k:var(--${m.k})">${m.op ? `<span class="op ${m.op}">${m.op}</span>` : ""}<span class="t">${AM.esc(m.t)}${m.prev ? `<br><small>이전: ${AM.esc(m.prev)}</small>` : ""}</span></div>`).join("");
+    const live = store.filter((m) => !m.gone);
+    const by = {}; live.forEach((m) => (by[m.attr] = (by[m.attr] || 0) + 1));
+    const conflict = Object.values(by).filter((v) => v > 1).reduce((s, v) => s + v - 1, 0);
+    AM.set("wr-o1", `${Math.min(i, S.length)} / ${S.length}`);
+    AM.set("wr-o2", live.length);
+    AM.set("wr-o3", conflict, conflict ? "bad" : "good");
+    AM.set("wr-o4", Object.entries(ops).map(([k, v]) => `${k[0]}${v}`).join(" · "));
+  }
+  function step() {
+    if (i >= S.length) return;
+    const s = S[i];
+    sub++;
+    if (sub === 1) { AM.el("wr-msg").textContent = "“" + s.m + "”"; AM.el("wr-fact").textContent = "…"; AM.el("wr-sim").textContent = "…"; AM.el("wr-dec").textContent = "…"; hl(1); }
+    else if (sub === 2) { AM.el("wr-fact").innerHTML = s.f ? `<span class="chip k-${s.k}">${s.k === "sem" ? "의미" : "일화"}</span> ${AM.esc(s.f)}` : "<span style='color:var(--text-faint)'>추출할 사실 없음</span>"; hl(2); if (!s.f) sub = 3; }
+    else if (sub === 3) { AM.el("wr-sim").innerHTML = s.sim.map(([id, v]) => { const m = store.find((x) => x.id === id); return `${AM.esc(m ? m.t : id)} <b class="mono">${v.toFixed(2)}</b>`; }).join("<br>"); hl(3); }
+    else {
+      let op = s.op, why = s.why;
+      if (naive() && s.f) { op = s.op === "DELETE" ? "ADD" : "ADD"; why = "통합 없이 추가만 한다. " + (s.op === "DELETE" ? "삭제 요청조차 새 기억으로 저장된다!" : ""); }
+      if (!s.f) op = "NOOP";
+      ops[op]++;
+      AM.el("wr-dec").innerHTML = `<span class="op ${op}" style="font-family:var(--mono);font-weight:700">${op}</span> — ${AM.esc(why)}`;
+      hl(4);
+      let flash = null;
+      if (op === "ADD") { const id = "n" + i; store.push({ id, k: s.k, t: s.f, attr: s.op === "DELETE" ? "del" + i : s.attr, op: "ADD" }); flash = id; }
+      if (op === "UPDATE") { const m = store.find((x) => x.id === s.tgt); m.prev = m.t; m.t = s.f; m.op = "UPDATE"; flash = m.id; }
+      if (op === "DELETE") { const m = store.find((x) => x.id === s.tgt); m.gone = true; m.op = "DELETE"; flash = m.id; }
+      if (op === "NOOP" && s.tgt) flash = s.tgt;
+      i++; sub = 0;
+      render(flash);
+      if (i >= S.length) { AM.el("wr-next").disabled = true; clearInterval(timer); AM.el("wr-auto").textContent = "자동 재생"; }
+      return;
+    }
+    AM.el("wr-next").disabled = false;
+  }
+  AM.el("wr-next").addEventListener("click", step);
+  AM.el("wr-auto").addEventListener("click", () => {
+    if (timer) { clearInterval(timer); timer = 0; AM.el("wr-auto").textContent = "자동 재생"; return; }
+    AM.el("wr-auto").textContent = "멈춤 ❚❚";
+    timer = setInterval(step, 650);
+  });
+  AM.el("wr-reset").addEventListener("click", () => { AM.el("wr-next").disabled = false; reset(); });
+  AM.el("wr-naive").addEventListener("change", () => { AM.el("wr-next").disabled = false; reset(); });
+  reset();
+})();
+
+/* ---------------- 2. 중복 병합 ---------------- */
+(function () {
+  // [기억 A, 기억 B, 유사도, 같은 사실?, 같은 속성·다른 값?]
+  const PAIRS = [
+    ["사는 곳: 부산", "부산에 살고 있음", 0.93, 1, 0], ["선호 언어: Go", "Go를 주로 씀", 0.9, 1, 0], ["견과류 알레르기", "땅콩 등 견과류 못 먹음", 0.84, 1, 0],
+    ["팀장: 박서연", "박서연 팀장 소속", 0.88, 1, 0], ["주 3회 수영", "일주일에 세 번 수영함", 0.86, 1, 0], ["커피는 디카페인", "카페인 안 마심", 0.78, 1, 0],
+    ["딸 이름: 하은", "첫째 하은이", 0.74, 1, 0], ["출장 숙소 역 근처 선호", "숙소는 역세권으로", 0.81, 1, 0], ["보고서는 한국어", "문서 작성은 한국어로", 0.83, 1, 0],
+    ["마감 6월 30일", "6/30까지 완료", 0.89, 1, 0], ["회의록은 결정·담당·기한 순", "회의록 형식: 결정, 담당, 기한", 0.92, 1, 0], ["판교 근무", "회사는 판교", 0.87, 1, 0],
+    ["선호 언어: Go", "선호 언어: Rust", 0.94, 0, 1], ["회의 화요일 3시", "회의 화요일 4시", 0.95, 0, 1], ["마감 6월 30일", "마감 7월 30일", 0.93, 0, 1],
+    ["고양이 1마리", "고양이 2마리", 0.96, 0, 1], ["팀장: 박서연", "팀장: 박서현", 0.9, 0, 1], ["예산 300만 원", "예산 30만 원", 0.92, 0, 1],
+    ["아버지 등산 좋아함", "아버지 낚시 좋아함", 0.85, 0, 1], ["견과류 알레르기", "갑각류 알레르기", 0.83, 0, 1],
+    ["사는 곳: 부산", "출장지: 부산", 0.8, 0, 0], ["Go 선호", "Go 스터디 운영", 0.76, 0, 0], ["어머니 생신 5월", "어머니 수술 5월", 0.79, 0, 0], ["수영 주 3회", "수영장 회원권 만료", 0.7, 0, 0],
+  ];
+  const cv = AM.canvas("dd-cv", { aspect: 0.62, draw });
+  const r = AM.rng(5), JIT = PAIRS.map(() => r());
+  function draw(c, w, h) {
+    const t = AM.val("dd-t"), rule = AM.el("dd-rule").checked;
+    const A = AM.axes(c, { box: { l: 20, t: 14, r: w - 14, b: h - 44 }, x: [0.65, 1], y: [0, 1], xt: [0.7, 0.8, 0.9, 1], xf: (v) => v.toFixed(1), yt: [], xl: "두 기억의 유사도" });
+    c.fillStyle = AM.alpha(AM.col("accent"), 0.07); c.fillRect(A.X(t), 14, A.X(1) - A.X(t), h - 58);
+    AM.line(c, [[A.X(t), 14], [A.X(t), h - 44]], AM.col("accent"), 2);
+    AM.text(c, "병합 →", A.X(t) + 6, 24, { size: 11, weight: 700, color: AM.col("accent") });
+    let tp = 0, fp = 0, fn = 0; const bad = [];
+    PAIRS.forEach((p, i) => {
+      const merge = p[2] >= t && !(rule && p[4]);
+      if (merge && p[3]) tp++; if (merge && !p[3]) { fp++; bad.push(p); } if (!merge && p[3]) fn++;
+      const x = A.X(p[2]), y = A.Y(0.1 + JIT[i] * 0.8);
+      c.fillStyle = p[3] ? AM.col("sem") : AM.col("fail");
+      c.globalAlpha = merge ? 1 : 0.45;
+      c.beginPath(); p[3] ? c.arc(x, y, 6, 0, 7) : c.rect(x - 5, y - 5, 10, 10); c.fill();
+      c.globalAlpha = 1;
+      if (merge && !p[3]) { c.strokeStyle = AM.col("text"); c.lineWidth = 1.5; c.strokeRect(x - 7, y - 7, 14, 14); }
+    });
+    AM.el("dd-bad").innerHTML = bad.length ? "<b style='font-family:var(--font)'>잘못 합쳐진 쌍</b><br>" + bad.map((p) => `${AM.esc(p[0])} ⇄ ${AM.esc(p[1])} <span class="dim">${p[2]}</span>`).join("<br>") : "<span class='dim'>잘못 합쳐진 쌍이 없습니다.</span>";
+    const prec = tp / (tp + fp || 1), rec = tp / (tp + fn || 1), f1 = (2 * prec * rec) / (prec + rec || 1);
+    AM.set("dd-o1", tp + " / 12", tp > 9 ? "good" : "");
+    AM.set("dd-o2", fp + "쌍", fp ? "bad" : "good");
+    AM.set("dd-o3", fn + "쌍", fn > 4 ? "warn" : "");
+    AM.set("dd-o4", f1.toFixed(2), f1 > 0.85 ? "good" : f1 < 0.6 ? "bad" : "warn");
+  }
+  AM.wire(["dd-t"], cv.redraw, { "dd-t": (v) => v.toFixed(2) });
+  AM.el("dd-rule").addEventListener("change", cv.redraw);
+})();
+
+/* ---------------- 3. 성찰 ---------------- */
+(function () {
+  const OBS = [
+    ["지수가 커피를 주문함", 2, "caf"], ["지수가 23시에 커밋함", 4, "late"], ["회의 일정을 물음", 3, "dead"], ["점심을 건너뜀", 3, "late"],
+    ["마감일을 다시 확인함", 5, "dead"], ["동료에게 리뷰를 재촉함", 5, "dead"], ["날씨 이야기", 1, "x"], ["주말 출근 일정을 잡음", 7, "late"],
+    ["커피를 두 잔째 주문", 2, "caf"], ["배포 실패, 롤백함", 9, "inc"], ["장애 보고서 작성", 7, "inc"], ["팀장과 면담", 6, "inc"],
+    ["음악 추천을 부탁함", 1, "x"], ["새 노트북 가격을 검색", 3, "x"], ["수면 앱 기록 4시간", 6, "late"], ["가족 생일 선물 고민", 4, "fam"],
+  ];
+  const INS = {
+    late: "지수는 요즘 늦게까지 일하며 휴식이 부족하다", dead: "지수는 6월 마감에 압박을 받고 있다", caf: "카페인 섭취가 늘었다 — 피로의 신호일 수 있다",
+    inc: "배포 장애가 지수에게 큰 부담이 되었다; 배포 전 점검을 원할 것이다", fam: "지수는 가족 일정을 챙기려 한다", x: "특별한 통찰 없음",
+  };
+  let seed = 4;
+  const cv = AM.canvas("rf-cv", { aspect: 0.6, draw });
+  function gen() {
+    const r = AM.rng(seed), n = AM.val("rf-n");
+    return Array.from({ length: n }, (_, i) => {
+      const o = OBS[Math.floor(r() * OBS.length)];
+      const burst = i > n * 0.55 && i < n * 0.68 ? 1 : 0; // 사건이 몰리는 구간
+      const imp = AM.clamp(o[1] + Math.round((r() - 0.5) * 3) + burst * 3, 1, 10);
+      return { s: o[0], imp, k: o[2] };
+    });
+  }
+  function draw(c, w, h) {
+    const O = gen(), th = AM.val("rf-t"), n = O.length;
+    const A = AM.axes(c, { box: { l: 52, t: 12, r: w - 12, b: h - 40 }, x: [0, n], y: [0, Math.max(th * 1.15, 30)], xt: [0, Math.round(n / 2), n], yt: [0, Math.round(th / 2), th], xl: "관찰 순서", yl: "중요도", ylOff: 32 });
+    let acc = 0; const pts = [], refl = [];
+    O.forEach((o, i) => {
+      const bw = (A.X(1) - A.X(0)) * 0.7;
+      c.fillStyle = AM.alpha(AM.col(o.imp >= 7 ? "epi" : "work"), 0.6);
+      c.fillRect(A.X(i + 0.15), A.Y(o.imp), bw, A.Y(0) - A.Y(o.imp));
+      acc += o.imp; pts.push([A.X(i + 1), A.Y(acc)]);
+      if (acc >= th) {
+        const win = O.slice(refl.length ? refl[refl.length - 1].i + 1 : 0, i + 1);
+        const cnt = {}; win.forEach((x) => (cnt[x.k] = (cnt[x.k] || 0) + x.imp));
+        const top = Object.entries(cnt).filter(([k]) => k !== "x").sort((a, b) => b[1] - a[1])[0];
+        refl.push({ i, n: win.length, ins: top ? INS[top[0]] : INS.x, big: win.some((x) => x.imp >= 9) });
+        acc = 0; pts.push([A.X(i + 1), A.Y(0)]);
+      }
+    });
+    AM.line(c, pts, AM.col("accent"), 1.8);
+    AM.line(c, [[A.X(0), A.Y(th)], [A.X(n), A.Y(th)]], AM.col("proc"), 1, [5, 4]);
+    refl.forEach((rf) => { AM.line(c, [[A.X(rf.i + 1), A.Y(0)], [A.X(rf.i + 1), 12]], AM.col("proc"), 2); });
+    AM.el("rf-out").innerHTML = refl.length ? refl.slice(-5).map((rf) => `<div class="ln" style="--k:var(--proc)">#${rf.i + 1} 성찰: ${AM.esc(rf.ins)}</div>`).join("") : '<div class="dim">아직 성찰이 없습니다.</div>';
+    AM.set("rf-o1", refl.length + "회");
+    AM.set("rf-o2", refl.length ? (n / refl.length).toFixed(1) : "—");
+    AM.set("rf-o3", refl.length * 2 + "회", refl.length > 12 ? "warn" : "");
+    const bigIdx = O.findIndex((o) => o.imp >= 9);
+    const after = bigIdx >= 0 ? refl.find((rf) => rf.i >= bigIdx) : null;
+    AM.set("rf-o4", bigIdx < 0 ? "큰 사건 없음" : after ? after.i - bigIdx + "개 관찰 뒤" : "성찰 안 함", after && after.i - bigIdx < 6 ? "good" : "warn");
+  }
+  AM.wire(["rf-t", "rf-n"], cv.redraw);
+  AM.el("rf-seed").addEventListener("click", () => { seed++; cv.redraw(); });
+})();
+</script>
+</body>
+</html>

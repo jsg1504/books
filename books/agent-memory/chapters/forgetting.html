@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>점수 매기기와 망각 · RecallBook</title>
+<meta name="description" content="최근성·중요도·관련성을 섞어 기억에 점수를 매기는 법, 망각 곡선과 복습, 저장소 정리 정책을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #sc-list .mem { font-size: 13.5px; }
+  #sc-list .bar { flex-basis: 130px; }
+</style>
+</head>
+<body data-root="../" data-chapter="forgetting">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 06</div>
+    <h1>점수 매기기와 망각</h1>
+    <p class="lead">관련성만으로 기억을 고르면 3년 전의 낡은 사실과 어제의 사실이 같은 대접을 받는다. 사람의 기억은 그렇지 않다. 최근 일, 중요한 일, 자주 떠올린 일이 더 잘 떠오르고 나머지는 흐려진다. 이 장에서는 그 원리를 점수 함수로 옮기고, 저장소가 끝없이 커지지 않도록 무엇을 언제 버릴지 정한다. 망각은 결함이 아니라 기능이다.</p>
+    <ul class="objectives">
+      <li>최근성·중요도·관련성을 정규화해 가중합하는 검색 점수를 계산하고 가중치의 효과를 예측할 수 있다.</li>
+      <li>지수 감쇠의 반감기와 감쇠율을 서로 바꿔 계산할 수 있다.</li>
+      <li>망각 곡선에서 회상(사용)이 기억 강도를 높이는 원리와 간격 반복을 설명할 수 있다.</li>
+      <li>무제한, FIFO, LRU, 점수 기반, TTL 정리 정책이 저장소 크기와 검색 품질에 미치는 영향을 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="score">
+    <h2>세 가지 점수</h2>
+    <p>Generative Agents 연구는 기억을 꺼낼 때 세 가지 점수를 더했다. <span class="term">최근성</span><span class="en">recency</span>은 마지막으로 쓰인 뒤 지난 시간에 따라 지수적으로 줄어든다(논문에서는 시간당 0.995). <span class="term">중요도</span><span class="en">importance</span>는 기억을 쓸 때 모델이 1~10으로 매긴다(“양치질” 1, “이별” 10). <span class="term">관련성</span><span class="en">relevance</span>은 질문과의 임베딩 유사도다. 세 값을 각각 0~1로 정규화하고 가중치를 곱해 더한다.</p>
+    <div class="formula"><div class="eq">score = α<sub>rec</sub> · recency + α<sub>imp</sub> · importance + α<sub>rel</sub> · relevance,&nbsp;&nbsp; recency = λ<sup><var>h</var></sup></div>
+      <div class="where"><var>h</var>: 마지막 사용 이후 시간(시간 단위) · λ: 시간당 감쇠율. 반감기는 ln 2 / (−ln λ)로, λ = 0.995면 약 138시간(5.8일)이다.</div></div>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 200" role="img" aria-label="세 점수의 합">
+        <g transform="translate(20,20)">
+          <rect width="200" height="110" rx="10" class="soft-work"/><text x="100" y="24" text-anchor="middle" class="t-b">최근성</text>
+          <path d="M20 90 C 50 40, 90 30, 180 28" fill="none" stroke="var(--work)" stroke-width="2.5" transform="scale(1,-1) translate(0,-118)"/>
+          <text x="100" y="104" text-anchor="middle" class="t-mono">λ^h — 쓸수록 다시 1로</text>
+        </g>
+        <text x="236" y="80" class="t-b">+</text>
+        <g transform="translate(260,20)">
+          <rect width="200" height="110" rx="10" class="soft-epi"/><text x="100" y="24" text-anchor="middle" class="t-b">중요도</text>
+          <g transform="translate(30,40)"><rect width="14" height="40" y="10" class="c-epi" opacity=".4"/><rect x="22" width="14" height="20" y="30" class="c-epi" opacity=".4"/><rect x="44" width="14" height="50" class="c-epi"/><rect x="66" width="14" height="14" y="36" class="c-epi" opacity=".4"/><rect x="88" width="14" height="30" y="20" class="c-epi" opacity=".4"/><rect x="110" width="14" height="45" y="5" class="c-epi" opacity=".7"/></g>
+          <text x="100" y="104" text-anchor="middle" class="t-mono">쓸 때 1~10으로 매김</text>
+        </g>
+        <text x="476" y="80" class="t-b">+</text>
+        <g transform="translate(500,20)">
+          <rect width="240" height="110" rx="10" class="f-acc2-soft"/><text x="120" y="24" text-anchor="middle" class="t-b">관련성</text>
+          <circle cx="120" cy="64" r="22" fill="none" stroke="var(--accent-2)" stroke-width="2"/><circle cx="120" cy="64" r="4" fill="var(--accent-2)"/><circle cx="134" cy="56" r="4" class="c-sem"/><circle cx="104" cy="74" r="4" class="c-sem"/><circle cx="170" cy="40" r="4" class="c-sem" opacity=".4"/>
+          <text x="120" y="104" text-anchor="middle" class="t-mono">cos(질문, 기억)</text>
+        </g>
+        <text x="380" y="170" text-anchor="middle" class="t-dim">각 점수를 후보 전체에서 0~1로 정규화한 뒤 가중합 → 상위 k개를 컨텍스트로</text>
+      </svg>
+      <figcaption><b>그림 6-1.</b> 기억 검색 점수의 세 성분. 관련성만 쓰면 “맞지만 낡은” 기억이, 최근성만 쓰면 “새롭지만 엉뚱한” 기억이 올라온다.</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-score">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>검색 점수 믹서 — 가중치를 바꿔 순위 보기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><div class="memlist" id="sc-list"></div></div>
+        <div class="sim-controls">
+          <div class="btns" id="sc-q"><button class="btn" data-q="0">지금 사는 곳?</button><button class="btn" data-q="1">저녁 메뉴 추천</button><button class="btn" data-q="2">배포해도 될까?</button></div>
+          <label class="ctrl"><span>α 최근성 <output id="sc-a-out"></output></span><input type="range" id="sc-a" min="0" max="2" step="0.1" value="1"></label>
+          <label class="ctrl"><span>α 중요도 <output id="sc-b-out"></output></span><input type="range" id="sc-b" min="0" max="2" step="0.1" value="1"></label>
+          <label class="ctrl"><span>α 관련성 <output id="sc-c-out"></output></span><input type="range" id="sc-c" min="0" max="2" step="0.1" value="1"></label>
+          <label class="ctrl"><span>시간당 감쇠율 λ <output id="sc-l-out"></output></span><input type="range" id="sc-l" min="0.95" max="0.9995" step="0.0005" value="0.995"></label>
+          <div class="legend"><span><i style="background:var(--work)"></i>최근성</span><span><i style="background:var(--epi)"></i>중요도</span><span><i style="background:var(--accent-2)"></i>관련성</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">1위 기억</span><span class="v" id="sc-o1" style="font-size:14px">—</span></div>
+        <div class="stat"><span class="k">기대한 기억의 순위</span><span class="v" id="sc-o2">—</span></div>
+        <div class="stat"><span class="k">반감기</span><span class="v" id="sc-o3">—</span></div>
+        <div class="stat"><span class="k">세 질문 모두 1위</span><span class="v" id="sc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “지금 사는 곳?”에서 관련성만 쓰면(다른 α = 0) 예전 주소와 새 주소가 비슷한 점수로 경쟁한다. 최근성을 올리면 새 주소가 이긴다. ② “저녁 메뉴 추천”에서 중요도를 0으로 하면 안전과 직결된 알레르기 기억이 밀린다. ③ λ를 0.95로 낮추면 반감기가 14시간이 되어 어제 일조차 잊는다. 세 질문 모두에서 기대한 기억이 1위가 되는 가중치를 찾아 보자.</div>
+    </div>
+  </section>
+
+  <section id="curve">
+    <h2>망각 곡선과 복습</h2>
+    <p>19세기 에빙하우스는 외운 것이 시간이 지나며 지수적으로 잊힌다는 <span class="term">망각 곡선</span><span class="en">forgetting curve</span>을 그렸다. 그리고 한 번 다시 떠올리면 그다음에는 더 천천히 잊는다. 간격을 점점 늘려 복습하는 <b>간격 반복</b>이 효과적인 이유다. 에이전트 메모리에서 “떠올림”은 기억이 검색되어 쓰이는 사건이다. 쓰일 때마다 마지막 사용 시각을 갱신하고 강도를 올리면, 자주 쓰는 기억은 오래 남고 한 번도 안 쓰인 기억은 자연스럽게 흐려진다.</p>
+    <div class="formula"><div class="eq"><var>R</var>(<var>t</var>) = <var>e</var><sup>−(<var>t</var> − <var>t</var><sub>last</sub>) / <var>S</var></sup>,&nbsp;&nbsp; 회상할 때마다 <var>S</var> ← <var>g</var> · <var>S</var></div>
+      <div class="where"><var>R</var>: 유지율 · <var>S</var>: 기억 강도(일) · <var>g</var>: 회상 한 번의 강화 배수. 교육용 단순 모델이다.</div></div>
+
+    <div class="sim" id="sim-curve">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>망각 곡선 — 클릭해서 떠올리기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="fc-cv" style="cursor:pointer"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>초기 강도 S₀ (일) <output id="fc-s-out"></output></span><input type="range" id="fc-s" min="0.5" max="10" step="0.5" value="2"></label>
+          <label class="ctrl"><span>회상 강화 배수 g <output id="fc-g-out"></output></span><input type="range" id="fc-g" min="1" max="4" step="0.1" value="2.2"></label>
+          <label class="ctrl"><span>자동 복습 문턱 <output id="fc-t-out"></output></span><input type="range" id="fc-t" min="0.2" max="0.9" step="0.05" value="0.5"></label>
+          <div class="btns"><button class="btn primary" id="fc-auto">간격 반복 자동 배치</button><button class="btn" id="fc-clear">지우기</button></div>
+          <p style="font-size:13px;color:var(--text-dim);margin:0">곡선 위를 클릭하면 그날 회상(사용)한 것으로 표시됩니다.</p>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">회상 횟수</span><span class="v" id="fc-o1">—</span></div>
+        <div class="stat"><span class="k">60일째 유지율</span><span class="v" id="fc-o2">—</span></div>
+        <div class="stat"><span class="k">평균 유지율</span><span class="v" id="fc-o3">—</span></div>
+        <div class="stat"><span class="k">회상 간격</span><span class="v" id="fc-o4" style="font-size:13px">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 아무 회상 없이 두면 며칠 만에 바닥이다. ② 자동 배치를 누르면 유지율이 문턱에 닿을 때마다 회상한다 — 간격이 점점 벌어진다. ③ g = 1이면 회상해도 강도가 그대로라 같은 간격으로 계속 복습해야 한다. 에이전트에게 g는 “쓰인 기억에 가산점을 얼마나 주나”에 해당한다.</div>
+    </div>
+  </section>
+
+  <section id="prune">
+    <h2>저장소 정리 정책</h2>
+    <p>기억을 쓰기만 하고 버리지 않으면 저장소는 계속 커진다. 크기 자체보다 문제는 <b>검색 품질</b>이다. 낡은 기억이 쌓일수록 검색 결과에 섞여 들어와 정작 쓸모 있는 기억을 밀어낸다. 그래서 무엇을 언제 지우거나 보관(archive)할지 정책이 필요하다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 170" role="img" aria-label="기억의 생애">
+        <defs><marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+        <g class="t">
+          <rect x="20" y="50" width="110" height="46" rx="10" class="soft-sem"/><text x="75" y="78" text-anchor="middle">쓰기</text>
+          <rect x="170" y="50" width="130" height="46" rx="10" class="soft-work"/><text x="235" y="78" text-anchor="middle">활성 (검색 대상)</text>
+          <rect x="340" y="50" width="120" height="46" rx="10" class="soft-epi"/><text x="400" y="78" text-anchor="middle">흐려짐</text>
+          <rect x="500" y="50" width="110" height="46" rx="10" class="f-surface"/><text x="555" y="78" text-anchor="middle">보관</text>
+          <rect x="650" y="50" width="90" height="46" rx="10" class="soft-fail"/><text x="695" y="78" text-anchor="middle">삭제</text>
+        </g>
+        <path d="M134 73 H166" class="s-acc" marker-end="url(#a6)"/><path d="M304 73 H336" class="s-acc" marker-end="url(#a6)"/><path d="M464 73 H496" class="s-acc" marker-end="url(#a6)"/><path d="M614 73 H646" class="s-acc" marker-end="url(#a6)"/>
+        <path d="M400 46 C 400 10, 235 10, 235 46" class="s-acc flow" marker-end="url(#a6)"/><text x="318" y="20" text-anchor="middle" class="t-acc">검색되어 쓰이면 다시 활성</text>
+        <path d="M555 100 C 555 140, 235 140, 235 100" stroke="var(--text-faint)" stroke-dasharray="4 3" fill="none" marker-end="url(#a6)"/><text x="395" y="150" text-anchor="middle" class="t-dim">보관된 기억도 명시적 검색이나 계층 요약으로 되살릴 수 있다</text>
+      </svg>
+      <figcaption><b>그림 6-2.</b> 기억의 생애. 지우기 전에 보관 단계를 두면 실수로 버린 기억을 되찾을 수 있다. 단, 사용자가 삭제를 요청한 기억은 보관이 아니라 실제로 지워야 한다(9장).</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-prune">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>1년 운영 — 정리 정책별 저장소 크기와 검색 품질</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="pr-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="pr-pol"><button data-v="none" class="on">무제한</button><button data-v="fifo">FIFO</button><button data-v="lru">LRU</button><button data-v="score">점수</button><button data-v="ttl">TTL</button></div>
+          <label class="ctrl"><span>하루 쓰기 수 <output id="pr-w-out"></output></span><input type="range" id="pr-w" min="2" max="40" step="1" value="12"></label>
+          <label class="ctrl"><span>용량 (FIFO·LRU·점수) <output id="pr-c-out"></output></span><input type="range" id="pr-c" min="100" max="3000" step="50" value="600"></label>
+          <label class="ctrl"><span>TTL (일) <output id="pr-t-out"></output></span><input type="range" id="pr-t" min="7" max="180" step="1" value="45"></label>
+          <label class="ctrl"><span>오래가는 사실의 비율 <output id="pr-e-out"></output></span><input type="range" id="pr-e" min="0.02" max="0.3" step="0.01" value="0.06"></label>
+          <div class="legend"><span><i style="background:var(--work)"></i>저장소 크기</span><span><i style="background:var(--sem)"></i>검색 품질</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">1년 뒤 크기</span><span class="v" id="pr-o1">—</span></div>
+        <div class="stat"><span class="k">1년 뒤 검색 품질</span><span class="v" id="pr-o2">—</span></div>
+        <div class="stat"><span class="k">잃어버린 오래가는 사실</span><span class="v" id="pr-o3">—</span></div>
+        <div class="stat"><span class="k">평균 검색 품질</span><span class="v" id="pr-o4">—</span></div>
+      </div>
+      <div class="sim-note">모델: 기억의 일부는 오래가는 사실(주소, 알레르기)이고, 나머지는 며칠~몇 달 지나면 쓸모가 사라지는 사건이다. 쓸모 있는 기억일수록 자주 검색되어 마지막 사용 시각이 갱신된다. 검색 품질은 “검색 결과 중 지금 쓸모 있는 기억의 비율”의 근사다. 해볼 것: ① 무제한은 크기가 선형으로 자라고 품질이 계속 떨어진다. ② FIFO는 크기를 지키지만 <b>오래가는 사실까지</b> 순서대로 버린다. ③ LRU는 자주 쓰이는 사실을 지키지만, 한동안 안 쓰인 오래가는 사실은 결국 밀어낸다. 중요도를 함께 보는 점수 정책이 가장 잘 지킨다. ④ TTL은 단순하지만 오래가는 사실도 만료시킨다 — 종류별로 TTL을 달리해야 하는 이유다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>검색 점수 = 최근성 + 중요도 + 관련성의 가중합. 각 성분을 정규화해야 가중치가 의미를 갖는다.</li>
+      <li>최근성 λ<sup>h</sup>의 반감기는 ln 2/(−ln λ). λ = 0.995/시간이면 약 5.8일.</li>
+      <li>쓰인 기억을 강화하면 자주 쓰는 기억은 남고 안 쓰는 기억은 흐려진다. 사람의 간격 반복과 같은 원리다.</li>
+      <li>정리 정책은 크기와 품질을 함께 본다. FIFO와 단일 TTL은 오래가는 사실까지 버린다. LRU는 사용 이력으로, 점수 기반 정책은 사용 이력과 중요도로 쓸모 있는 기억을 지킨다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 시간당 감쇠율 λ = 0.99일 때 최근성 점수가 절반이 되는 시간은?</p><div class="opts">
+        <button class="opt">약 7시간</button>
+        <button class="opt" data-correct>약 69시간</button>
+        <button class="opt">약 690시간</button>
+      </div><div class="quiz-exp">ln 2 / (−ln 0.99) ≈ 0.693 / 0.01005 ≈ 69시간.</div></div>
+      <div class="quiz-q"><p>2. “지금 어디 살아?”에 2년 전 주소가 답으로 나왔다. 가장 직접적인 원인은?</p><div class="opts">
+        <button class="opt">중요도 가중치가 너무 높다</button>
+        <button class="opt" data-correct>관련성만 보고 최근성을 거의 반영하지 않았거나, 옛 주소를 UPDATE하지 않았다</button>
+        <button class="opt">임베딩 차원이 너무 낮다</button>
+      </div><div class="quiz-exp">두 주소 기억은 질문과의 관련성이 비슷하다. 최근성으로 구분하거나, 쓰기 단계에서 옛 기억을 갱신해야 한다(5장).</div></div>
+      <div class="quiz-q"><p>3. 용량 제한 FIFO 정책의 가장 큰 약점은?</p><div class="opts">
+        <button class="opt">저장소가 무한히 커진다</button>
+        <button class="opt" data-correct>오래되었지만 계속 유효한 사실(알레르기 등)까지 들어온 순서대로 버린다</button>
+        <button class="opt">계산이 너무 비싸다</button>
+      </div><div class="quiz-exp">FIFO는 쓸모와 무관하게 나이만 본다. 사용 이력(LRU)이나 중요도를 함께 보는 정책이 필요하다.</div></div>
+      <div class="quiz-q"><p>4. 기억이 검색되어 쓰일 때마다 마지막 사용 시각을 갱신하는 것의 효과는?</p><div class="opts">
+        <button class="opt" data-correct>자주 쓰이는 기억의 최근성이 유지되어 오래 남는다</button>
+        <button class="opt">모든 기억의 점수가 똑같아진다</button>
+        <button class="opt">저장소 크기가 줄어든다</button>
+      </div><div class="quiz-exp">회상이 망각 곡선을 되돌리는 것과 같다. 다만 자주 검색된다는 이유만으로 틀린 기억이 강화되지 않도록 주의해야 한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 검색 점수 믹서 ---------------- */
+(function () {
+  // [내용, 마지막 사용 후 시간(h), 중요도, 질문별 관련성]
+  const M = [
+    ["사는 곳: 부산 (5월 이사)", 30, 6, [0.86, 0.3, 0.05]],
+    ["사는 곳: 서울 마포", 2600, 6, [0.88, 0.3, 0.05]],
+    ["견과류 알레르기", 900, 9, [0.1, 0.72, 0.02]],
+    ["어제 저녁: 해운대 돼지국밥", 20, 2, [0.25, 0.8, 0.03]],
+    ["매운 음식 좋아함", 400, 3, [0.08, 0.78, 0.02]],
+    ["지난주 금요일 배포 장애 — 롤백", 160, 9, [0.03, 0.05, 0.84]],
+    ["배포 전 스테이징 테스트 필수", 700, 8, [0.02, 0.03, 0.8]],
+    ["오늘 아침 배포 파이프라인 녹색", 3, 4, [0.03, 0.04, 0.82]],
+    ["부산역 근처 카페 추천받음", 50, 2, [0.5, 0.35, 0.02]],
+    ["회의실 예약 방법", 300, 3, [0.05, 0.05, 0.2]],
+    ["좋아하는 영화: 인터스텔라", 1500, 2, [0.05, 0.12, 0.02]],
+    ["팀장: 박서연", 200, 5, [0.1, 0.05, 0.3]],
+  ];
+  const WANT = [0, 2, 5];
+  let qi = 0;
+  const norm = (a) => { const mx = Math.max(...a), mn = Math.min(...a); return a.map((v) => (mx > mn ? (v - mn) / (mx - mn) : 0)); };
+  function rank(q, A, B, C, L) {
+    const rec = norm(M.map((m) => Math.pow(L, m[1]))), imp = norm(M.map((m) => m[2])), rel = norm(M.map((m) => m[3][q]));
+    return M.map((m, i) => ({ i, rec: A * rec[i], imp: B * imp[i], rel: C * rel[i], s: A * rec[i] + B * imp[i] + C * rel[i] })).sort((a, b) => b.s - a.s);
+  }
+  function render() {
+    const A = AM.val("sc-a"), B = AM.val("sc-b"), C = AM.val("sc-c"), L = AM.val("sc-l");
+    const R = rank(qi, A, B, C, L), tot = A + B + C || 1;
+    AM.el("sc-list").innerHTML = R.map((o, r) => {
+      const m = M[o.i];
+      return `<div class="mem" style="--k:${o.i === WANT[qi] ? "var(--sem)" : "var(--border)"}"><span class="sc">${r + 1}.</span><span class="t">${AM.esc(m[0])}<br><small>${m[1] < 48 ? m[1] + "시간 전" : Math.round(m[1] / 24) + "일 전"} · 중요도 ${m[2]}</small></span><span class="bar"><i style="width:${(o.rec / tot) * 100}%;background:var(--work)"></i><i style="width:${(o.imp / tot) * 100}%;background:var(--epi)"></i><i style="width:${(o.rel / tot) * 100}%;background:var(--accent-2)"></i></span><span class="sc">${o.s.toFixed(2)}</span></div>`;
+    }).join("");
+    const pos = R.findIndex((o) => o.i === WANT[qi]) + 1;
+    AM.set("sc-o1", M[R[0].i][0]);
+    AM.set("sc-o2", pos + "위", pos === 1 ? "good" : pos <= 3 ? "warn" : "bad");
+    const hl = Math.log(2) / -Math.log(L);
+    AM.set("sc-o3", hl < 48 ? hl.toFixed(0) + "시간" : (hl / 24).toFixed(1) + "일");
+    const all = [0, 1, 2].every((q) => rank(q, A, B, C, L)[0].i === WANT[q]);
+    AM.set("sc-o4", all ? "성공 ✓" : "아직", all ? "good" : "");
+    AM.$$("#sc-q button").forEach((b, i) => b.classList.toggle("primary", i === qi));
+  }
+  AM.wire(["sc-a", "sc-b", "sc-c", "sc-l"], render, { "sc-a": (v) => v.toFixed(1), "sc-b": (v) => v.toFixed(1), "sc-c": (v) => v.toFixed(1), "sc-l": (v) => v.toFixed(4) });
+  AM.el("sc-q").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; qi = +b.dataset.q; render(); });
+})();
+
+/* ---------------- 2. 망각 곡선 ---------------- */
+(function () {
+  const DAYS = 60;
+  let recalls = [], geo = null;
+  const cv = AM.canvas("fc-cv", { aspect: 0.6, draw });
+  function curve() {
+    const S0 = AM.val("fc-s"), g = AM.val("fc-g");
+    const rs = recalls.slice().sort((a, b) => a - b);
+    const pts = []; let S = S0, last = 0, j = 0, sum = 0, n = 0;
+    for (let t = 0; t <= DAYS + 1e-9; t += 0.1) {
+      while (j < rs.length && rs[j] <= t) { S *= g; last = rs[j]; j++; }
+      const R = Math.exp(-(t - last) / S);
+      pts.push([t, R]); sum += R; n++;
+    }
+    return { pts, avg: sum / n, end: pts[pts.length - 1][1] };
+  }
+  function draw(c, w, h) {
+    const A = AM.axes(c, { box: { l: 60, t: 12, r: w - 12, b: h - 40 }, x: [0, DAYS], y: [0, 1], xt: [0, 10, 20, 30, 40, 50, 60], yt: [0, 0.5, 1], yf: (v) => v * 100 + "%", xl: "일", yl: "유지율", ylOff: 36 });
+    geo = A;
+    const C = curve();
+    AM.line(c, [[A.X(0), A.Y(AM.val("fc-t"))], [A.X(DAYS), A.Y(AM.val("fc-t"))]], AM.col("epi"), 1, [5, 4]);
+    c.fillStyle = AM.alpha(AM.col("sem"), 0.15);
+    c.beginPath(); c.moveTo(A.X(0), A.Y(0)); C.pts.forEach(([t, r]) => c.lineTo(A.X(t), A.Y(r))); c.lineTo(A.X(DAYS), A.Y(0)); c.fill();
+    AM.line(c, C.pts.map(([t, r]) => [A.X(t), A.Y(r)]), AM.col("sem"), 2.5);
+    recalls.forEach((t) => { AM.line(c, [[A.X(t), A.Y(0)], [A.X(t), A.Y(1)]], AM.col("accent-2"), 1.5, [3, 3]); c.fillStyle = AM.col("accent-2"); c.beginPath(); c.arc(A.X(t), A.Y(1), 4, 0, 7); c.fill(); });
+    const rs = recalls.slice().sort((a, b) => a - b);
+    const gaps = rs.map((t, i) => (t - (i ? rs[i - 1] : 0)).toFixed(1));
+    AM.set("fc-o1", recalls.length + "회");
+    AM.set("fc-o2", AM.pct(C.end), C.end > 0.5 ? "good" : C.end < 0.1 ? "bad" : "warn");
+    AM.set("fc-o3", AM.pct(C.avg));
+    AM.set("fc-o4", gaps.length ? gaps.slice(0, 6).join(" → ") + (gaps.length > 6 ? " …" : "") + " 일" : "—");
+  }
+  AM.wire(["fc-s", "fc-g", "fc-t"], cv.redraw, { "fc-s": (v) => v + "일", "fc-g": (v) => "×" + v.toFixed(1), "fc-t": (v) => AM.pct(v) });
+  AM.el("fc-cv").addEventListener("click", (e) => {
+    const rc = e.target.getBoundingClientRect(), x = e.clientX - rc.left;
+    const t = ((x - geo.box.l) / (geo.box.r - geo.box.l)) * DAYS;
+    if (t <= 0 || t > DAYS) return;
+    recalls.push(Math.round(t * 2) / 2); cv.redraw();
+  });
+  AM.el("fc-auto").addEventListener("click", () => {
+    const S0 = AM.val("fc-s"), g = AM.val("fc-g"), th = AM.val("fc-t");
+    recalls = []; let S = S0, last = 0;
+    while (recalls.length < 30) { const t = last + S * -Math.log(th); if (t > DAYS) break; recalls.push(+t.toFixed(1)); last = t; S *= g; }
+    cv.redraw();
+  });
+  AM.el("fc-clear").addEventListener("click", () => { recalls = []; cv.redraw(); });
+})();
+
+/* ---------------- 3. 정리 정책 ---------------- */
+(function () {
+  const DAYS = 365;
+  const pol = AM.seg("pr-pol", () => cv.redraw());
+  const cv = AM.canvas("pr-cv", { aspect: 0.62, draw });
+  function sim() {
+    const p = pol(), W = AM.val("pr-w"), cap = AM.val("pr-c"), ttl = AM.val("pr-t"), ev = AM.val("pr-e");
+    const r = AM.rng(17);
+    let store = [], lostEver = 0, id = 0;
+    const size = [], qual = [];
+    for (let d = 0; d < DAYS; d++) {
+      for (let k = 0; k < W; k++) {
+        const u = r();
+        const kind = u < ev ? "ever" : u < ev + 0.35 ? "event" : "eph";
+        const hl = kind === "ever" ? 1e9 : kind === "event" ? 60 : 7;
+        const imp = kind === "ever" ? 6 + r() * 4 : kind === "event" ? 3 + r() * 5 : 1 + r() * 4;
+        store.push({ id: id++, born: d, used: d, hl, imp, kind });
+      }
+      // 쓸모 있는 기억은 검색되어 사용 시각이 갱신된다
+      let useful = 0;
+      store.forEach((m) => {
+        const val = Math.pow(0.5, (d - m.born) / m.hl);
+        m.val = val; useful += val;
+        if (r() < 0.12 * val) m.used = d;
+      });
+      // 정리
+      const evict = (keyFn) => {
+        if (store.length <= cap) return;
+        store.sort((a, b) => keyFn(b) - keyFn(a));
+        store.slice(cap).forEach((m) => { if (m.kind === "ever") lostEver++; });
+        store = store.slice(0, cap);
+      };
+      if (p === "fifo") evict((m) => m.born);
+      else if (p === "lru") evict((m) => m.used);
+      else if (p === "score") evict((m) => Math.pow(0.97, d - m.used) + (m.imp / 10) * 0.6);
+      else if (p === "ttl") { store = store.filter((m) => { const keep = d - m.used <= ttl; if (!keep && m.kind === "ever") lostEver++; return keep; }); }
+      useful = store.reduce((s, m) => s + m.val, 0);
+      // 검색 품질: 관련성 검색이 쓸모 있는 기억을 선호하지만(가중 3배) 낡은 기억도 섞인다
+      const q = store.length ? (3 * useful) / (3 * useful + (store.length - useful)) : 0;
+      size.push(store.length); qual.push(q);
+    }
+    return { size, qual, lostEver };
+  }
+  function draw(c, w, h) {
+    const R = sim();
+    const smax = Math.max(100, ...R.size) * 1.1;
+    const A = AM.axes(c, { box: { l: 54, t: 12, r: w - 46, b: h - 40 }, x: [0, DAYS], y: [0, smax], xt: [0, 90, 180, 270, 365], yt: [0, smax / 2, smax].map(Math.round), yf: AM.si, xl: "운영 일수", yl: "저장소 크기", ylOff: 44 });
+    AM.line(c, R.size.map((v, i) => [A.X(i), A.Y(v)]), AM.col("work"), 2.2);
+    const Y2 = (v) => A.box.b - v * (A.box.b - A.box.t);
+    AM.line(c, R.qual.map((v, i) => [A.X(i), Y2(v)]), AM.col("sem"), 2.2);
+    [0, 0.5, 1].forEach((v) => AM.text(c, AM.pct(v), w - 40, Y2(v), { size: 10, mono: true, color: AM.col("sem") }));
+    const n = R.size.length - 1, avg = R.qual.reduce((a, b) => a + b, 0) / R.qual.length;
+    AM.set("pr-o1", AM.fmt(R.size[n]) + "개");
+    AM.set("pr-o2", AM.pct(R.qual[n]), R.qual[n] > 0.7 ? "good" : R.qual[n] < 0.45 ? "bad" : "warn");
+    AM.set("pr-o3", AM.fmt(R.lostEver) + "개", R.lostEver > 0 ? "bad" : "good");
+    AM.set("pr-o4", AM.pct(avg));
+  }
+  AM.wire(["pr-w", "pr-c", "pr-t", "pr-e"], cv.redraw, { "pr-c": (v) => AM.fmt(v) + "개", "pr-t": (v) => v + "일", "pr-e": (v) => AM.pct(v) });
+})();
+</script>
+</body>
+</html>

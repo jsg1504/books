@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>설계 플레이그라운드와 용어집 · RecallBook</title>
+<meta name="description" content="컨텍스트 전략, 저장소, 쓰기, 시간, 망각, 보안 부품을 조합해 에이전트 메모리를 설계하고 비용과 능력을 비교한다. 용어집과 종합 퀴즈.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .pg-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .pg-grid .ctrl > span { font-weight: 600; color: var(--text); }
+  #pl-saved table { margin: 0; }
+  #gl-q { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 15px; }
+</style>
+</head>
+<body data-root="../" data-chapter="design">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 10</div>
+    <h1>설계 플레이그라운드와 용어집</h1>
+    <p class="lead">지금까지 본 부품을 모아 메모리 시스템을 직접 설계해 보자. 정답 설계는 없다. 대화가 얼마나 긴지, 무엇을 물을지, 비용과 지연을 얼마나 감수할지에 따라 달라진다. 이 장의 플레이그라운드는 앞 장들의 실험에서 본 경향을 하나의 근사 모델로 묶은 것이다. 마지막으로 용어집과 종합 퀴즈로 책 전체를 정리한다.</p>
+    <ul class="objectives">
+      <li>작업 부하(이력 길이)에 맞는 컨텍스트 전략과 장기 저장소 조합을 고를 수 있다.</li>
+      <li>쓰기·시간·망각·보안 부품이 각각 어떤 능력과 비용을 바꾸는지 설명할 수 있다.</li>
+      <li>책 전체의 핵심 용어를 정의하고 해당 장과 연결할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="checklist">
+    <h2>설계 질문 다섯 가지</h2>
+    <p>부품을 고르기 전에 다음 질문에 먼저 답해 보자. 대부분의 설계 결정이 여기서 나온다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 200" role="img" aria-label="메모리 설계 질문">
+        <g class="t">
+          <rect x="10" y="14" width="140" height="150" rx="10" class="soft-work"/><text x="80" y="40" text-anchor="middle" class="t-b">얼마나 긴가?</text><text x="80" y="70" text-anchor="middle" class="t-dim">한 세션? 수백 세션?</text><text x="80" y="140" text-anchor="middle" class="t-mono">→ 컨텍스트 전략</text>
+          <rect x="160" y="14" width="140" height="150" rx="10" class="soft-epi"/><text x="230" y="40" text-anchor="middle" class="t-b">무엇을 묻는가?</text><text x="230" y="70" text-anchor="middle" class="t-dim">사실? 관계? 시점?</text><text x="230" y="140" text-anchor="middle" class="t-mono">→ 저장소 구조</text>
+          <rect x="310" y="14" width="140" height="150" rx="10" class="soft-sem"/><text x="380" y="40" text-anchor="middle" class="t-b">얼마나 바뀌는가?</text><text x="380" y="70" text-anchor="middle" class="t-dim">선호, 주소, 상태</text><text x="380" y="140" text-anchor="middle" class="t-mono">→ 쓰기 · 시간</text>
+          <rect x="460" y="14" width="140" height="150" rx="10" class="soft-proc"/><text x="530" y="40" text-anchor="middle" class="t-b">얼마나 쌓이는가?</text><text x="530" y="70" text-anchor="middle" class="t-dim">하루 몇 개? 몇 년?</text><text x="530" y="140" text-anchor="middle" class="t-mono">→ 망각 정책</text>
+          <rect x="610" y="14" width="140" height="150" rx="10" class="soft-fail"/><text x="680" y="40" text-anchor="middle" class="t-b">누가 쓰는가?</text><text x="680" y="70" text-anchor="middle" class="t-dim">사용자? 웹 문서?</text><text x="680" y="140" text-anchor="middle" class="t-mono">→ 출처 · 삭제</text>
+        </g>
+        <text x="380" y="190" text-anchor="middle" class="t-dim">가장 단순한 설계에서 시작해, 평가에서 약점이 보일 때 부품을 하나씩 더한다</text>
+      </svg>
+      <figcaption><b>그림 10-1.</b> 메모리 설계의 다섯 질문. 짧은 대화만 다룬다면 전체 기록만으로 충분하다. 복잡한 부품은 각자 비용과 실패 방식을 가져온다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="play">
+    <h2>메모리 설계 플레이그라운드</h2>
+    <div class="sim" id="sim-play">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>부품을 조합해 메모리 시스템 설계하기</h3></div>
+      <div class="sim-body">
+        <div class="pg-grid">
+          <label class="ctrl"><span>① 컨텍스트 전략</span><select id="pl-ctx"><option value="full">전체 기록</option><option value="win">최근 5세션 윈도우</option><option value="sum" selected>요약 + 윈도우</option></select></label>
+          <label class="ctrl"><span>② 장기 저장소</span><select id="pl-store"><option value="none">없음</option><option value="vec" selected>벡터</option><option value="hyb">벡터 + 키워드</option><option value="graph">그래프 + 벡터</option></select></label>
+          <label class="ctrl"><span>③ 쓰기 방식</span><select id="pl-write"><option value="raw">원문 그대로 저장</option><option value="ext" selected>추출 + 통합 (ADD/UPDATE/…)</option></select></label>
+          <label class="ctrl"><span>④ 시간 처리</span><select id="pl-time"><option value="none" selected>없음</option><option value="valid">유효 기간 + 최근성</option></select></label>
+          <label class="ctrl"><span>⑤ 망각</span><select id="pl-forget"><option value="none" selected>없음</option><option value="score">점수 기반 정리 + 임계값</option></select></label>
+          <label class="ctrl"><span>⑥ 보안</span><select id="pl-sec"><option value="none" selected>없음</option><option value="prov">쓰기 필터 + 출처 표시</option></select></label>
+        </div>
+        <label class="ctrl"><span>작업 부하: 사용자당 대화 이력 <output id="pl-l-out"></output></span><input type="range" id="pl-l" min="0.5" max="3" step="0.05" value="2"></label>
+        <div class="sim-body side" style="padding:0">
+          <div class="sim-view"><canvas id="pl-cv"></canvas></div>
+          <div class="sim-controls">
+            <div class="pane" id="pl-advice" style="font-family:var(--font);font-size:13.5px;min-height:120px"></div>
+            <div class="btns"><button class="btn primary" id="pl-save">이 설계 저장 (비교)</button><button class="btn" id="pl-clear">비교 지우기</button></div>
+          </div>
+        </div>
+        <div id="pl-saved"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">평균 정확도</span><span class="v" id="pl-o1">—</span></div>
+        <div class="stat"><span class="k">턴당 입력 토큰</span><span class="v" id="pl-o2">—</span></div>
+        <div class="stat"><span class="k">턴당 지연 (근사)</span><span class="v" id="pl-o3">—</span></div>
+        <div class="stat"><span class="k">세션당 추가 모델 호출</span><span class="v" id="pl-o4">—</span></div>
+        <div class="stat"><span class="k">오염 방어</span><span class="v" id="pl-o5">—</span></div>
+        <div class="stat"><span class="k">구현 복잡도</span><span class="v" id="pl-o6">—</span></div>
+      </div>
+      <div class="sim-note">이 모델의 수치는 앞 장들의 실험에서 본 경향을 합친 <b>교육용 근사</b>이며 특정 제품이나 논문의 측정값이 아니다. 해볼 것: ① 이력을 10세션으로 줄이고 “전체 기록 + 저장소 없음”을 골라 보자. 모든 부품을 켠 설계와 정확도 차이는 몇 %p뿐인데 구현 복잡도는 1 대 13이다. ② 1,000세션에서 같은 설계는 무너진다. 저장소를 붙이고 쓰기 방식을 바꿀 때마다 어느 막대가 오르는지 보자. ③ 모든 부품을 켠 설계를 저장해 두고, 하나씩 끄며 무엇이 가장 큰 차이를 만드는지 찾아 보자.</div>
+    </div>
+  </section>
+
+  <section id="glossary">
+    <h2>용어집</h2>
+    <p>책에 나온 핵심 용어다. 상단 검색 창에서도 찾을 수 있다. 오른쪽 장 번호를 누르면 해당 장으로 이동한다.</p>
+    <input type="search" id="gl-q" placeholder="용어 찾기 (예: 임베딩, 망각, UPDATE)" aria-label="용어집 검색">
+    <div class="gloss" id="gl-list" style="margin-top:12px"></div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>책 전체 핵심 정리</h2>
+    <ol>
+      <li>모델은 상태가 없다. 메모리 시스템의 일은 매 턴 컨텍스트 윈도우를 무엇으로 채울지 고르는 것이다 (1–2장).</li>
+      <li>요약은 공간을 되찾지만 거듭할수록 사실을 잃고 왜곡한다. 잃으면 안 되는 것은 고정 메모로 (3장).</li>
+      <li>장기 기억은 검색되어야 쓰인다. 임베딩, 청킹, 하이브리드 검색, 임계값이 품질을 결정한다 (4장).</li>
+      <li>쓰기 단계에서 추출하고 통합해야 저장소가 깨끗하다. 점수와 망각이 저장소를 관리한다 (5–6장).</li>
+      <li>관계와 시간은 구조로 다룬다. 상주 기억과 보관 기억을 나누는 것은 운영체제의 메모리 계층과 같다 (7장).</li>
+      <li>경험은 교훈과 스킬로 증류된다. 검증된 것만 남긴다 (8장).</li>
+      <li>기억은 오염을 영속화하고 사본을 흩뿌린다. 출처, 파생 관계, 다섯 유형 평가가 필요하다 (9장).</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>종합 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 20턴 정도의 짧은 고객 상담 챗봇에 가장 적절한 메모리 설계는?</p><div class="opts">
+        <button class="opt" data-correct>대화 전체를 그대로 컨텍스트에 유지한다</button>
+        <button class="opt">그래프 + 벡터 + 성찰을 모두 붙인다</button>
+        <button class="opt">매 턴 요약한다</button>
+      </div><div class="quiz-exp">짧은 대화는 윈도우에 다 들어간다. 전체 기록이 가장 정확하고 단순하다. 복잡한 부품은 필요해질 때 더한다.</div></div>
+      <div class="quiz-q"><p>2. 압축을 여러 번 거친 세션에서 초반에 정한 “절대 수정 금지 파일”을 에이전트가 고쳤다. 가장 근본적인 대책은?</p><div class="opts">
+        <button class="opt">요약 비율을 조금 높인다</button>
+        <button class="opt" data-correct>제약을 요약과 별도의 고정 메모(또는 지침 파일)에 둔다</button>
+        <button class="opt">윈도우를 더 큰 모델로 바꾼다</button>
+      </div><div class="quiz-exp">재귀 요약은 생존 확률이 곱으로 줄어든다. 잃으면 안 되는 제약은 요약을 거치지 않는 곳에 둔다.</div></div>
+      <div class="quiz-q"><p>3. 사용자가 “E-1042 오류”라고 물었는데 비슷한 다른 오류 기록만 나온다. 먼저 바꿀 것은?</p><div class="opts">
+        <button class="opt">임베딩 모델을 더 큰 것으로</button>
+        <button class="opt" data-correct>키워드(BM25)를 섞는 하이브리드 검색</button>
+        <button class="opt">top-k를 50으로</button>
+      </div><div class="quiz-exp">정확한 식별자 일치는 키워드 검색의 강점이다.</div></div>
+      <div class="quiz-q"><p>4. “선호 언어: Go”와 “선호 언어: Rust”(유사도 0.94)가 자동으로 합쳐졌다. 원인은?</p><div class="opts">
+        <button class="opt" data-correct>유사도 임계값만으로 병합해 값만 다른 기억을 구분하지 못했다</button>
+        <button class="opt">임베딩이 고장 났다</button>
+        <button class="opt">최근성 감쇠율이 너무 낮다</button>
+      </div><div class="quiz-exp">같은 구조의 문장은 유사도가 높다. 같은 속성인지, 값이 다른지 규칙이나 모델로 판단해야 한다.</div></div>
+      <div class="quiz-q"><p>5. 시간당 감쇠율 0.995의 최근성 점수에서 반감기는 대략?</p><div class="opts">
+        <button class="opt">14시간</button>
+        <button class="opt" data-correct>6일</button>
+        <button class="opt">6개월</button>
+      </div><div class="quiz-exp">ln 2 / (−ln 0.995) ≈ 138시간 ≈ 5.8일.</div></div>
+      <div class="quiz-q"><p>6. “내 팀장의 팀장이 일하는 도시”처럼 관계를 여러 번 따라가야 하는 질문에 강한 저장 구조는?</p><div class="opts">
+        <button class="opt">롤링 요약</button>
+        <button class="opt" data-correct>지식 그래프</button>
+        <button class="opt">슬라이딩 윈도우</button>
+      </div><div class="quiz-exp">그래프는 간선을 따라 걷는다. 마지막 고리의 사실이 질문과 단어가 겹치지 않아도 찾을 수 있다.</div></div>
+      <div class="quiz-q"><p>7. Reflexion식 반성 기억이 오히려 성공률을 떨어뜨리는 조건은?</p><div class="opts">
+        <button class="opt">교훈 기억 용량이 클 때</button>
+        <button class="opt" data-correct>평가 신호가 부정확해 틀린 교훈이 많이 쌓일 때</button>
+        <button class="opt">첫 시도 성공률이 높을 때</button>
+      </div><div class="quiz-exp">반성의 품질은 평가 신호의 품질을 넘지 못한다.</div></div>
+      <div class="quiz-q"><p>8. 메모리 시스템 평가에서 “말한 적 없는 반려동물 이름”을 묻는 질문이 재는 능력은?</p><div class="opts">
+        <button class="opt">지식 갱신</button>
+        <button class="opt">여러 세션 추론</button>
+        <button class="opt" data-correct>기권</button>
+      </div><div class="quiz-exp">기억에 없는 것을 지어내지 않고 모른다고 답하는 능력이다. 유사도 임계값과 지침이 필요하다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 설계 플레이그라운드 ---------------- */
+(function () {
+  const AX = ["정보 추출", "여러 세션", "시간 추론", "지식 갱신", "기권"];
+  const NAMES = { full: "전체 기록", win: "윈도우", sum: "요약+윈도우", none: "없음", vec: "벡터", hyb: "벡터+키워드", graph: "그래프+벡터", raw: "원문", ext: "추출+통합", valid: "유효 기간", score: "점수 정리", prov: "필터+출처" };
+  let saved = [];
+  const cv = AM.canvas("pl-cv", { aspect: 0.58, draw });
+  const cfg = () => ({ ctx: AM.el("pl-ctx").value, store: AM.el("pl-store").value, write: AM.el("pl-write").value, time: AM.el("pl-time").value, forget: AM.el("pl-forget").value, sec: AM.el("pl-sec").value, L: Math.round(10 ** AM.val("pl-l")) });
+  function evalCfg(c) {
+    const L = c.L, lf = Math.log10(L) / 3;
+    // 컨텍스트만으로 얻는 정확도
+    let ctxS;
+    if (c.ctx === "full") { const fit = Math.min(1, Math.pow(100 / L, 0.6)); ctxS = [0.95, 0.85, 0.7, 0.75, 0.75].map((v) => v * fit); }
+    else if (c.ctx === "win") { const cov = Math.min(1, 5 / L); ctxS = [0.95 * cov, 0.85 * cov, 0.7 * cov, 0.8 * (0.5 + 0.5 * cov), 0.75]; }
+    else { const cov = Math.min(1, 5 / L); ctxS = [0.95, 0.85, 0.7, 0.8, 0.75].map((v, i) => v * cov + [0.6, 0.5, 0.3, 0.55, 0.6][i] * (1 - cov) * (1 - 0.25 * lf)); }
+    // 저장소에서 얻는 정확도
+    const base = { none: [0, 0, 0, 0, 0], vec: [0.85, 0.55, 0.4, 0.45, 0.5], hyb: [0.9, 0.58, 0.42, 0.47, 0.52], graph: [0.84, 0.8, 0.6, 0.6, 0.6] }[c.store];
+    let st = base.slice();
+    if (c.store !== "none") {
+      if (c.write === "ext") { st[3] += 0.25; st[1] += 0.05; st[0] -= 0.03; }
+      if (c.time === "valid") { st[2] += 0.22; st[3] += 0.1; }
+      if (c.forget === "score") { st[4] += 0.18; st[3] += 0.04; st[0] -= 0.02; }
+      const rot = c.forget === "score" ? 0.04 : c.write === "ext" ? 0.08 : 0.15; // 저장소가 커지며 생기는 잡음
+      st = st.map((v) => v - rot * lf);
+    }
+    let acc = ctxS.map((v, i) => AM.clamp(Math.max(v, st[i]) + (c.store !== "none" && v > 0.3 ? 0.03 : 0), 0, 0.98));
+    // 토큰 · 지연 · 호출
+    const ctxTok = c.ctx === "full" ? Math.min(200000, L * 2000) : c.ctx === "win" ? Math.min(L, 5) * 2000 : 4000 + Math.min(L, 5) * 1200;
+    const tok = 3000 + ctxTok + (c.store === "none" ? 0 : c.store === "graph" ? 3500 : 2500);
+    const lat = 0.9 + (tok / 100000) * 1.6 + (c.store === "none" ? 0 : 0.15) + (c.store === "graph" ? 0.2 : 0) + (c.time === "valid" ? 0.03 : 0);
+    const calls = (c.ctx === "sum" ? 1 : 0) + (c.store !== "none" && c.write === "ext" ? 2 : 0) + (c.store === "graph" ? 1 : 0) + (c.forget === "score" ? 0.2 : 0) + (c.sec === "prov" ? 0.3 : 0);
+    const cx = { full: 1, win: 1, sum: 2 }[c.ctx] + { none: 0, vec: 2, hyb: 3, graph: 5 }[c.store] + (c.write === "ext" ? 2 : 0) + (c.time === "valid" ? 2 : 0) + (c.forget === "score" ? 1 : 0) + (c.sec === "prov" ? 1 : 0);
+    const safe = c.store === "none" && c.ctx !== "sum" ? "기억 없음 (해당 없음)" : c.sec === "prov" ? "높음" : "낮음";
+    return { acc, avg: acc.reduce((a, b) => a + b, 0) / acc.length, tok, lat, calls, cx, safe };
+  }
+  function advice(c, R) {
+    const tips = [];
+    if (c.ctx === "full" && c.L > 100) tips.push("이력이 윈도우를 넘습니다. 전체 기록이 잘리기 시작합니다 → 요약이나 저장소를 붙이세요.");
+    if (c.L <= 15 && c.store !== "none") tips.push("이력이 짧아 저장소의 이득이 작습니다. 더 단순한 설계로 충분할 수 있습니다.");
+    if (c.store !== "none" && c.write === "raw") tips.push("원문 그대로 저장하면 옛 값과 새 값이 함께 검색됩니다 → 지식 갱신이 약합니다 (5장).");
+    if (c.store !== "none" && c.time === "none") tips.push("유효 기간이 없으면 시간 추론이 약합니다 (7장).");
+    if (c.store !== "none" && c.forget === "none") tips.push("임계값과 정리가 없으면 기권이 약하고, 저장소가 커질수록 잡음이 늘어납니다 (6장).");
+    if (c.sec === "none" && (c.store !== "none" || c.ctx === "sum")) tips.push("외부 문서를 읽는 에이전트라면 쓰기 필터와 출처 표시가 필요합니다 (9장).");
+    if (c.store === "graph" && c.L < 30) tips.push("그래프는 구축 비용이 큽니다. 관계 질문이 많을 때만 이득입니다.");
+    if (!tips.length) tips.push("균형 잡힌 설계입니다. 실제 서비스라면 다섯 유형 평가로 확인하세요.");
+    return tips.map((t) => "• " + AM.esc(t)).join("<br>");
+  }
+  function draw(ctx, w, h) {
+    const c = cfg(), R = evalCfg(c);
+    const l = 92, r = w - 40, top = 10, bh = (h - top - 26) / AX.length;
+    AX.forEach((a, i) => {
+      const y = top + i * bh;
+      AM.text(ctx, a, l - 8, y + bh / 2, { size: 12, align: "right", color: AM.col("text") });
+      ctx.fillStyle = AM.col("surface-2"); AM.rrect(ctx, l, y + bh * 0.2, r - l, bh * 0.6, 5); ctx.fill();
+      const v = R.acc[i];
+      ctx.fillStyle = v > 0.75 ? AM.col("sem") : v > 0.5 ? AM.col("epi") : AM.col("fail");
+      AM.rrect(ctx, l, y + bh * 0.2, (r - l) * v, bh * 0.6, 5); ctx.fill();
+      saved.forEach((s, k) => { const x = l + (r - l) * s.R.acc[i]; ctx.strokeStyle = AM.col(["work", "proc", "accent-2"][k]); ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x, y + bh * 0.1); ctx.lineTo(x, y + bh * 0.9); ctx.stroke(); });
+      AM.text(ctx, AM.pct(v), r + 4, y + bh / 2, { size: 11.5, mono: true, color: AM.col("text") });
+    });
+    [0, 0.5, 1].forEach((v) => AM.text(ctx, AM.pct(v), l + (r - l) * v, h - 8, { size: 10, mono: true, align: "center", color: AM.col("text-faint") }));
+    AM.set("pl-o1", AM.pct(R.avg), R.avg > 0.75 ? "good" : R.avg < 0.5 ? "bad" : "warn");
+    AM.set("pl-o2", AM.si(R.tok), R.tok > 60000 ? "bad" : "");
+    AM.set("pl-o3", R.lat.toFixed(1) + "초", R.lat > 3 ? "bad" : "");
+    AM.set("pl-o4", R.calls.toFixed(1) + "회");
+    AM.set("pl-o5", R.safe, R.safe === "높음" ? "good" : R.safe === "낮음" ? "bad" : "");
+    AM.set("pl-o6", R.cx + " / 18", R.cx > 12 ? "warn" : "");
+    AM.el("pl-advice").innerHTML = advice(c, R);
+  }
+  function renderSaved() {
+    if (!saved.length) { AM.el("pl-saved").innerHTML = ""; return; }
+    AM.el("pl-saved").innerHTML = `<table class="tbl"><tr><th>표시</th><th>설계</th><th>이력</th><th>평균</th><th>토큰</th><th>지연</th><th>복잡도</th></tr>${saved.map((s, k) => `<tr><td><span class="chip" style="border-color:var(--${["work", "proc", "accent-2"][k]});color:var(--${["work", "proc", "accent-2"][k]})">${k + 1}</span></td><td>${[s.c.ctx, s.c.store, s.c.write, s.c.time, s.c.forget, s.c.sec].map((v) => NAMES[v]).join(" · ")}</td><td>${AM.fmt(s.c.L)}</td><td>${AM.pct(s.R.avg)}</td><td>${AM.si(s.R.tok)}</td><td>${s.R.lat.toFixed(1)}초</td><td>${s.R.cx}</td></tr>`).join("")}</table>`;
+  }
+  AM.wire(["pl-l"], cv.redraw, { "pl-l": (v) => AM.fmt(Math.round(10 ** v)) + "세션" });
+  ["pl-ctx", "pl-store", "pl-write", "pl-time", "pl-forget", "pl-sec"].forEach((id) => AM.el(id).addEventListener("change", cv.redraw));
+  AM.el("pl-save").addEventListener("click", () => { const c = cfg(); saved.push({ c, R: evalCfg(c) }); if (saved.length > 3) saved.shift(); renderSaved(); cv.redraw(); });
+  AM.el("pl-clear").addEventListener("click", () => { saved = []; renderSaved(); cv.redraw(); });
+})();
+
+/* ---------------- 2. 용어집 ---------------- */
+(function () {
+  const num = Object.fromEntries(AM.CHAPTERS.map((c) => [c.slug, c.num]));
+  function render() {
+    const v = AM.el("gl-q").value.trim().toLowerCase();
+    const list = AM.GLOSSARY.filter((g) => !v || (g[0] + g[1] + g[2]).toLowerCase().includes(v));
+    AM.el("gl-list").innerHTML = list.length ? list.map((g) => `<div><b>${AM.esc(g[0])}</b><i>${AM.esc(g[1])}</i><a href="${g[3]}.html">CH.${num[g[3]]}</a><p>${AM.esc(g[2])}</p></div>`).join("") : '<div style="color:var(--text-faint)">맞는 용어가 없습니다.</div>';
+  }
+  AM.el("gl-q").addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>
