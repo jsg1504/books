@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>하네스란 무엇인가 · HarnessBook</title>
+<meta name="description" content="모델 + 하네스 = 에이전트. 하네스의 층을 해부하고, 같은 모델이 하네스에 따라 얼마나 달라지는지 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #an-svg { max-width: 420px; margin: 0 auto; display: block; }
+  #sm-toggles { display: grid; gap: 6px; }
+</style>
+</head>
+<body data-root="../" data-chapter="what">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 01</div>
+    <h1>하네스란 무엇인가</h1>
+    <p class="lead">언어 모델 API가 하는 일은 하나다. 텍스트를 받아 텍스트를 돌려준다. 파일을 읽지도, 명령을 실행하지도, 어제 하던 일을 기억하지도 못한다. 그런데도 우리는 “에이전트가 버그를 고쳤다”고 말한다. 그 사이를 메우는 것이 모델을 감싼 프로그램, <b>하네스</b>다. 이 장에서는 하네스가 어떤 층으로 이루어지는지 해부하고, 같은 모델이 하네스에 따라 얼마나 다른 에이전트가 되는지 실험으로 확인한다.</p>
+    <ul class="objectives">
+      <li>모델 API의 입출력과 에이전트의 행동 사이에 하네스가 하는 일을 설명할 수 있다.</li>
+      <li>하네스의 층(루프, 컨텍스트, 도구, 실행 환경, 권한, 상태)을 구분하고 각 층이 막는 실패를 말할 수 있다.</li>
+      <li>같은 모델이라도 하네스 구성에 따라 성공률·비용·사고율이 크게 달라지는 이유를 설명할 수 있다.</li>
+      <li>“판단은 모델, 강제는 하네스” 원칙으로 책임을 나눌 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="io">
+    <h2>모델은 글자를 받아 글자를 낸다</h2>
+    <p>모델에게 “테스트가 왜 실패하는지 찾아서 고쳐 줘”라고 보내면, 모델은 <code>npm test</code>를 실행할 수 없다. 대신 “<code>npm test</code>를 실행하고 싶다”는 <b>구조화된 요청</b>을 텍스트로 출력할 뿐이다. 그 요청을 읽어 실제로 명령을 실행하고, 결과를 다음 입력에 붙여 다시 모델을 부르는 코드가 있어야 비로소 일이 진행된다. 이 코드 전체를 <span class="term">하네스</span><span class="en">harness</span>라고 부른다. 벤치마크 문헌에서는 <span class="term">스캐폴드</span><span class="en">scaffold</span>라고도 한다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 300" role="img" aria-label="모델 혼자일 때와 하네스 안에 있을 때">
+        <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent-2)"/></marker></defs>
+        <text x="170" y="22" text-anchor="middle" class="t-b">모델 혼자</text>
+        <text x="540" y="22" text-anchor="middle" class="t-b">하네스 안의 모델 = 에이전트</text>
+        <g transform="translate(20,40)">
+          <rect width="300" height="230" rx="12" class="f-surface"/>
+          <rect x="20" y="30" width="110" height="40" rx="8" class="soft-user"/><text x="75" y="55" text-anchor="middle" class="t-mono">"고쳐 줘"</text>
+          <path d="M132 50 H166" class="s-acc" marker-end="url(#a1)"/>
+          <circle cx="200" cy="50" r="26" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/><text x="200" y="55" text-anchor="middle" class="t-b">모델</text>
+          <path d="M200 78 V112" class="s-acc" marker-end="url(#a1)"/>
+          <rect x="70" y="118" width="210" height="46" rx="8" class="soft-tool"/><text x="80" y="137" class="t-mono">tool_use: bash</text><text x="80" y="154" class="t-mono">{"cmd": "npm test"}</text>
+          <text x="150" y="196" text-anchor="middle" class="t-dim">…그리고 아무 일도 일어나지 않는다.</text>
+          <text x="150" y="214" text-anchor="middle" class="t-dim">실행할 주체가 없다.</text>
+        </g>
+        <g transform="translate(350,40)">
+          <rect width="390" height="230" rx="12" class="f-acc-soft" stroke-dasharray="6 4"/>
+          <text x="14" y="20" class="t-acc">하네스</text>
+          <rect x="16" y="34" width="96" height="36" rx="8" class="soft-ctx"/><text x="64" y="57" text-anchor="middle" class="t">입력 조립</text>
+          <path d="M114 52 H146" class="s-acc" marker-end="url(#a1)"/>
+          <circle cx="178" cy="52" r="26" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="2"/><text x="178" y="57" text-anchor="middle" class="t-b">모델</text>
+          <path d="M206 52 H238" class="s-acc" marker-end="url(#a1)"/>
+          <rect x="242" y="34" width="62" height="36" rx="8" class="soft-guard"/><text x="273" y="57" text-anchor="middle" class="t">권한</text>
+          <path d="M306 52 H322" class="s-acc" marker-end="url(#a1)"/>
+          <rect x="324" y="34" width="56" height="36" rx="8" class="soft-env"/><text x="352" y="57" text-anchor="middle" class="t">실행</text>
+          <path d="M352 72 V140 H64 V74" stroke="var(--accent-2)" stroke-width="2" fill="none" marker-end="url(#a2)" class="flow"/>
+          <text x="208" y="132" text-anchor="middle" class="t-acc" style="fill:var(--accent-2)">결과를 다음 입력에 붙여 다시 호출</text>
+          <rect x="16" y="160" width="358" height="54" rx="8" class="soft-state"/>
+          <text x="30" y="182" class="t">상태: 대화 기록 · 할 일 · 체크포인트 · 비용 카운터</text>
+          <text x="30" y="202" class="t-dim">종료 조건: end_turn · 턴 상한 · 예산 · 사용자 중단</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 1-1.</b> 모델은 행동을 “제안”할 뿐이다. 하네스가 입력을 조립하고, 제안된 행동을 검사해 실행하고, 결과를 되먹이며, 언제 멈출지 정한다. 우리가 에이전트라고 부르는 것은 이 고리 전체다.</figcaption>
+    </figure>
+    <div class="code"><div class="bar"><span>가장 작은 하네스의 뼈대 (의사 코드)</span><span>2장에서 한 줄씩 해부한다</span></div>
+<pre><span class="k">messages</span> = [user(<span class="s">"테스트를 고쳐 줘"</span>)]
+<span class="k">while</span> turns &lt; MAX_TURNS:                     <span class="c"># 종료 조건 (2장)</span>
+    resp = model(system, tools, messages)      <span class="c"># 입력 조립 (3장) · 도구 정의 (4장)</span>
+    messages.append(resp)
+    <span class="k">if</span> resp.stop_reason != <span class="s">"tool_use"</span>: <span class="k">break</span>
+    <span class="k">for</span> call <span class="k">in</span> resp.tool_calls:
+        <span class="k">if not</span> permitted(call): result = denied(call)   <span class="c"># 권한 · 훅 (6장)</span>
+        <span class="k">else</span>: result = sandbox.run(call)               <span class="c"># 실행 환경 (5장)</span>
+        messages.append(tool_result(call.id, result))
+    checkpoint(messages)                       <span class="c"># 상태 (7장)</span></pre></div>
+  </section>
+
+  <section id="anatomy">
+    <h2>하네스 해부도</h2>
+    <p>위 뼈대의 각 줄은 실제 제품에서 수천 줄짜리 하위 시스템이 된다. 아래 그림은 이 책이 쓰는 하네스의 지도다. 가운데에 모델이 있고, 바깥으로 갈수록 모델의 출력이 세상에 닿기 전에 거치는 층이다. 고리를 눌러 각 층이 하는 일과, 그 층이 없을 때 생기는 실패를 확인해 보자.</p>
+    <div class="sim" id="sim-anat">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>하네스 해부도 — 층을 눌러 보세요</h3></div>
+      <div class="sim-body anat">
+        <svg id="an-svg" viewBox="0 0 400 400" role="img" aria-label="하네스의 동심원 층 구조"></svg>
+        <div class="info" id="an-info"></div>
+      </div>
+      <div class="sim-note">층마다 <b>없으면 생기는 실패</b>를 눈여겨보자. 하네스 설계는 대부분 “모델이 언젠가 틀릴 것”을 전제로, 틀렸을 때 피해를 줄이고 다시 바로잡을 기회를 주는 일이다.</div>
+    </div>
+  </section>
+
+  <section id="same">
+    <h2>같은 모델, 다른 하네스</h2>
+    <p>코딩 에이전트 벤치마크의 순위표를 보면 같은 모델 이름이 여러 번 등장한다. 모델은 같은데 감싼 하네스(도구 구성, 피드백 방식, 재시도, 컨텍스트 관리)가 다르기 때문이고, 그 차이만으로 해결률이 크게 벌어지는 일이 흔하다. 모델을 바꾸지 않고도 하네스를 고쳐서 얻을 수 있는 몫이 크다는 뜻이다.</p>
+    <p>아래 실험은 같은 “모델”(단계마다 일정 확률로 실수하는 단순 모형)에게 200개의 작업을 맡긴다. 하네스 부품을 하나씩 켜고 끄며 결과가 어떻게 바뀌는지 보자. 작업과 실수는 같은 난수 씨앗으로 만들어지므로 부품만 바뀐 비교다.</p>
+    <div class="sim" id="sim-same">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>같은 모델, 다른 하네스 — 200개 작업 결과</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sm-cv"></canvas>
+          <div class="legend" style="margin-top:8px"><span><i style="background:var(--env)"></i>성공</span><span><i style="background:var(--guard)"></i>틀린 결과로 종료</span><span><i style="background:var(--ctx)"></i>컨텍스트 초과</span><span><i style="background:var(--tool)"></i>API 오류로 중단</span><span><i style="background:var(--state)"></i>헛돌다 상한 도달</span><span><i style="background:transparent;border:2px solid var(--guard)"></i>위험 행동 실행됨</span></div>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>모델의 단계당 실수율 <output id="sm-e-out"></output></span><input type="range" id="sm-e" min="0.02" max="0.25" step="0.01" value="0.1"></label>
+          <div id="sm-toggles">
+            <label class="check"><input type="checkbox" data-k="fb" checked> 테스트·실행 피드백</label>
+            <label class="check"><input type="checkbox" data-k="trunc" checked> 긴 도구 출력 자르기</label>
+            <label class="check"><input type="checkbox" data-k="compact"> 컨텍스트 압축</label>
+            <label class="check"><input type="checkbox" data-k="retry"> API 오류 재시도</label>
+            <label class="check"><input type="checkbox" data-k="guard"> 권한 검사</label>
+            <label class="check"><input type="checkbox" data-k="cap" checked> 턴 상한 (40턴)</label>
+          </div>
+          <div class="btns"><button class="btn" id="sm-none">모두 끄기</button><button class="btn" id="sm-all">모두 켜기</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">성공률</span><span class="v" id="sm-o1">—</span></div>
+        <div class="stat"><span class="k">작업당 평균 턴</span><span class="v" id="sm-o2">—</span></div>
+        <div class="stat"><span class="k">위험 행동 실행</span><span class="v" id="sm-o3">—</span></div>
+        <div class="stat"><span class="k">헛돈 턴 합계</span><span class="v" id="sm-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>모두 끄기</b>를 누르고 실수율을 2%까지 내려 보자. 모델이 아주 좋아져도 컨텍스트 초과와 API 오류는 남는다. ② 반대로 실수율 15%에서 <b>모두 켜기</b>. 나쁜 모델 + 좋은 하네스가 좋은 모델 + 나쁜 하네스를 이기는 지점을 찾아보자. ③ <b>턴 상한</b>을 끄면 성공률은 그대로인데 헛돈 턴이 폭증한다 — 상한은 성공률이 아니라 비용을 지킨다.</div>
+    </div>
+    <div class="callout warn"><b class="h">이 모형이 단순화한 것</b>실제 실수는 독립적이지 않고(한 번 잘못 이해하면 계속 틀린다), 피드백도 완벽하지 않다(테스트가 없는 코드도 많다). 그래도 “각 부품이 서로 다른 실패를 막는다”는 구조는 그대로다. 9장에서 실패가 단계 수만큼 곱해지는 효과를 더 정확히 다룬다.</div>
+  </section>
+
+  <section id="who">
+    <h2>판단은 모델, 강제는 하네스</h2>
+    <p>하네스를 설계할 때 가장 자주 하는 질문은 “이건 프롬프트에 쓸까, 코드로 막을까?”다. 기준은 단순하다. <b>틀려도 다시 시도하면 되는 판단</b>은 모델에게 맡긴다. 어떤 파일을 열지, 테스트 실패의 원인이 무엇인지, 커밋 메시지를 어떻게 쓸지. 반대로 <b>한 번이라도 틀리면 안 되는 규칙</b>은 하네스 코드로 강제한다. 비밀 키 유출, 되돌릴 수 없는 삭제, 비용 한도, 컨텍스트 한도. 프롬프트에 “절대 하지 마”라고 쓰는 것은 확률을 낮출 뿐 0으로 만들지 못한다.</p>
+    <figure class="diagram">
+      <svg viewBox="0 0 760 170" role="img" aria-label="확률적 판단과 결정적 강제의 스펙트럼">
+        <defs><linearGradient id="gr1" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--guard)"/></linearGradient></defs>
+        <rect x="30" y="60" width="700" height="14" rx="7" fill="url(#gr1)" opacity=".75"/>
+        <text x="30" y="44" class="t-b" style="fill:var(--accent)">모델에게 맡김 (확률적)</text>
+        <text x="730" y="44" text-anchor="end" class="t-b" style="fill:var(--guard)">하네스가 강제 (결정적)</text>
+        <g class="t-mono">
+          <circle cx="70" cy="67" r="6" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="2"/><text x="70" y="100" text-anchor="middle">열 파일 고르기</text>
+          <circle cx="200" cy="67" r="6" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="2"/><text x="200" y="118" text-anchor="middle">실패 원인 추론</text>
+          <circle cx="330" cy="67" r="6" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="2"/><text x="330" y="100" text-anchor="middle">언제 사용자에게 물을지</text>
+          <circle cx="470" cy="67" r="6" fill="var(--bg-elev)" stroke="var(--accent-2)" stroke-width="2"/><text x="470" y="118" text-anchor="middle">코딩 규칙 (지침 + 린터)</text>
+          <circle cx="590" cy="67" r="6" fill="var(--bg-elev)" stroke="var(--guard)" stroke-width="2"/><text x="590" y="100" text-anchor="middle">rm -rf 차단</text>
+          <circle cx="700" cy="67" r="6" fill="var(--bg-elev)" stroke="var(--guard)" stroke-width="2"/><text x="700" y="118" text-anchor="middle">비용 한도</text>
+        </g>
+        <text x="380" y="156" text-anchor="middle" class="t-dim">가운데는 둘 다: 프롬프트로 알려 주고(대부분 지켜짐) 하네스로 검증한다(어기면 막고 알려 줌)</text>
+      </svg>
+      <figcaption><b>그림 1-2.</b> 책임의 스펙트럼. 왼쪽으로 갈수록 유연한 판단이 필요하고 틀려도 회복할 수 있다. 오른쪽으로 갈수록 한 번의 실수가 치명적이므로 코드가 보장해야 한다.</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-who">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>책임 나누기 — 모델, 하네스, 아니면 둘 다?</h3></div>
+      <div class="sim-body">
+        <div class="tiles" id="who-cards"></div>
+        <div class="bins" id="who-bins">
+          <button data-k="model" style="--k:var(--accent)">모델의 판단</button>
+          <button data-k="both" style="--k:var(--accent-2)">둘 다 (알리고 검증)</button>
+          <button data-k="harness" style="--k:var(--guard)">하네스가 강제</button>
+        </div>
+        <div class="pane" id="who-exp" style="font-family:var(--font);font-size:14px;min-height:46px">카드를 먼저 고르세요.</div>
+        <div class="btns"><button class="btn" id="who-reset">다시 하기</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">맞힘</span><span class="v" id="wo-o1">0</span></div>
+        <div class="stat"><span class="k">틀림</span><span class="v" id="wo-o2">0</span></div>
+        <div class="stat"><span class="k">남은 카드</span><span class="v" id="wo-o3">—</span></div>
+      </div>
+      <div class="sim-note">기준: <b>틀려도 다음 턴에 바로잡을 수 있는가?</b> 그렇다면 모델에게. <b>한 번의 실수가 되돌릴 수 없는 피해나 한도 초과로 이어지는가?</b> 그렇다면 하네스 코드로.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>모델은 텍스트를 받아 텍스트(행동 제안 포함)를 낼 뿐이다. 입력 조립, 실행, 결과 되먹임, 종료 판단은 모두 하네스의 일이다.</li>
+      <li>하네스는 루프·컨텍스트·도구·실행 환경·권한·상태의 층으로 나눌 수 있고, 각 층은 서로 다른 실패를 막는다.</li>
+      <li>같은 모델도 하네스에 따라 성공률, 비용, 사고율이 크게 달라진다. 모델 교체 없이 하네스 개선으로 얻는 몫이 크다.</li>
+      <li>틀려도 회복 가능한 판단은 모델에게, 한 번도 틀리면 안 되는 규칙은 하네스 코드로 강제한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 모델이 <code>tool_use: bash {"cmd":"ls"}</code>를 출력했다. 실제로 ls를 실행하는 주체는?</p><div class="opts">
+        <button class="opt">모델 서버가 출력과 동시에 실행한다</button>
+        <button class="opt" data-correct>하네스가 출력을 읽고 자신의 실행 환경에서 실행한다</button>
+        <button class="opt">사용자의 운영체제가 자동으로 실행한다</button>
+      </div><div class="quiz-exp">모델의 도구 호출은 구조화된 텍스트일 뿐이다. 실행 여부, 실행 장소, 결과 전달은 하네스가 정한다.</div></div>
+      <div class="quiz-q"><p>2. 같은 모델을 쓰는 두 에이전트의 벤치마크 점수가 크게 다르다. 가장 그럴듯한 설명은?</p><div class="opts">
+        <button class="opt">점수는 무작위라 의미가 없다</button>
+        <button class="opt" data-correct>도구 구성, 피드백, 재시도, 컨텍스트 관리 등 하네스가 다르다</button>
+        <button class="opt">같은 모델이면 점수도 같아야 하므로 측정 오류다</button>
+      </div><div class="quiz-exp">모델은 같아도 하네스가 다르면 다른 에이전트다. 순위표가 “에이전트 + 모델” 조합으로 기록되는 이유다.</div></div>
+      <div class="quiz-q"><p>3. “하루 비용이 50달러를 넘으면 멈춘다”는 규칙은 어디에 두는 것이 맞을까?</p><div class="opts">
+        <button class="opt">시스템 프롬프트에 “50달러를 넘기지 마”라고 쓴다</button>
+        <button class="opt" data-correct>하네스가 토큰 사용량을 세다가 한도에서 루프를 멈춘다</button>
+        <button class="opt">모델이 스스로 비용을 계산하도록 도구를 준다</button>
+      </div><div class="quiz-exp">모델은 자기 비용을 정확히 알 수 없고, 프롬프트는 확률을 낮출 뿐이다. 한도는 결정적으로 강제해야 한다.</div></div>
+      <div class="quiz-q"><p>4. 턴 상한을 두는 가장 직접적인 효과는?</p><div class="opts">
+        <button class="opt">성공률이 크게 오른다</button>
+        <button class="opt" data-correct>끝나지 않는 실행의 비용이 묶인다</button>
+        <button class="opt">모델의 실수율이 줄어든다</button>
+      </div><div class="quiz-exp">상한은 헛도는 실행을 끊어 비용을 지킨다. 너무 낮으면 오히려 정상 작업을 끊어 성공률을 낮춘다(2장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 하네스 해부도 ---------------- */
+(function () {
+  const L = [
+    { id: "model", k: "accent", r: 46, name: "모델", sub: "다음 행동을 고른다", what: "조립된 입력을 읽고 텍스트 또는 도구 호출을 출력한다. 하네스 입장에서는 “가끔 틀리는 함수”다.", fails: ["모델 혼자서는 아무것도 실행하지 못한다", "같은 입력에도 출력이 달라질 수 있다"], ch: "loop", chn: "2장 · 에이전트 루프" },
+    { id: "ctx", k: "ctx", r: 82, name: "컨텍스트", sub: "무엇을 보여 줄까", what: "시스템 프롬프트, 지침 파일, 도구 정의, 대화 기록, 도구 결과를 순서대로 쌓아 매 호출의 입력을 만든다. 캐시가 잘 맞도록 순서를 정하고, 차면 압축한다.", fails: ["윈도우를 넘어 호출 자체가 실패한다", "앞부분이 매번 바뀌어 캐시가 깨지고 비용이 몇 배가 된다", "중요한 규칙이 긴 기록 속에 묻힌다"], ch: "prompt", chn: "3장 · 프롬프트 조립" },
+    { id: "tool", k: "tool", r: 116, name: "도구", sub: "모델의 손", what: "모델이 호출할 수 있는 함수의 이름·설명·입력 스키마를 정의하고, 호출을 검증한 뒤 결과를 모델이 읽기 좋은 형태로 돌려준다.", fails: ["비슷한 도구가 많아 엉뚱한 것을 고른다", "10만 줄짜리 출력이 컨텍스트를 덮는다", "“Error” 한 단어만 돌려줘 같은 실수를 반복한다"], ch: "tools", chn: "4장 · 도구 설계" },
+    { id: "env", k: "env", r: 148, name: "실행 환경", sub: "어디서 실행할까", what: "명령이 실제로 도는 곳. 파일 시스템, 프로세스, 네트워크를 격리하고 자원을 제한한다.", fails: ["잘못된 rm 한 번이 사용자의 홈 디렉터리를 지운다", "악성 문서의 지시로 비밀 키가 외부로 전송된다", "무한 루프 프로세스가 머신을 멈춘다"], ch: "sandbox", chn: "5장 · 샌드박스" },
+    { id: "guard", k: "guard", r: 178, name: "권한 · 훅", sub: "해도 될까", what: "도구 호출마다 허용·확인·거부 규칙을 평가하고, 실행 전후에 사용자 코드(훅)를 끼워 검사·변환·기록한다.", fails: ["되돌릴 수 없는 행동이 확인 없이 실행된다", "확인 요청이 너무 잦아 사람이 읽지 않고 승인한다"], ch: "permissions", chn: "6장 · 권한과 훅" },
+  ];
+  const ST = { id: "state", k: "state", name: "상태 (모든 층을 가로지름)", what: "대화 기록, 할 일 목록, 파일 체크포인트, 비용 카운터를 저장해 중단 후 재개와 되감기를 가능하게 한다. 그림의 점선처럼 모든 층에 걸쳐 있다.", fails: ["프로세스가 죽으면 두 시간 작업이 사라진다", "타임아웃 후 재시도가 같은 결제를 두 번 한다"], ch: "state", chn: "7장 · 상태와 체크포인트" };
+  const svg = HB.el("an-svg");
+  let sel = "ctx";
+  function render() {
+    let s = "";
+    [...L].reverse().forEach((l) => {
+      const on = sel === l.id;
+      s += `<g class="layer ${on ? "on" : ""}" data-id="${l.id}" tabindex="0" role="button" aria-label="${l.name}"><circle cx="200" cy="200" r="${l.r}" style="fill:color-mix(in srgb, var(--${l.k}) ${on ? 22 : 9}%, var(--bg-elev))" stroke="var(--${l.k})" stroke-width="${on ? 4 : 2}" ${l.id === "guard" ? 'stroke-dasharray="8 5"' : ""}/>` +
+        (l.id === "model" ? `<text x="200" y="198" text-anchor="middle" class="t-b">모델</text><text x="200" y="215" text-anchor="middle" class="t-mono">LLM</text>` : `<text x="200" y="${200 - l.r + 20}" text-anchor="middle" class="t-b" style="fill:var(--${l.k})">${l.name}</text>`) + `</g>`;
+    });
+    s += `<g class="layer ${sel === "state" ? "on" : ""}" data-id="state" tabindex="0" role="button" aria-label="상태"><path d="M200 248 V382" stroke="var(--state)" stroke-width="${sel === "state" ? 5 : 3}" stroke-dasharray="4 5"/><rect x="232" y="360" width="80" height="26" rx="13" fill="var(--bg-elev)" stroke="var(--state)" stroke-width="2"/><text x="272" y="378" text-anchor="middle" class="t-b" style="fill:var(--state);font-size:12.5px">상태</text></g>`;
+    svg.innerHTML = s;
+    const l = L.find((x) => x.id === sel) || ST;
+    HB.el("an-info").style.setProperty("--k", `var(--${l.k})`);
+    HB.el("an-info").innerHTML = `<h4>${l.name}</h4><p>${l.what}</p><p style="margin-bottom:4px"><b>이 층이 없으면</b></p><ul>${l.fails.map((f) => `<li>${f}</li>`).join("")}</ul><a href="${l.ch}.html">${l.chn} →</a>`;
+  }
+  svg.addEventListener("click", (e) => { const g = e.target.closest("g.layer"); if (g) { sel = g.dataset.id; render(); } });
+  svg.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { const g = e.target.closest("g.layer"); if (g) { e.preventDefault(); sel = g.dataset.id; render(); } } });
+  render();
+})();
+
+/* ---------------- 2. 같은 모델, 다른 하네스 ---------------- */
+(function () {
+  const N = 200;
+  const cv = HB.canvas("sm-cv", { aspect: 0.5, draw });
+  const on = {};
+  const boxes = HB.$$("#sm-toggles input");
+  boxes.forEach((b) => b.addEventListener("change", () => cv.redraw()));
+  HB.el("sm-none").addEventListener("click", () => { boxes.forEach((b) => (b.checked = false)); cv.redraw(); });
+  HB.el("sm-all").addEventListener("click", () => { boxes.forEach((b) => (b.checked = true)); cv.redraw(); });
+  function simulate() {
+    boxes.forEach((b) => (on[b.dataset.k] = b.checked));
+    const e = HB.val("sm-e");
+    const rnd = HB.rng(2024);
+    const out = [];
+    let turnsSum = 0, risky = 0, wasted = 0;
+    for (let i = 0; i < N; i++) {
+      const need = 4 + Math.floor(rnd() * rnd() * 34);      // 필요한 유효 단계 수
+      const stuck = rnd() < 0.07;                            // 헛도는 작업
+      const big = rnd(), apiR = rnd();
+      let t = 0, done = 0, res = "ok", hidden = false, incident = false, ctx = 0;
+      const cap = on.cap ? 40 : 120;
+      const r2 = HB.rng(i * 7919 + 13);
+      while (true) {
+        t++;
+        if (t > cap) { res = "stuck"; break; }
+        const u = r2(), v = r2(), w = r2(), x = r2();
+        // 컨텍스트 성장: 턴당 2~5K, 큰 출력은 자르지 않으면 40K
+        let add = 2 + v * 3;
+        if (w < 0.05) add = on.trunc ? 6 : 40;
+        ctx += add;
+        if (ctx > 160) { if (on.compact) ctx = 40; else { res = "ctx"; break; } }
+        if (x < 0.012) { if (!on.retry) { res = "api"; break; } }
+        if (u < 0.018) { if (!on.guard) incident = true; }
+        if (stuck && t > 3) continue;                       // 진전 없음
+        if (v < e) { if (on.fb && r2() < 0.85) { /* 실패를 보고 다음 턴에 고친다 */ continue; } hidden = true; }
+        done++;
+        if (done >= need) { res = hidden ? "wrong" : "ok"; break; }
+      }
+      if (stuck) wasted += Math.min(t, cap);
+      turnsSum += Math.min(t, cap);
+      if (incident) risky++;
+      out.push({ res, incident });
+    }
+    return { out, avgT: turnsSum / N, risky, wasted };
+  }
+  const COL = { ok: "env", wrong: "guard", ctx: "ctx", api: "tool", stuck: "state" };
+  function draw(c, w, h) {
+    const R = simulate();
+    const order = ["ok", "wrong", "ctx", "api", "stuck"];
+    const sorted = R.out.slice().sort((a, b) => order.indexOf(a.res) - order.indexOf(b.res));
+    const cols = 25, rows = N / cols, pad = 3;
+    const cell = Math.min((w - 20) / cols, (h - 46) / rows);
+    const ox = (w - cell * cols) / 2, oy = 8;
+    sorted.forEach((d, i) => {
+      const x = ox + (i % cols) * cell, y = oy + Math.floor(i / cols) * cell;
+      c.fillStyle = HB.alpha(HB.col(COL[d.res]), d.res === "ok" ? 0.85 : 0.7);
+      HB.rrect(c, x + pad / 2, y + pad / 2, cell - pad, cell - pad, 3); c.fill();
+      if (d.incident) { c.strokeStyle = HB.col("guard"); c.lineWidth = 2.2; HB.rrect(c, x + 1, y + 1, cell - 2, cell - 2, 4); c.stroke(); c.beginPath(); c.moveTo(x + 5, y + 5); c.lineTo(x + cell - 5, y + cell - 5); c.stroke(); }
+    });
+    // 아래 막대
+    const by = oy + rows * cell + 12, bw = cell * cols;
+    let bx = ox;
+    order.forEach((k) => {
+      const n = R.out.filter((d) => d.res === k).length;
+      if (!n) return;
+      const ww = (bw * n) / N;
+      c.fillStyle = HB.col(COL[k]); c.fillRect(bx, by, ww, 14);
+      if (ww > 34) HB.text(c, Math.round((n / N) * 100) + "%", bx + ww / 2, by + 7.5, { size: 10.5, align: "center", color: "#fff", weight: 700 });
+      bx += ww;
+    });
+    const ok = R.out.filter((d) => d.res === "ok").length / N;
+    HB.set("sm-o1", HB.pct(ok), ok > 0.7 ? "good" : ok < 0.4 ? "bad" : "warn");
+    HB.set("sm-o2", R.avgT.toFixed(1));
+    HB.set("sm-o3", R.risky + "건", R.risky ? "bad" : "good");
+    HB.set("sm-o4", HB.fmt(R.wasted), R.wasted > 800 ? "bad" : "");
+  }
+  HB.wire(["sm-e"], cv.redraw, { "sm-e": (v) => HB.pct(v) });
+})();
+
+/* ---------------- 3. 책임 나누기 게임 ---------------- */
+(function () {
+  const CARDS = [
+    ["다음에 어떤 파일을 열어 볼지 고르기", "model", "탐색 순서는 틀려도 다음 턴에 다른 파일을 열면 된다. 모델의 판단 영역이다."],
+    ["rm -rf / 같은 명령 실행 막기", "harness", "한 번이면 끝이다. 권한 규칙과 샌드박스로 결정적으로 막아야 한다."],
+    ["컨텍스트가 한도의 90%를 넘으면 압축하기", "harness", "모델은 자기 입력 길이를 정확히 모른다. 하네스가 토큰을 세고 시점을 정한다(3장)."],
+    ["테스트 실패 로그에서 원인 추론하기", "model", "바로 모델이 잘하는 일이다. 틀리면 다음 테스트 실행이 알려 준다."],
+    ["도구 결과에 섞인 API 키를 가려서 넣기", "harness", "비밀이 한 번 컨텍스트에 들어가면 로그·요약·외부 요청으로 퍼질 수 있다. 하네스가 결과를 넣기 전에 걸러야 한다."],
+    ["커밋 메시지 문체 맞추기", "model", "지침 파일로 알려 주면 충분하다. 틀려도 피해가 없다."],
+    ["린트 규칙 지키기", "both", "지침으로 알려 주면 대부분 지키고, 훅이 편집 후 린터를 돌려 어긴 것을 알려 준다. 알리고 검증하는 전형적인 예."],
+    ["한 실행의 비용 한도", "harness", "모델은 자기 비용을 모른다. 하네스가 세다가 멈춘다."],
+    ["사용자에게 확인이 필요한 애매한 요청인지 판단", "model", "의도 해석은 모델의 일이다. 다만 위험 행동 자체의 확인은 권한 규칙이 맡는다."],
+    ["외부 서비스로 나가는 네트워크 요청 제한", "harness", "프롬프트 인젝션은 모델의 판단을 속인다. 출구 통제는 모델이 속아도 작동해야 한다(5장)."],
+    ["새 의존성을 추가할 때 이유를 설명하기", "both", "설명은 모델이 하고, 하네스는 package.json 변경을 감지해 확인을 요청할 수 있다."],
+    ["작업이 끝났는지 판단해 루프 끝내기", "both", "평소에는 모델이 end_turn으로 끝낸다. 하지만 턴 상한과 헛도는 루프 감지는 하네스가 강제한다(2장)."],
+  ];
+  const NAME = { model: "모델의 판단", harness: "하네스가 강제", both: "둘 다" };
+  const KC = { model: "accent", harness: "guard", both: "accent-2" };
+  let sel = -1, ok = 0, no = 0, done = new Set();
+  const order = CARDS.map((_, i) => i).sort((a, b) => ((a * 5) % 12) - ((b * 5) % 12));
+  function render() {
+    HB.el("who-cards").innerHTML = order.map((i) => {
+      const d = done.has(i);
+      return `<button class="tile ${sel === i ? "sel" : ""} ${d ? (CARDS[i].res ? "ok" : "no") : ""}" data-i="${i}" ${d ? "disabled" : ""}>${HB.esc(CARDS[i][0])}${d ? `<span class="tag" style="--k:var(--${KC[CARDS[i][1]]})">${NAME[CARDS[i][1]]}</span>` : ""}</button>`;
+    }).join("");
+    HB.set("wo-o1", ok, "good"); HB.set("wo-o2", no, no ? "bad" : ""); HB.set("wo-o3", CARDS.length - done.size);
+  }
+  HB.el("who-cards").addEventListener("click", (e) => {
+    const b = e.target.closest(".tile"); if (!b || b.disabled) return;
+    sel = +b.dataset.i; render();
+    HB.el("who-exp").textContent = "선택: “" + CARDS[sel][0] + "” — 이제 아래 상자를 고르세요.";
+  });
+  HB.el("who-bins").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (sel < 0) { HB.el("who-exp").textContent = "카드를 먼저 고르세요."; return; }
+    const c = CARDS[sel], right = b.dataset.k === c[1];
+    c.res = right; done.add(sel); right ? ok++ : no++;
+    HB.el("who-exp").innerHTML = `${right ? "✓ 맞았습니다." : `✗ 정답은 <b>${NAME[c[1]]}</b>.`} ${HB.esc(c[2])}`;
+    sel = -1; render();
+    if (done.size === CARDS.length) HB.el("who-exp").innerHTML += `<br><b>끝! ${CARDS.length}개 중 ${ok}개를 맞혔습니다.</b>`;
+  });
+  HB.el("who-reset").addEventListener("click", () => { sel = -1; ok = 0; no = 0; done = new Set(); CARDS.forEach((c) => delete c.res); HB.el("who-exp").textContent = "카드를 먼저 고르세요."; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

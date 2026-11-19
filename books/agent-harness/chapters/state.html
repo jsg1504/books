@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>상태 · 세션 · 체크포인트 · HarnessBook</title>
+<meta name="description" content="중단된 작업을 이어 가는 체크포인트 간격, 대화와 코드를 되감는 법, 재시도해도 안전한 도구를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #rw-files, #rw-fx { display: grid; gap: 6px; }
+  #rw-conv { max-height: 230px; }
+</style>
+</head>
+<body data-root="../" data-chapter="state">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>상태 · 세션 · 체크포인트</h1>
+    <p class="lead">모델은 상태가 없지만 하네스는 상태투성이다. 대화 기록, 할 일 목록, 바뀐 파일, 실행 중인 프로세스, 지금까지 쓴 비용. 두 시간째 돌던 작업이 네트워크 오류로 죽었을 때 처음부터 다시 할지, 직전 지점에서 이어 갈지는 하네스가 상태를 어떻게 저장했느냐에 달렸다. 이 장에서는 체크포인트를 얼마나 자주 남길지, 되감기가 어디까지 가능한지, 재시도가 왜 위험할 수 있는지 실험한다.</p>
+    <ul class="objectives">
+      <li>하네스가 저장해야 하는 상태의 종류와 각각의 저장 비용을 설명할 수 있다.</li>
+      <li>장애율과 체크포인트 비용으로 적절한 체크포인트 간격을 계산할 수 있다.</li>
+      <li>대화 되감기와 코드 되감기의 차이, 그리고 되감을 수 없는 외부 부작용을 구분할 수 있다.</li>
+      <li>멱등 키로 재시도의 중복 실행을 막는 원리를 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="what">
+    <h2>하네스가 들고 있는 상태</h2>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 230" role="img" aria-label="하네스 상태의 종류">
+        <g transform="translate(20,20)">
+          <rect width="170" height="190" rx="12" class="soft-ctx"/><text x="85" y="26" text-anchor="middle" class="t-b">대화 기록</text>
+          <text x="14" y="54" class="t-dim">messages 배열 전체</text><text x="14" y="74" class="t-dim">도구 호출과 결과</text><text x="14" y="94" class="t-dim">압축 요약</text>
+          <text x="14" y="140" class="t-mono">저장: 줄 단위 로그</text><text x="14" y="160" class="t-mono">(append-only)</text><text x="14" y="180" class="t-mono">→ 세션 재개</text>
+        </g>
+        <g transform="translate(205,20)">
+          <rect width="170" height="190" rx="12" class="soft-tool"/><text x="85" y="26" text-anchor="middle" class="t-b">작업 공간</text>
+          <text x="14" y="54" class="t-dim">바뀐 파일의 이전 내용</text><text x="14" y="74" class="t-dim">새로 만든 파일</text><text x="14" y="94" class="t-dim">git 브랜치·스태시</text>
+          <text x="14" y="140" class="t-mono">저장: 편집 전 스냅숏</text><text x="14" y="160" class="t-mono">또는 git 커밋</text><text x="14" y="180" class="t-mono">→ 코드 되감기</text>
+        </g>
+        <g transform="translate(390,20)">
+          <rect width="170" height="190" rx="12" class="soft-env"/><text x="85" y="26" text-anchor="middle" class="t-b">실행 환경</text>
+          <text x="14" y="54" class="t-dim">설치한 패키지</text><text x="14" y="74" class="t-dim">떠 있는 서버·프로세스</text><text x="14" y="94" class="t-dim">환경 변수, 작업 디렉터리</text>
+          <text x="14" y="140" class="t-mono">저장: 어렵다</text><text x="14" y="160" class="t-mono">(VM 스냅숏 정도)</text><text x="14" y="180" class="t-mono">→ 다시 만드는 편이 쉽다</text>
+        </g>
+        <g transform="translate(575,20)">
+          <rect width="165" height="190" rx="12" class="soft-state"/><text x="82" y="26" text-anchor="middle" class="t-b">진행 · 회계</text>
+          <text x="14" y="54" class="t-dim">할 일 목록</text><text x="14" y="74" class="t-dim">턴 수, 토큰, 비용</text><text x="14" y="94" class="t-dim">승인 기록</text>
+          <text x="14" y="140" class="t-mono">저장: 작은 JSON</text><text x="14" y="160" class="t-mono">→ 한도 유지,</text><text x="14" y="180" class="t-mono">   감사</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 7-1.</b> 하네스의 네 가지 상태. 대화와 진행 상황은 작고 쉽게 저장된다. 파일은 편집 직전 내용을 남겨 두면 되돌릴 수 있다. 실행 환경은 저장하기 어려우므로 “다시 만들 수 있게” 설계하는 편이 낫다.</figcaption>
+    </figure>
+    <p>여기에 더해 하네스가 <b>저장할 수 없는 상태</b>가 있다. 이미 원격 저장소에 올린 커밋, 보낸 메시지, 호출한 결제 API. 이것들은 하네스 밖, 세상에 남는다. 3절에서 다룬다.</p>
+  </section>
+
+  <section id="checkpoint">
+    <h2>체크포인트 간격 정하기</h2>
+    <p>긴 작업 중간에 프로세스가 죽거나 API 오류가 이어지면, 마지막 체크포인트 이후의 일은 다시 해야 한다. 체크포인트를 자주 남기면 잃는 일은 적지만 저장 비용이 쌓인다. 이 균형은 고성능 컴퓨팅에서 오래 연구된 문제이고, 장애가 드물 때 잘 맞는 근사식이 있다(Young의 공식).</p>
+    <div class="formula"><div class="eq"><var>k</var>* ≈ √( 2<var>C</var> / <var>λ</var> ) &nbsp;&nbsp;·&nbsp;&nbsp; 기대 시간 ≈ <span class="frac"><span><var>L</var> + <var>L</var><var>C</var>/<var>k</var></span><span>1 − <var>λ</var>(<var>k</var>/2 + <var>R</var>)</span></span></div>
+      <div class="where"><var>L</var>: 작업에 필요한 단계 수, <var>C</var>: 체크포인트 한 번의 비용(단계 단위), <var>λ</var>: 단계당 장애 확률, <var>R</var>: 장애 후 다시 시작하는 비용, <var>k</var>: 체크포인트 간격. 장애 한 번에 평균 <var>k</var>/2 단계를 잃는다. 체크포인트가 없으면 장애마다 처음부터 다시 해야 해서 기대 시간이 작업 길이에 지수적으로 늘어난다.</div></div>
+    <div class="sim" id="sim-resume">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>중단과 재개 — 체크포인트 간격의 U자 곡선</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rs-cv1"></canvas><div style="height:10px"></div><canvas id="rs-cv2"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>체크포인트 간격 k (단계) <output id="rs-k-out"></output></span><input type="range" id="rs-k" min="1" max="100" step="1" value="25"></label>
+          <label class="ctrl"><span>작업 길이 L (단계) <output id="rs-l-out"></output></span><input type="range" id="rs-l" min="50" max="600" step="10" value="300"></label>
+          <label class="ctrl"><span>단계당 장애 확률 λ <output id="rs-f-out"></output></span><input type="range" id="rs-f" min="0.001" max="0.03" step="0.001" value="0.008"></label>
+          <label class="ctrl"><span>체크포인트 비용 C (단계) <output id="rs-c-out"></output></span><input type="range" id="rs-c" min="0.1" max="5" step="0.1" value="1"></label>
+          <button class="btn" id="rs-best">최적 간격으로</button>
+          <button class="btn" id="rs-seed">다른 표본 실행</button>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">기대 시간 (현재 k)</span><span class="v" id="rs-o1">—</span></div>
+        <div class="stat"><span class="k">최적 k* (Young)</span><span class="v" id="rs-o2">—</span></div>
+        <div class="stat"><span class="k">체크포인트 없을 때 기대 시간</span><span class="v" id="rs-o3">—</span></div>
+        <div class="stat"><span class="k">표본 실행: 장애 횟수</span><span class="v" id="rs-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 위 그래프의 U자 바닥이 Young의 근사와 거의 일치하는지 보자. ② 아래 그래프는 한 번의 실제 실행이다. 빨간 점(장애)마다 진행이 마지막 체크포인트로 떨어진다. 회색 점선은 체크포인트가 없을 때다. ③ 작업 길이를 600으로 늘리면 체크포인트 없는 실행은 사실상 끝나지 않는다. 대화 기록을 매 턴 파일에 덧붙이는 하네스는 사실상 k = 1, C ≈ 0인 셈이다.</div>
+    </div>
+  </section>
+
+  <section id="rewind">
+    <h2>되감기: 어디까지 되돌릴 수 있나</h2>
+    <p>에이전트가 엉뚱한 방향으로 30분을 갔다면, 사용자는 “10분 전으로 돌아가서 다르게 해 봐”라고 하고 싶다. 하네스가 편집 직전의 파일 내용과 대화 위치를 체크포인트로 남겨 두었다면 가능하다. 되감기에는 세 가지가 있다. <b>대화만</b>(코드는 둔 채 지시를 다시), <b>코드만</b>(대화는 둔 채 파일을 원래대로), <b>둘 다</b>. 하지만 어떤 행동은 하네스 밖의 세상을 바꿔서 되감기로 되돌릴 수 없다.</p>
+    <div class="sim" id="sim-rewind">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>되감기 타임라인 — 체크포인트를 눌러 보세요</h3></div>
+      <div class="sim-body">
+        <div class="timeline" id="rw-tl"></div>
+        <div class="seg" id="rw-mode"><button data-v="both" class="on">대화 + 코드</button><button data-v="conv">대화만</button><button data-v="code">코드만</button></div>
+        <div class="two">
+          <div><div class="ctrl" style="margin-bottom:6px"><span>대화 (모델이 다음에 볼 기록)</span></div><div class="pane" id="rw-conv"></div></div>
+          <div><div class="ctrl" style="margin-bottom:6px"><span>파일 상태</span></div><div id="rw-files"></div>
+            <div class="ctrl" style="margin:12px 0 6px"><span>하네스 밖에 남은 부작용</span></div><div id="rw-fx"></div></div>
+        </div>
+      </div>
+      <div class="sim-note">해볼 것: ① 마지막 단계에서 “4 · 첫 수정 실패” 지점으로 <b>대화 + 코드</b> 되감기. 파일과 대화가 함께 돌아간다. ② <b>코드만</b> 되감으면 대화에는 “테스트 통과”가 남아 있는데 파일은 옛날 상태다. 모델이 혼란스러워할 수 있는 조합이다. ③ 어느 지점으로 돌아가도 <b>git push</b>와 <b>메시지 전송</b>은 빨간색으로 남는다. 이런 행동이 6장에서 확인(ask) 대상인 이유다.</div>
+    </div>
+  </section>
+
+  <section id="idem">
+    <h2>멱등성: 재시도해도 안전한 도구</h2>
+    <p>도구 호출이 타임아웃으로 끝났다고 해서 실행이 안 된 것은 아니다. 서버는 요청을 처리했는데 <b>응답만</b> 돌아오는 길에 사라졌을 수 있다. 이때 하네스(또는 모델)가 다시 시도하면 이슈가 두 개, 결제가 두 번 생긴다. 같은 요청을 여러 번 보내도 결과가 한 번 보낸 것과 같은 성질을 <span class="term">멱등성</span><span class="en">idempotency</span>이라고 한다. 읽기는 원래 멱등이고, 쓰기는 <span class="term">멱등 키</span><span class="en">idempotency key</span>를 붙여 서버가 같은 요청을 알아보게 만든다.</p>
+    <div class="sim" id="sim-idem">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>재시도와 중복 — create_issue를 1,000번 호출하면</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="id-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>요청이 가는 길에 유실 <output id="id-a-out"></output></span><input type="range" id="id-a" min="0" max="0.3" step="0.01" value="0.05"></label>
+          <label class="ctrl"><span>응답이 오는 길에 유실 <output id="id-b-out"></output></span><input type="range" id="id-b" min="0" max="0.3" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>최대 재시도 <output id="id-r-out"></output></span><input type="range" id="id-r" min="0" max="5" step="1" value="3"></label>
+          <label class="check"><input type="checkbox" id="id-key"> 멱등 키 사용</label>
+          <button class="btn" id="id-seed">다른 표본 보기</button>
+          <div class="legend"><span><i style="background:var(--env)"></i>정확히 1개</span><span><i style="background:var(--guard)"></i>중복 생성</span><span><i style="background:var(--text-faint)"></i>생성 안 됨</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">정확히 1개</span><span class="v" id="id-o1">—</span></div>
+        <div class="stat"><span class="k">중복 생성</span><span class="v" id="id-o2">—</span></div>
+        <div class="stat"><span class="k">생성 안 됨</span><span class="v" id="id-o3">—</span></div>
+        <div class="stat"><span class="k">총 요청 수</span><span class="v" id="id-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 재시도를 0으로 두면 중복은 없지만 “생성 안 됨”이 늘어난다. ② 재시도를 늘리면 실패는 줄지만 중복이 생긴다. 응답 유실이 클수록 심하다. ③ <b>멱등 키</b>를 켜면 서버가 같은 키의 두 번째 요청에 첫 결과를 그대로 돌려준다. 재시도를 늘려도 중복이 0이다. 하네스가 자동 재시도(9장)를 하려면 도구가 먼저 멱등해야 한다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>하네스 상태는 대화, 작업 공간, 실행 환경, 진행·회계로 나뉜다. 실행 환경은 저장보다 재현 가능하게 만드는 편이 쉽다.</li>
+      <li>체크포인트 간격은 비용과 손실의 균형이다. 장애가 드물면 k* ≈ √(2C/λ). 체크포인트가 없으면 긴 작업은 끝나지 않는다.</li>
+      <li>대화와 코드는 되감을 수 있지만 push·전송·결제 같은 외부 부작용은 되감을 수 없다. 그래서 그런 행동은 확인 대상이다.</li>
+      <li>타임아웃은 “실행 안 됨”이 아니다. 쓰기 도구는 멱등 키로 재시도를 안전하게 만든다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 단계당 장애 확률이 0.005, 체크포인트 비용이 단계 1개 분량이다. Young의 근사로 적절한 간격은?</p><div class="opts">
+        <button class="opt">약 5단계</button>
+        <button class="opt" data-correct>약 20단계</button>
+        <button class="opt">약 200단계</button>
+      </div><div class="quiz-exp">√(2 × 1 / 0.005) = √400 = 20.</div></div>
+      <div class="quiz-q"><p>2. 대화와 코드를 모두 30분 전으로 되감았다. 그 사이 에이전트가 한 일 중 되돌아가지 않는 것은?</p><div class="opts">
+        <button class="opt">로컬 파일 편집</button>
+        <button class="opt">로컬 git 커밋</button>
+        <button class="opt" data-correct>원격 저장소로 push한 커밋</button>
+      </div><div class="quiz-exp">원격에 나간 변경은 하네스 밖의 상태다. 되돌리려면 revert 같은 새 행동이 필요하다.</div></div>
+      <div class="quiz-q"><p>3. 결제 API 호출이 타임아웃되었다. 하네스가 바로 재시도해도 안전하려면?</p><div class="opts">
+        <button class="opt">타임아웃이니 실행되지 않았다고 보고 그냥 재시도한다</button>
+        <button class="opt" data-correct>같은 멱등 키로 재시도해 서버가 중복을 알아보게 한다</button>
+        <button class="opt">재시도 횟수를 늘린다</button>
+      </div><div class="quiz-exp">응답만 유실되었을 수 있다. 멱등 키가 있어야 두 번째 요청이 새 결제가 되지 않는다.</div></div>
+      <div class="quiz-q"><p>4. 실행 환경(설치한 패키지, 띄운 서버)을 재개 가능하게 만드는 가장 실용적인 방법은?</p><div class="opts">
+        <button class="opt">메모리 전체를 매 턴 덤프한다</button>
+        <button class="opt" data-correct>설치·설정 절차를 스크립트로 남겨 다시 만들 수 있게 한다</button>
+        <button class="opt">재개를 포기한다</button>
+      </div><div class="quiz-exp">환경은 저장보다 재현이 싸다. 대화 기록과 설정 스크립트가 있으면 새 샌드박스에서 같은 상태를 다시 만들 수 있다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 체크포인트 간격 ---------------- */
+(function () {
+  const R = 3;
+  let seed = 1;
+  const P = () => ({ k: HB.val("rs-k"), L: HB.val("rs-l"), f: HB.val("rs-f"), C: HB.val("rs-c") });
+  const T = (k, L, f, C) => { const den = 1 - f * (k / 2 + R); return den <= 0.02 ? Infinity : (L + (L * C) / k) / den; };
+  const Tnone = (L, f) => (Math.exp(f * (L + R)) - 1) / f;
+  const cv1 = HB.canvas("rs-cv1", { aspect: 0.38, draw: draw1 });
+  const cv2 = HB.canvas("rs-cv2", { aspect: 0.38, draw: draw2 });
+  function draw1(c, w, h) {
+    const { k, L, f, C } = P();
+    const pts = []; for (let x = 1; x <= 100; x++) pts.push([x, T(x, L, f, C)]);
+    const fin = pts.filter((p) => isFinite(p[1]));
+    const best = fin.reduce((a, b) => (b[1] < a[1] ? b : a));
+    const ymax = Math.min(best[1] * 2.2, Math.max(...fin.map((p) => p[1])));
+    const A = HB.axes(c, { box: { l: 54, t: 12, r: w - 12, b: h - 34 }, x: [1, 100], y: [L * 0.9, ymax], xt: [1, 25, 50, 75, 100], yt: [L, (L + ymax) / 2, ymax].map(Math.round), xl: "체크포인트 간격 k", yl: "기대 시간", ylOff: 42 });
+    HB.line(c, fin.filter((p) => p[1] <= ymax).map((p) => [A.X(p[0]), A.Y(p[1])]), HB.col("accent-2"), 2.5);
+    const ky = Math.sqrt((2 * C) / f);
+    if (ky <= 100) { HB.line(c, [[A.X(ky), A.box.t], [A.X(ky), A.box.b]], HB.col("env"), 1.5, [4, 4]); HB.text(c, "√(2C/λ) = " + ky.toFixed(0), A.X(ky) + 5, A.box.t + 10, { size: 11, color: HB.col("env"), weight: 700 }); }
+    const cur = T(k, L, f, C);
+    if (isFinite(cur) && cur <= ymax) { c.strokeStyle = HB.col("accent"); c.lineWidth = 2.5; c.beginPath(); c.arc(A.X(k), A.Y(cur), 6, 0, 7); c.stroke(); }
+    cv1.best = Math.round(best[0]);
+    HB.set("rs-o1", isFinite(cur) ? HB.fmt(cur) + " 단계" : "끝나지 않음", isFinite(cur) && cur < best[1] * 1.1 ? "good" : "warn");
+    HB.set("rs-o2", ky.toFixed(1));
+    const tn = Tnone(L, f);
+    HB.set("rs-o3", tn > 1e6 ? "≫ 백만 단계" : HB.fmt(tn) + " 단계", "bad");
+  }
+  function run(k, L, f, C, rnd, ck) {
+    let prog = 0, saved = 0, t = 0, fails = 0; const pts = [[0, 0]], crash = [];
+    while (prog < L && t < 6000) {
+      t += 1;
+      if (rnd() < f) { fails++; crash.push([t, prog]); prog = ck ? saved : 0; t += R; pts.push([t, prog]); continue; }
+      prog += 1;
+      if (ck && prog % k === 0) { t += C; saved = prog; }
+      pts.push([t, prog]);
+    }
+    return { pts, crash, fails, t };
+  }
+  function draw2(c, w, h) {
+    const { k, L, f, C } = P();
+    const a = run(k, L, f, C, HB.rng(seed * 31), true), b = run(k, L, f, C, HB.rng(seed * 31), false);
+    const xmax = Math.max(a.t, Math.min(b.t, a.t * 3)) * 1.04;
+    const A = HB.axes(c, { box: { l: 54, t: 12, r: w - 12, b: h - 34 }, x: [0, xmax], y: [0, L], xt: [0, xmax / 2, xmax].map(Math.round), yt: [0, L / 2, L].map(Math.round), xl: "벽시계 시간 (단계)", yl: "진행", ylOff: 42 });
+    HB.line(c, b.pts.filter((p) => p[0] <= xmax).map((p) => [A.X(p[0]), A.Y(p[1])]), HB.col("text-faint"), 1.5, [4, 3]);
+    HB.line(c, a.pts.map((p) => [A.X(p[0]), A.Y(p[1])]), HB.col("accent"), 2.2);
+    for (let s = k; s < L; s += k) { c.fillStyle = HB.alpha(HB.col("state"), 0.5); c.fillRect(A.box.l - 6, A.Y(s) - 0.5, 5, 1.5); }
+    a.crash.forEach(([t, p]) => { c.fillStyle = HB.col("guard"); c.beginPath(); c.arc(A.X(t), A.Y(p), 4, 0, 7); c.fill(); });
+    if (b.t > xmax) HB.text(c, "체크포인트 없음: 아직 " + HB.pct(b.pts.filter((p) => p[0] <= xmax).slice(-1)[0][1] / L) + "에서 헤매는 중", A.box.r - 4, A.box.t + 10, { size: 11, align: "right", color: HB.col("text-dim") });
+    HB.set("rs-o4", a.fails + "회");
+  }
+  const up = HB.wire(["rs-k", "rs-l", "rs-f", "rs-c"], () => { cv1.redraw(); cv2.redraw(); }, { "rs-f": (v) => v.toFixed(3), "rs-c": (v) => v.toFixed(1) });
+  HB.el("rs-best").addEventListener("click", () => { HB.el("rs-k").value = cv1.best; up(); });
+  HB.el("rs-seed").addEventListener("click", () => { seed++; cv2.redraw(); });
+})();
+
+/* ---------------- 2. 되감기 ---------------- */
+(function () {
+  // 각 단계: 대화 줄, 파일 변경, 외부 부작용
+  const S = [
+    { t: "요청", m: ['user: "날짜 파싱 버그를 고쳐 줘"'], f: {} },
+    { t: "date.ts 읽기", m: ["tool: read date.ts"], f: {} },
+    { t: "첫 수정", m: ["tool: edit date.ts (UTC 처리)"], f: { "date.ts": "v1 · UTC 처리" } },
+    { t: "첫 수정 실패", m: ["tool: npm test → 2 failed"], f: {} },
+    { t: "다시 수정", m: ["tool: edit date.ts (타임존 인자)"], f: { "date.ts": "v2 · 타임존 인자" } },
+    { t: "포맷 함수 수정", m: ["tool: edit fmt.ts"], f: { "fmt.ts": "v1 · ISO 출력" } },
+    { t: "테스트 통과", m: ["tool: npm test → 48 passed"], f: {} },
+    { t: "로컬 커밋", m: ["tool: git commit -m 'fix date parsing'"], f: {}, fx: { k: "local", s: "로컬 커밋 a1b2c3 (되감기로 되돌릴 수 있음: reset)" } },
+    { t: "git push", m: ["tool: git push origin fix/date"], f: {}, fx: { k: "ext", s: "원격 브랜치에 push됨 — 다른 사람이 받았을 수 있음" } },
+    { t: "메시지 전송", m: ["tool: slack.post #dev \"날짜 버그 고침\""], f: {}, fx: { k: "ext", s: "#dev 채널에 메시지 전송 — 되돌릴 수 없음" } },
+  ];
+  let head = S.length - 1, conv = head, code = head;
+  const mode = HB.seg("rw-mode", () => {});
+  function filesAt(i) { const st = { "date.ts": "원본", "fmt.ts": "원본" }; for (let j = 0; j <= i; j++) Object.assign(st, S[j].f); return st; }
+  function render() {
+    HB.el("rw-tl").innerHTML = S.map((s, i) => `<button class="${i === Math.max(conv, code) && i === Math.min(conv, code) ? "cur" : ""} ${i > Math.max(conv, code) ? "ghost" : ""}" data-i="${i}"><small>${String(i + 1)} ${s.fx ? (s.fx.k === "ext" ? "⚠" : "◆") : "●"}</small>${s.t}</button>`).join("");
+    HB.el("rw-conv").innerHTML = S.slice(0, conv + 1).flatMap((s) => s.m).map((m) => `<div class="ln" style="--k:var(--${m.startsWith("user") ? "user" : "tool"})">${HB.esc(m)}</div>`).join("") + (conv < head ? `<div class="ln" style="--k:var(--state)">— 여기로 되감음 (${head - conv}단계 대화 삭제) —</div>` : "");
+    const now = filesAt(code), latest = filesAt(head);
+    HB.el("rw-files").innerHTML = Object.keys(now).map((f) => `<div class="blk" style="--k:var(--${now[f] === latest[f] ? "env" : "state"})"><span class="nm">${f}</span><span class="tk">${now[f]}</span>${now[f] !== latest[f] ? '<span class="badge" style="--k:var(--state)">되돌림</span>' : ""}</div>`).join("") +
+      (conv !== code ? `<div class="blk miss" style="--k:var(--tool)"><span class="nm">대화와 코드가 서로 다른 시점을 가리킴</span><span class="tk">대화 ${conv + 1} · 코드 ${code + 1}</span></div>` : "");
+    const fx = S.filter((s) => s.fx).map((s, _, arr) => ({ ...s.fx, i: S.indexOf(s) }));
+    HB.el("rw-fx").innerHTML = fx.map((x) => {
+      const undone = x.k === "local" && code < x.i;
+      return `<div class="blk" style="--k:var(--${x.k === "ext" ? "guard" : undone ? "env" : "tool"})"><span class="nm">${HB.esc(x.s)}</span>${x.k === "ext" ? '<span class="badge" style="--k:var(--guard)">남음</span>' : undone ? '<span class="badge" style="--k:var(--env)">되돌림</span>' : '<span class="badge" style="--k:var(--tool)">유지</span>'}</div>`;
+    }).join("");
+  }
+  HB.el("rw-tl").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const i = +b.dataset.i, m = mode();
+    if (m === "both" || m === "conv") conv = i;
+    if (m === "both" || m === "code") code = i;
+    render();
+  });
+  render();
+})();
+
+/* ---------------- 3. 멱등성 ---------------- */
+(function () {
+  let seed = 3;
+  function trial(rnd, a, b, R, key) {
+    let created = 0, attempts = 0; const ev = [];
+    for (let i = 0; i <= R; i++) {
+      attempts++;
+      if (rnd() < a) { ev.push("lostReq"); continue; }
+      const dedup = key && created > 0;
+      if (!dedup) created++;
+      if (rnd() < b) { ev.push(dedup ? "dedupLost" : "lostResp"); continue; }
+      ev.push(dedup ? "dedup" : "ok");
+      break;
+    }
+    return { created, attempts, ev };
+  }
+  function sim() {
+    const a = HB.val("id-a"), b = HB.val("id-b"), R = HB.val("id-r"), key = HB.el("id-key").checked;
+    const rnd = HB.rng(77); let one = 0, dup = 0, none = 0, tot = 0;
+    for (let i = 0; i < 1000; i++) { const t = trial(rnd, a, b, R, key); tot += t.attempts; if (t.created === 1) one++; else if (t.created > 1) dup++; else none++; }
+    // 시연용 표본: 재시도가 일어난 것 중 하나
+    const r2 = HB.rng(seed * 101); let ex = null;
+    for (let i = 0; i < 400; i++) { const t = trial(r2, Math.max(a, 0.12), Math.max(b, 0.25), Math.max(R, 2), key); if (t.ev.length > 1) { ex = t; break; } }
+    return { one, dup, none, tot, ex: ex || trial(r2, a, b, R, key), key };
+  }
+  const cv = HB.canvas("id-cv", { aspect: 0.72, draw });
+  function draw(c, w, h) {
+    const S = sim();
+    // 위: 시퀀스 다이어그램
+    const lanes = [{ x: w * 0.14, n: "하네스" }, { x: w * 0.5, n: "네트워크" }, { x: w * 0.86, n: "이슈 서버" }];
+    const top = 22, seqH = h * 0.62;
+    lanes.forEach((l) => { HB.text(c, l.n, l.x, top - 10, { size: 12, align: "center", weight: 700 }); HB.line(c, [[l.x, top], [l.x, top + seqH]], HB.col("border"), 1.5, [4, 4]); });
+    const n = S.ex.ev.length, dy = (seqH - 10) / Math.max(n, 1);
+    let made = 0;
+    S.ex.ev.forEach((e, i) => {
+      const y = top + 10 + i * dy, y2 = y + dy * 0.45;
+      const req = (x2, col) => { HB.line(c, [[lanes[0].x, y], [x2, y + dy * 0.2]], col, 2); };
+      const label = (s, col) => HB.text(c, s, lanes[0].x + 6, y - 7, { size: 10.5, mono: true, color: col });
+      label(`시도 ${i + 1}  create_issue${S.key ? ' key="k-42"' : ""}`, HB.col("text-dim"));
+      if (e === "lostReq") { req(lanes[1].x, HB.col("text-faint")); HB.text(c, "✕ 요청 유실", lanes[1].x + 6, y + dy * 0.2, { size: 11, color: HB.col("guard"), weight: 700 }); return; }
+      req(lanes[2].x, HB.col("accent"));
+      const dedup = e === "dedup" || e === "dedupLost";
+      if (!dedup) made++;
+      HB.text(c, dedup ? "같은 키 → 기존 결과 반환" : `이슈 #${100 + made} 생성`, lanes[2].x - 6, y + dy * 0.2 - 9, { size: 11, align: "right", weight: 700, color: HB.col(dedup ? "env" : made > 1 ? "guard" : "env") });
+      if (e === "lostResp" || e === "dedupLost") { HB.line(c, [[lanes[2].x, y2], [lanes[1].x, y2 + dy * 0.15]], HB.col("text-faint"), 2); HB.text(c, "✕ 응답 유실 → 타임아웃", lanes[1].x - 6, y2 + dy * 0.15 + 2, { size: 11, align: "right", color: HB.col("guard"), weight: 700 }); }
+      else { HB.line(c, [[lanes[2].x, y2], [lanes[0].x, y2 + dy * 0.2]], HB.col("env"), 2); HB.text(c, "200 OK", lanes[0].x + 8, y2 + dy * 0.2 + 2, { size: 11, color: HB.col("env"), weight: 700 }); }
+    });
+    HB.text(c, `이 표본의 결과: 이슈 ${made}개 ${made > 1 ? "(중복!)" : ""}`, w / 2, top + seqH + 6, { size: 12.5, align: "center", weight: 700, color: HB.col(made === 1 ? "env" : "guard") });
+    // 아래: 1,000회 결과 막대
+    const by = top + seqH + 26, bw = w - 40, bh = 22;
+    let x = 20;
+    [["one", "env"], ["dup", "guard"], ["none", "text-faint"]].forEach(([k, col]) => {
+      const ww = (bw * S[k]) / 1000; if (!ww) return;
+      c.fillStyle = HB.col(col); c.fillRect(x, by, ww, bh);
+      if (ww > 40) HB.text(c, HB.pct(S[k] / 1000, 1), x + ww / 2, by + bh / 2, { size: 11, align: "center", color: "#fff", weight: 700 });
+      x += ww;
+    });
+    HB.text(c, "1,000회 호출의 결과", 20, by + bh + 14, { size: 11, color: HB.col("text-dim") });
+    HB.set("id-o1", HB.pct(S.one / 1000, 1), "good"); HB.set("id-o2", HB.pct(S.dup / 1000, 1), S.dup ? "bad" : "good"); HB.set("id-o3", HB.pct(S.none / 1000, 1), S.none > 20 ? "warn" : ""); HB.set("id-o4", HB.fmt(S.tot));
+  }
+  HB.el("id-key").addEventListener("change", () => cv.redraw());
+  HB.el("id-seed").addEventListener("click", () => { seed++; cv.redraw(); });
+  HB.wire(["id-a", "id-b", "id-r"], () => cv.redraw(), { "id-a": (v) => HB.pct(v), "id-b": (v) => HB.pct(v), "id-r": (v) => v + "회" });
+})();
+</script>
+</body>
+</html>

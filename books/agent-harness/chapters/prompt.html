@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>프롬프트 조립과 컨텍스트 · HarnessBook</title>
+<meta name="description" content="매 호출의 입력을 쌓는 순서, 프롬프트 캐시가 맞는 조건, 컨텍스트가 찼을 때의 압축 전략을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #as-list, #ca-list { display: grid; gap: 6px; }
+  #as-list .blk input[type=range] { width: 120px; accent-color: var(--k); }
+</style>
+</head>
+<body data-root="../" data-chapter="prompt">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>프롬프트 조립과 컨텍스트</h1>
+    <p class="lead">모델은 매 호출마다 백지에서 시작한다. 모델이 아는 것은 그 호출의 입력에 들어 있는 것뿐이다. 그래서 하네스가 하는 가장 중요한 일은 <b>매 턴 무엇을, 어떤 순서로, 얼마나 넣을지</b> 정하는 것이다. 이 일을 컨텍스트 엔지니어링이라고 부른다. 이 장에서는 입력이 어떤 블록으로 쌓이는지, 블록의 순서가 왜 비용을 몇 배로 바꾸는지, 컨텍스트가 찰 때 무엇을 버릴지 실험한다.</p>
+    <ul class="objectives">
+      <li>시스템 프롬프트, 도구 정의, 지침, 기록, 도구 결과가 한 번의 입력을 이루는 구조를 그릴 수 있다.</li>
+      <li>고정 오버헤드와 출력 예약이 실제 작업 공간을 얼마나 줄이는지 계산할 수 있다.</li>
+      <li>프롬프트 캐시가 접두사 일치로 동작한다는 점에서 블록 순서의 원칙을 끌어낼 수 있다.</li>
+      <li>압축 전략(버리기, 요약, 도구 결과 비우기)의 비용과 손실을 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="layers">
+    <h2>매 호출의 입력은 조립된다</h2>
+    <p>하네스가 모델 API에 보내는 요청은 대략 다음 블록을 순서대로 쌓은 것이다. 위쪽일수록 세션 내내 변하지 않고, 아래쪽일수록 턴마다 바뀐다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 330" role="img" aria-label="입력 블록의 층">
+        <g transform="translate(40,16)">
+          <rect width="380" height="40" rx="8" class="soft-ctx"/><text x="14" y="25" class="t-b">시스템 프롬프트</text><text x="366" y="25" text-anchor="end" class="t-mono">역할 · 규칙 · 환경</text>
+          <rect y="46" width="380" height="40" rx="8" class="soft-tool"/><text x="14" y="71" class="t-b">도구 정의</text><text x="366" y="71" text-anchor="end" class="t-mono">이름 · 설명 · 스키마</text>
+          <rect y="92" width="380" height="34" rx="8" class="soft-ctx" style="opacity:.8"/><text x="14" y="114" class="t-b">지침 파일 · 기억</text><text x="366" y="114" text-anchor="end" class="t-mono">프로젝트 규칙 · 사용자 메모</text>
+          <rect y="132" width="380" height="96" rx="8" class="soft-user"/><text x="14" y="154" class="t-b">대화 기록</text>
+          <rect x="14" y="164" width="170" height="14" rx="3" class="c-user" opacity=".5"/><rect x="14" y="182" width="300" height="14" rx="3" class="c-tool" opacity=".5"/><rect x="14" y="200" width="230" height="14" rx="3" class="c-accent" style="fill:var(--accent)" opacity=".45"/>
+          <rect y="234" width="380" height="34" rx="8" class="soft-env"/><text x="14" y="256" class="t-b">새 메시지 · 도구 결과</text>
+          <rect y="274" width="380" height="30" rx="8" fill="none" stroke="var(--text-faint)" stroke-dasharray="5 4"/><text x="14" y="294" class="t-dim">출력 예약 (max_tokens)</text>
+        </g>
+        <g transform="translate(450,16)">
+          <path d="M0 0 V126" stroke="var(--env)" stroke-width="5"/><text x="14" y="20" class="t-b" style="fill:var(--env)">세션 내내 고정</text><text x="14" y="40" class="t-dim">→ 캐시하기 좋다</text><text x="14" y="58" class="t-dim">한 글자만 바뀌어도 뒤가 모두 무효</text>
+          <path d="M0 132 V228" stroke="var(--tool)" stroke-width="5"/><text x="14" y="152" class="t-b" style="fill:var(--tool)">뒤에만 붙는다 (append-only)</text><text x="14" y="172" class="t-dim">→ 지난 턴까지는 캐시에 맞는다</text><text x="14" y="190" class="t-dim">중간을 고치면(압축) 캐시가 깨진다</text>
+          <path d="M0 234 V268" stroke="var(--guard)" stroke-width="5"/><text x="14" y="256" class="t-b" style="fill:var(--guard)">매 턴 새로움</text>
+          <path d="M0 274 V304" stroke="var(--text-faint)" stroke-width="5" stroke-dasharray="4 3"/><text x="14" y="294" class="t-dim">입력에 쓸 수 없는 자리</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 3-1.</b> 한 번의 모델 호출을 이루는 블록. 변하지 않는 것을 위에, 자주 바뀌는 것을 아래에 둔다. 이 순서가 다음 절의 프롬프트 캐시와 직결된다. 출력 예약도 컨텍스트 윈도우를 함께 쓴다는 점을 잊기 쉽다.</figcaption>
+    </figure>
+    <p>대화 기록 위에 쌓인 블록들은 <b>매 턴 공짜가 아니다</b>. 도구 50개의 정의, 긴 시스템 프롬프트, 지침 파일을 합치면 대화를 시작하기도 전에 수만 토큰이 나간다. 아래 실험에서 블록 크기를 바꿔 보며 실제로 대화에 쓸 수 있는 공간이 얼마나 남는지 확인하자.</p>
+
+    <div class="sim" id="sim-assemble">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>컨텍스트 조립기 — 대화에 남는 공간</h3></div>
+      <div class="sim-body">
+        <div class="ctrl"><span>컨텍스트 윈도우</span><div class="seg" id="as-win"><button data-v="128000">128K</button><button data-v="200000" class="on">200K</button><button data-v="1000000">1M</button></div></div>
+        <div class="sim-view"><canvas id="as-cv"></canvas></div>
+        <div id="as-list"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">고정 오버헤드</span><span class="v" id="as-o1">—</span></div>
+        <div class="stat"><span class="k">대화에 쓸 수 있는 공간</span><span class="v" id="as-o2">—</span></div>
+        <div class="stat"><span class="k">턴당 6K일 때 압축까지</span><span class="v" id="as-o3">—</span></div>
+        <div class="stat"><span class="k">턴마다 다시 보내는 고정분 (50턴 합)</span><span class="v" id="as-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 도구를 80개로 늘려 보자. 도구 하나의 정의가 수백 토큰이면 도구 목록만으로 수만 토큰이다(4장의 도구 검색이 이 문제를 푼다). ② 출력 예약을 64K로 올리면 그만큼 입력 공간이 준다. ③ 1M 윈도우에서는 공간 걱정이 줄지만, “턴마다 다시 보내는 고정분” 비용은 그대로다 — 그래서 캐시가 필요하다.</div>
+    </div>
+    <div class="callout"><b class="h">지침 파일은 짧게</b>프로젝트 규칙을 담은 지침 파일(예: 저장소 루트의 마크다운 파일)은 매 세션 시스템 프롬프트에 붙는다. 매 턴 다시 읽히므로 한 줄 한 줄이 비용이고, 길어질수록 개별 규칙이 지켜질 확률도 떨어진다. “항상 필요한 규칙”만 남기고, 가끔 필요한 절차는 필요할 때 읽을 수 있는 별도 파일로 빼는 것이 좋다.</div>
+  </section>
+
+  <section id="cache">
+    <h2>순서가 비용을 정한다: 프롬프트 캐시</h2>
+    <p>에이전트 루프는 같은 앞부분을 매 턴 다시 보낸다. 서버는 이 반복을 이용해, 지난 요청과 <b>처음부터 똑같은 부분(접두사)</b>의 계산 결과를 재사용한다. 이것이 <span class="term">프롬프트 캐시</span><span class="en">prompt caching</span>다. 캐시에서 읽은 입력은 보통 기본 입력 단가의 일부(대표적으로 약 0.1배)만 받고, 처음 캐시에 쓰는 입력은 약간 더 받는다(예: 1.25배). 정확한 배수와 캐시 유지 시간은 제공자와 설정마다 다르다.</p>
+    <p>핵심 규칙은 하나다. <b>접두사 일치</b>. 입력의 앞에서부터 비교해서 처음으로 달라지는 지점 뒤는 모두 다시 계산한다. 그래서 매 턴 바뀌는 값(현재 시각, 무작위 ID, 턴 번호)을 시스템 프롬프트 앞쪽에 넣으면 그 뒤의 도구 정의와 대화 기록 전체가 매번 캐시 미스가 된다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 760 210" role="img" aria-label="접두사 일치로 동작하는 캐시">
+        <text x="20" y="22" class="t-b">턴 7 → 턴 8</text>
+        <g transform="translate(20,36)">
+          <text x="0" y="16" class="t-mono">좋은 순서</text>
+          <rect x="90" y="0" width="90" height="24" rx="4" class="soft-env"/><text x="135" y="16" text-anchor="middle" class="t-mono">system</text>
+          <rect x="182" y="0" width="110" height="24" rx="4" class="soft-env"/><text x="237" y="16" text-anchor="middle" class="t-mono">tools</text>
+          <rect x="294" y="0" width="200" height="24" rx="4" class="soft-env"/><text x="394" y="16" text-anchor="middle" class="t-mono">기록 (턴 1–7)</text>
+          <rect x="496" y="0" width="70" height="24" rx="4" class="soft-guard"/><text x="531" y="16" text-anchor="middle" class="t-mono">턴 8</text>
+          <rect x="568" y="0" width="60" height="24" rx="4" class="soft-guard"/><text x="598" y="16" text-anchor="middle" class="t-mono">시각</text>
+          <text x="640" y="16" class="t-acc" style="fill:var(--env)">캐시 ≈ 90%</text>
+        </g>
+        <g transform="translate(20,96)">
+          <text x="0" y="16" class="t-mono">나쁜 순서</text>
+          <rect x="90" y="0" width="60" height="24" rx="4" class="soft-guard"/><text x="120" y="16" text-anchor="middle" class="t-mono">시각</text>
+          <rect x="152" y="0" width="90" height="24" rx="4" class="soft-guard"/><text x="197" y="16" text-anchor="middle" class="t-mono">system</text>
+          <rect x="244" y="0" width="110" height="24" rx="4" class="soft-guard"/><text x="299" y="16" text-anchor="middle" class="t-mono">tools</text>
+          <rect x="356" y="0" width="200" height="24" rx="4" class="soft-guard"/><text x="456" y="16" text-anchor="middle" class="t-mono">기록 (턴 1–7)</text>
+          <rect x="558" y="0" width="70" height="24" rx="4" class="soft-guard"/><text x="593" y="16" text-anchor="middle" class="t-mono">턴 8</text>
+          <text x="640" y="16" class="t-acc" style="fill:var(--guard)">캐시 0%</text>
+        </g>
+        <path d="M90 150 H628" class="s-dash"/><text x="90" y="172" class="t-dim">초록 = 지난 요청과 같은 접두사(캐시에서 읽음) · 빨강 = 처음 달라진 지점부터 끝까지(다시 계산)</text>
+        <text x="90" y="192" class="t-dim">나쁜 순서에서는 “시각” 몇 글자가 바뀌어 그 뒤 수만 토큰이 모두 다시 계산된다</text>
+      </svg>
+      <figcaption><b>그림 3-2.</b> 같은 블록, 다른 순서. 캐시는 앞에서부터 비교하므로 가장 자주 바뀌는 블록이 앞에 있으면 아무것도 재사용하지 못한다.</figcaption>
+    </figure>
+
+    <div class="sim" id="sim-cache">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>프롬프트 캐시 순서 맞추기 — 30턴 누적 비용</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div id="ca-list"></div>
+          <div style="height:10px"></div>
+          <canvas id="ca-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="check"><input type="checkbox" id="ca-tools"> 5턴마다 도구 하나 추가</label>
+          <label class="check"><input type="checkbox" id="ca-compact"> 15턴에 기록 압축</label>
+          <label class="ctrl"><span>캐시 읽기 단가 (기본 대비) <output id="ca-r-out"></output></span><input type="range" id="ca-r" min="0.05" max="0.5" step="0.05" value="0.1"></label>
+          <label class="ctrl"><span>캐시 쓰기 단가 (기본 대비) <output id="ca-w-out"></output></span><input type="range" id="ca-w" min="1" max="2" step="0.05" value="1.25"></label>
+          <button class="btn" id="ca-best">최적 순서로 정렬</button>
+          <button class="btn" id="ca-worst">최악 순서로 섞기</button>
+          <div class="legend"><span><i style="background:var(--accent)"></i>현재 순서</span><span><i style="background:var(--env)"></i>최적 순서</span><span><i style="background:var(--text-faint)"></i>캐시 없음</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">캐시 적중률 (입력 토큰)</span><span class="v" id="ca-o1">—</span></div>
+        <div class="stat"><span class="k">현재 순서 비용</span><span class="v" id="ca-o2">—</span></div>
+        <div class="stat"><span class="k">캐시 없음 대비</span><span class="v" id="ca-o3">—</span></div>
+        <div class="stat"><span class="k">최적 순서 대비</span><span class="v" id="ca-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① ↑↓로 <b>현재 시각</b> 블록을 맨 위로 올려 보자. 적중률이 0%로 떨어진다. ② <b>5턴마다 도구 추가</b>를 켜면 도구 목록이 바뀔 때마다 그 뒤가 모두 깨진다. 세션 중간에 도구를 바꾸는 하네스가 캐시 친화적이지 않은 이유다. ③ <b>15턴에 기록 압축</b>을 켜면 압축 직후 한 번 크게 비싸진다 — 압축은 공간을 얻는 대신 캐시를 한 번 버린다. (단가는 교육용 모형이다.)</div>
+    </div>
+  </section>
+
+  <section id="compact">
+    <h2>컨텍스트가 찰 때</h2>
+    <p>긴 작업에서는 대화 기록과 도구 결과가 결국 윈도우를 채운다. 하네스는 그 전에 공간을 만들어야 한다. 대표적인 전략은 네 가지다.</p>
+    <table class="tbl">
+      <tr><th>전략</th><th>방법</th><th>잃는 것</th><th>캐시</th></tr>
+      <tr><td>오래된 대화 버리기</td><td>최근 N턴만 남긴다 (슬라이딩 윈도우)</td><td>초반의 요청·결정이 통째로 사라진다</td><td>매 턴 앞이 바뀌어 깨진다</td></tr>
+      <tr><td>요약 압축</td><td>임계점에서 지난 기록을 요약 하나로 바꾼다</td><td>세부 사항, 정확한 수치·경로</td><td>압축 때 한 번 깨지고 다시 쌓인다</td></tr>
+      <tr><td>도구 결과 비우기</td><td>오래된 도구 출력만 “(생략됨)”으로 바꾼다</td><td>다시 읽어야 할 수 있는 원문</td><td>비울 때 깨진다</td></tr>
+      <tr><td>파일로 내보내기</td><td>할 일·결정·발견을 파일에 적고 필요할 때 다시 읽는다</td><td>적지 않은 것</td><td>영향 적음</td></tr>
+    </table>
+    <div class="sim" id="sim-compact">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>압축 전략 비교 — 150턴짜리 작업의 컨텍스트 크기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cm-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="ctrl"><span>전략</span><div class="seg" id="cm-s"><button data-v="none">없음</button><button data-v="slide">버리기</button><button data-v="sum" class="on">요약</button><button data-v="clear">결과 비우기</button></div></div>
+          <label class="ctrl"><span>압축 시작 임계 <output id="cm-th-out"></output></span><input type="range" id="cm-th" min="0.5" max="0.98" step="0.01" value="0.8"></label>
+          <label class="ctrl"><span>도구 출력 평균 크기 <output id="cm-o-out"></output></span><input type="range" id="cm-o" min="500" max="8000" step="250" value="2500"></label>
+          <label class="ctrl"><span>요약 크기 <output id="cm-sz-out"></output></span><input type="range" id="cm-sz" min="2000" max="30000" step="1000" value="8000"></label>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>고정 블록</span><span><i style="background:var(--state)"></i>요약</span><span><i style="background:var(--user)"></i>대화</span><span><i style="background:var(--tool)"></i>도구 결과</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">결과</span><span class="v" id="cm-o1">—</span></div>
+        <div class="stat"><span class="k">압축 횟수</span><span class="v" id="cm-o2">—</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="cm-o3">—</span></div>
+        <div class="stat"><span class="k">마지막 턴의 원문 보존</span><span class="v" id="cm-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>없음</b>은 윈도우에 닿는 순간 작업이 실패한다. ② <b>결과 비우기</b>는 대화와 결정을 남긴 채 공간의 대부분을 회수한다. 도구 출력이 클수록 효과가 크다. ③ 임계를 0.98로 올리면 압축 횟수는 줄지만 매 턴 입력이 커서 누적 비용이 오른다. 너무 낮추면 압축이 잦아 세부가 계속 깎인다. “원문 보존”은 지금까지 생긴 기록 중 원문 그대로 남은 비율이다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>매 호출의 입력은 시스템 프롬프트, 도구 정의, 지침, 기록, 새 메시지를 쌓아 만든다. 고정 블록과 출력 예약이 대화 공간을 줄인다.</li>
+      <li>프롬프트 캐시는 접두사 일치로 동작한다. 변하지 않는 블록을 앞에, 자주 바뀌는 값을 뒤에 둔다.</li>
+      <li>세션 중간에 도구 목록이나 앞쪽 블록을 바꾸면 그 뒤 캐시가 모두 깨진다.</li>
+      <li>컨텍스트가 차면 버리기·요약·결과 비우기·파일로 내보내기로 공간을 만든다. 각각 잃는 것과 캐시 비용이 다르다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 시스템 프롬프트 첫 줄에 “현재 시각: 14:03:22”를 넣었다. 어떤 일이 생길까?</p><div class="opts">
+        <button class="opt">모델이 시간을 알아서 답이 정확해질 뿐 부작용은 없다</button>
+        <button class="opt" data-correct>매 턴 접두사가 달라져 그 뒤 전체가 캐시 미스가 된다</button>
+        <button class="opt">캐시는 시스템 프롬프트를 무시하므로 영향이 없다</button>
+      </div><div class="quiz-exp">캐시는 앞에서부터 같은 부분만 재사용한다. 바뀌는 값은 메시지 쪽, 가능한 한 뒤에 둔다.</div></div>
+      <div class="quiz-q"><p>2. 200K 윈도우에서 고정 블록이 40K, 출력 예약이 32K다. 대화와 도구 결과에 쓸 수 있는 공간은?</p><div class="opts">
+        <button class="opt">200K</button>
+        <button class="opt">160K</button>
+        <button class="opt" data-correct>128K</button>
+      </div><div class="quiz-exp">200 − 40 − 32 = 128K. 출력 예약도 같은 윈도우를 쓴다.</div></div>
+      <div class="quiz-q"><p>3. 긴 디버깅 세션에서 가장 많은 공간을 차지하는 것이 오래된 grep·로그 출력이다. 가장 손실이 적은 전략은?</p><div class="opts">
+        <button class="opt">처음 30턴을 통째로 버린다</button>
+        <button class="opt" data-correct>오래된 도구 결과만 비우고 대화와 결정은 남긴다</button>
+        <button class="opt">아무것도 하지 않는다</button>
+      </div><div class="quiz-exp">도구 출력은 필요하면 다시 실행해 얻을 수 있다. 사용자의 요청과 모델의 결정은 다시 얻을 수 없다.</div></div>
+      <div class="quiz-q"><p>4. 요약 압축 직후 한 턴의 비용이 크게 튀는 이유는?</p><div class="opts">
+        <button class="opt">요약이 원래 기록보다 길어서</button>
+        <button class="opt" data-correct>기록 블록이 바뀌어 그 뒤를 캐시에 새로 써야 해서</button>
+        <button class="opt">압축하면 모델이 바뀌어서</button>
+      </div><div class="quiz-exp">압축은 append-only였던 기록의 중간을 고친다. 그 지점부터 접두사가 달라지므로 다시 계산하고 다시 캐시에 쓴다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 컨텍스트 조립기 ---------------- */
+(function () {
+  const B = [
+    { id: "sys", name: "시스템 프롬프트", k: "ctx", min: 500, max: 20000, step: 500, v: 4000, f: HB.si },
+    { id: "tools", name: "도구 정의 (개수 × 350)", k: "tool", min: 0, max: 120, step: 1, v: 18, f: (v) => v + "개", tok: (v) => v * 350 },
+    { id: "inst", name: "지침 파일", k: "ctx", min: 0, max: 20000, step: 500, v: 3000, f: HB.si },
+    { id: "mem", name: "기억 · 검색 결과", k: "state", min: 0, max: 30000, step: 500, v: 2000, f: HB.si },
+    { id: "out", name: "출력 예약 (max_tokens)", k: "guard", min: 1000, max: 64000, step: 1000, v: 16000, f: HB.si },
+  ];
+  const win = HB.seg("as-win", () => cv.redraw());
+  HB.el("as-list").innerHTML = B.map((b) => `<label class="blk" style="--k:var(--${b.k})"><span class="nm">${b.name}</span><input type="range" id="as-${b.id}" min="${b.min}" max="${b.max}" step="${b.step}" value="${b.v}"><span class="tk" id="as-${b.id}-out" style="min-width:72px;text-align:right"></span></label>`).join("");
+  const tok = (b) => (b.tok ? b.tok(HB.val("as-" + b.id)) : HB.val("as-" + b.id));
+  const cv = HB.canvas("as-cv", { height: 92, draw });
+  function draw(c, w, h) {
+    const W = +win();
+    const parts = B.map((b) => ({ b, t: tok(b) }));
+    const fixed = parts.filter((p) => p.b.id !== "out").reduce((s, p) => s + p.t, 0);
+    const out = parts.find((p) => p.b.id === "out").t;
+    const free = W - fixed - out;
+    const x0 = 10, bw = w - 20, y = 24, bh = 34;
+    c.fillStyle = HB.col("surface"); HB.rrect(c, x0, y, bw, bh, 8); c.fill();
+    let x = x0;
+    const seg = (t, col, label, dash) => {
+      const ww = Math.max(0, (bw * t) / W);
+      if (!ww) return;
+      c.save(); HB.rrect(c, x, y, ww, bh, 4); c.clip();
+      c.fillStyle = dash ? HB.alpha(col, 0.15) : HB.alpha(col, 0.75); c.fillRect(x, y, ww, bh);
+      if (dash) { c.strokeStyle = col; c.setLineDash([4, 3]); c.lineWidth = 2; c.strokeRect(x + 1, y + 1, ww - 2, bh - 2); }
+      c.restore();
+      if (ww > 52) HB.text(c, label, x + ww / 2, y + bh / 2, { size: 11, align: "center", color: dash ? col : "#fff", weight: 700 });
+      x += ww;
+    };
+    parts.filter((p) => p.b.id !== "out").forEach((p) => seg(p.t, HB.col(p.b.k), p.b.name.split(" ")[0]));
+    if (free > 0) { const ww = (bw * free) / W; c.fillStyle = HB.alpha(HB.col("env"), 0.18); c.fillRect(x, y, ww, bh); HB.text(c, "대화 · 도구 결과 공간 " + HB.si(free), x + ww / 2, y + bh / 2, { size: 12, align: "center", color: HB.col("env"), weight: 700 }); x += ww; }
+    seg(out, HB.col("guard"), "출력", true);
+    HB.text(c, "0", x0, y - 10, { size: 11, mono: true, color: HB.col("text-faint") });
+    HB.text(c, HB.si(W), x0 + bw, y - 10, { size: 11, mono: true, align: "right", color: HB.col("text-faint") });
+    if (free <= 0) HB.text(c, "⚠ 고정 블록과 출력 예약만으로 윈도우를 넘었습니다", w / 2, y + bh + 18, { size: 12.5, align: "center", color: HB.col("guard"), weight: 700 });
+    else HB.text(c, `고정 ${HB.pct(fixed / W)} · 출력 ${HB.pct(out / W)} · 작업 공간 ${HB.pct(free / W)}`, w / 2, y + bh + 18, { size: 12, align: "center", color: HB.col("text-dim") });
+    HB.set("as-o1", HB.si(fixed));
+    HB.set("as-o2", free > 0 ? HB.si(free) : "없음", free < W * 0.3 ? "bad" : "good");
+    HB.set("as-o3", free > 0 ? Math.floor(free / 6000) + "턴" : "—", free / 6000 < 15 ? "warn" : "");
+    HB.set("as-o4", HB.si(fixed * 50));
+  }
+  const fm = {}; B.forEach((b) => (fm["as-" + b.id] = b.f));
+  HB.wire(B.map((b) => "as-" + b.id), () => cv.redraw(), fm);
+})();
+
+/* ---------------- 2. 프롬프트 캐시 순서 ---------------- */
+(function () {
+  const BL = {
+    time: { name: "현재 시각", k: "guard", t: 40, kind: "everyturn" },
+    sys: { name: "시스템 프롬프트", k: "ctx", t: 4000, kind: "static" },
+    tools: { name: "도구 정의", k: "tool", t: 8000, kind: "tools" },
+    inst: { name: "지침 파일", k: "ctx", t: 3000, kind: "static" },
+    hist: { name: "대화 기록 (append-only)", k: "user", t: 0, kind: "hist" },
+    msg: { name: "새 메시지 · 도구 결과", k: "env", t: 3000, kind: "new" },
+  };
+  let order = ["time", "sys", "tools", "inst", "hist", "msg"];
+  const BEST = ["sys", "tools", "inst", "hist", "msg", "time"];
+  const TURNS = 30, H = 3000;
+  function renderList() {
+    HB.el("ca-list").innerHTML = order.map((id, i) => { const b = BL[id]; return `<div class="blk" style="--k:var(--${b.k})"><span class="tk">${i + 1}</span><span class="nm">${b.name}</span><span class="tk">${{ everyturn: "매 턴 바뀜", static: "고정", tools: "고정*", hist: "뒤에 추가", new: "매 턴 새로움" }[b.kind]}</span><button data-i="${i}" data-d="-1" aria-label="위로">↑</button><button data-i="${i}" data-d="1" aria-label="아래로">↓</button></div>`; }).join("");
+  }
+  HB.el("ca-list").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const i = +b.dataset.i, j = i + +b.dataset.d;
+    if (j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    renderList(); cv.redraw();
+  });
+  function run(ord) {
+    const rR = HB.val("ca-r"), rW = HB.val("ca-w");
+    const toolsOn = HB.el("ca-tools").checked, compOn = HB.el("ca-compact").checked;
+    let prev = null, cost = 0, base = 0, hit = 0, all = 0;
+    const cum = [], nc = [];
+    let histT = 0, toolsT = BL.tools.t, compactedAt = -1;
+    for (let t = 1; t <= TURNS; t++) {
+      if (toolsOn && t > 1 && t % 5 === 1) toolsT += 400;
+      let histChanged = false;
+      if (compOn && t === 16) { histT = 6000; histChanged = true; }
+      // 블록별 [토큰, 서명]
+      const cur = ord.map((id) => {
+        const b = BL[id];
+        if (b.kind === "everyturn") return { id, tok: b.t, sig: "t" + t };
+        if (b.kind === "tools") return { id, tok: toolsT, sig: "tools" + toolsT };
+        if (b.kind === "hist") return { id, tok: histT, sig: "h", prevTok: histChanged ? -1 : histT };
+        if (b.kind === "new") return { id, tok: b.t, sig: "n" + t };
+        return { id, tok: b.t, sig: id };
+      });
+      const total = cur.reduce((s, b) => s + b.tok, 0);
+      let cached = 0;
+      if (prev) {
+        for (let i = 0; i < cur.length; i++) {
+          const a = cur[i], p = prev[i];
+          if (a.id !== p.id) break;
+          if (a.id === "hist" || BL[a.id].kind === "hist") {
+            if (a.prevTok === -1) break;
+            cached += p.tok; // 지난 턴까지의 기록은 접두사로 일치
+            if (a.tok !== p.tok) break;
+            continue;
+          }
+          if (a.sig !== p.sig) break;
+          cached += a.tok;
+        }
+      }
+      cost += cached * rR + (total - cached) * rW;
+      base += total;
+      hit += cached; all += total;
+      cum.push(cost); nc.push(base);
+      prev = cur.map((b) => ({ ...b }));
+      histT += H; // 이번 턴의 메시지와 응답이 기록에 추가된다
+    }
+    return { cum, nc, cost, base, rate: hit / all };
+  }
+  const cv = HB.canvas("ca-cv", { aspect: 0.48, draw });
+  function draw(c, w, h) {
+    const R = run(order), Rb = run(BEST);
+    const ymax = Math.max(R.base, R.cost) * 1.05;
+    const A = HB.axes(c, { box: { l: 66, t: 12, r: w - 12, b: h - 36 }, x: [1, TURNS], y: [0, ymax], xt: [1, 10, 20, 30], yt: [0, ymax / 2, ymax], yf: HB.si, xl: "턴", yl: "누적 비용 (토큰 단가)", ylOff: 56 });
+    HB.line(c, R.nc.map((v, i) => [A.X(i + 1), A.Y(v)]), HB.col("text-faint"), 2, [5, 4]);
+    HB.line(c, Rb.cum.map((v, i) => [A.X(i + 1), A.Y(v)]), HB.col("env"), 2.5);
+    HB.line(c, R.cum.map((v, i) => [A.X(i + 1), A.Y(v)]), HB.col("accent"), 3);
+    HB.set("ca-o1", HB.pct(R.rate), R.rate > 0.7 ? "good" : R.rate < 0.3 ? "bad" : "warn");
+    HB.set("ca-o2", HB.si(R.cost));
+    HB.set("ca-o3", (R.cost / R.base).toFixed(2) + "×", R.cost / R.base < 0.5 ? "good" : R.cost > R.base ? "bad" : "warn");
+    HB.set("ca-o4", (R.cost / Rb.cost).toFixed(2) + "×", R.cost / Rb.cost < 1.05 ? "good" : "bad");
+  }
+  ["ca-tools", "ca-compact"].forEach((id) => HB.el(id).addEventListener("change", () => cv.redraw()));
+  HB.el("ca-best").addEventListener("click", () => { order = BEST.slice(); renderList(); cv.redraw(); });
+  HB.el("ca-worst").addEventListener("click", () => { order = ["msg", "time", "hist", "tools", "sys", "inst"]; renderList(); cv.redraw(); });
+  renderList();
+  HB.wire(["ca-r", "ca-w"], () => cv.redraw(), { "ca-r": (v) => v.toFixed(2) + "×", "ca-w": (v) => v.toFixed(2) + "×" });
+})();
+
+/* ---------------- 3. 압축 전략 ---------------- */
+(function () {
+  const W = 200000, FIX = 20000, T = 150;
+  const strat = HB.seg("cm-s", () => cv.redraw());
+  function sim() {
+    const s = strat(), th = HB.val("cm-th"), avgOut = HB.val("cm-o"), SZ = HB.val("cm-sz");
+    const rnd = HB.rng(99);
+    let turns = []; // {talk, tool, cleared}
+    let summary = 0, comps = 0, cum = 0, failAt = 0, produced = 0;
+    const series = [];
+    for (let t = 1; t <= T; t++) {
+      const talk = 800 + rnd() * 1400;
+      const tool = rnd() < 0.08 ? avgOut * 6 : avgOut * (0.3 + rnd() * 1.2);
+      turns.push({ talk, tool, cleared: false });
+      produced += talk + tool;
+      let size = () => FIX + summary + turns.reduce((a, x) => a + x.talk + (x.cleared ? 30 : x.tool), 0);
+      if (size() > W * th && s !== "none") {
+        comps++;
+        if (s === "slide") { while (size() > W * th * 0.6 && turns.length > 1) turns.shift(); }
+        if (s === "sum") { const keep = turns.slice(-5); summary = SZ; turns = keep; }
+        if (s === "clear") {
+          for (let i = 0; i < turns.length - 6 && size() > W * th * 0.55; i++) turns[i].cleared = true;
+          if (size() > W * th) { const keep = turns.slice(-5); summary = SZ; turns = keep; }
+        }
+      }
+      const sz = size();
+      if (sz > W) { failAt = t; series.push({ t, fix: FIX, sum: summary, talk: 0, tool: 0, over: sz }); break; }
+      cum += sz;
+      series.push({ t, fix: FIX, sum: summary, talk: turns.reduce((a, x) => a + x.talk, 0), tool: turns.reduce((a, x) => a + (x.cleared ? 30 : x.tool), 0) });
+    }
+    const verbatim = turns.reduce((a, x) => a + x.talk + (x.cleared ? 0 : x.tool), 0);
+    return { series, comps, cum, failAt, keep: verbatim / produced };
+  }
+  const cv = HB.canvas("cm-cv", { aspect: 0.6, draw });
+  function draw(c, w, h) {
+    const R = sim(), th = HB.val("cm-th");
+    const A = HB.axes(c, { box: { l: 64, t: 12, r: w - 12, b: h - 36 }, x: [0, T], y: [0, 230000], xt: [0, 50, 100, 150], yt: [0, 100000, 200000], yf: HB.si, xl: "턴", yl: "컨텍스트 크기", ylOff: 46 });
+    const bw = (A.X(1) - A.X(0));
+    R.series.forEach((p) => {
+      let y = A.Y(0);
+      [["fix", "ctx"], ["sum", "state"], ["talk", "user"], ["tool", "tool"]].forEach(([k, col]) => {
+        const v = p[k]; if (!v) return;
+        const hh = A.Y(0) - A.Y(v);
+        c.fillStyle = HB.alpha(HB.col(col), 0.7); c.fillRect(A.X(p.t - 1), y - hh, Math.max(1, bw - 0.4), hh); y -= hh;
+      });
+      if (p.over) { c.fillStyle = HB.col("guard"); c.fillRect(A.X(p.t - 1), A.Y(Math.min(p.over, 230000)), Math.max(2, bw), A.Y(0) - A.Y(Math.min(p.over, 230000))); }
+    });
+    HB.line(c, [[A.X(0), A.Y(W)], [A.X(T), A.Y(W)]], HB.col("guard"), 1.5, [6, 4]);
+    HB.text(c, "윈도우 200K", A.X(T) - 4, A.Y(W) - 9, { size: 11, align: "right", color: HB.col("guard") });
+    if (strat() !== "none") { HB.line(c, [[A.X(0), A.Y(W * th)], [A.X(T), A.Y(W * th)]], HB.col("accent"), 1.2, [3, 4]); HB.text(c, "임계 " + HB.pct(th), A.X(0) + 6, A.Y(W * th) - 9, { size: 11, color: HB.col("accent") }); }
+    if (R.failAt) HB.text(c, `✗ ${R.failAt}턴에 윈도우 초과`, A.X(R.failAt) + 8, A.Y(W) + 18, { size: 13, weight: 700, color: HB.col("guard") });
+    HB.set("cm-o1", R.failAt ? R.failAt + "턴에 실패" : "150턴 완료", R.failAt ? "bad" : "good");
+    HB.set("cm-o2", R.comps + "회");
+    HB.set("cm-o3", HB.si(R.cum));
+    HB.set("cm-o4", R.failAt ? "—" : HB.pct(R.keep), R.keep < 0.2 ? "warn" : "");
+  }
+  HB.wire(["cm-th", "cm-o", "cm-sz"], () => cv.redraw(), { "cm-th": (v) => HB.pct(v), "cm-o": HB.si, "cm-sz": HB.si });
+})();
+</script>
+</body>
+</html>

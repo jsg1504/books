@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>도구 설계: 에이전트-컴퓨터 인터페이스 · HarnessBook</title>
+<meta name="description" content="도구 정의의 구조, 도구 개수와 선택 정확도, 긴 출력 자르기, 다음 행동을 이끄는 오류 메시지를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #er-call { font-size: 13px; }
+</style>
+</head>
+<body data-root="../" data-chapter="tools">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 04</div>
+    <h1>도구 설계: 에이전트-컴퓨터 인터페이스</h1>
+    <p class="lead">사람을 위한 프로그램에 UI 설계가 있듯, 에이전트를 위한 도구에도 인터페이스 설계가 있다. 모델은 도구의 이름과 설명만 보고 무엇을 할지 고르고, 도구가 돌려준 텍스트만 보고 다음 행동을 정한다. SWE-agent 연구진은 이것을 <b>에이전트-컴퓨터 인터페이스</b>(ACI)라고 불렀고, 같은 모델에게 더 잘 설계된 도구를 주는 것만으로 성능이 오른다는 것을 보였다. 이 장에서는 도구 정의의 구조, 도구 개수의 함정, 긴 출력과 오류 메시지를 설계하는 법을 실험한다.</p>
+    <ul class="objectives">
+      <li>도구 정의의 이름·설명·입력 스키마가 각각 모델의 어떤 결정에 쓰이는지 설명할 수 있다.</li>
+      <li>도구를 늘릴수록 생기는 토큰 비용과 선택 오류를 이해하고, 지연 로딩(도구 검색)의 장단점을 말할 수 있다.</li>
+      <li>긴 도구 출력을 자르거나 파일로 빼는 전략을 비교할 수 있다.</li>
+      <li>모델이 스스로 회복할 수 있는 오류 메시지를 쓸 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="anatomy">
+    <h2>도구 정의의 해부</h2>
+    <p>하네스는 모델에게 도구마다 세 가지를 알려 준다. <b>이름</b>, <b>설명</b>, 인자의 형태를 적은 <span class="term">입력 스키마</span><span class="en">input schema</span>다. 모델은 이 정보만으로 “지금 이 도구를 쓸지”, “어떤 인자로 부를지”를 정한다. 설명은 모델이 읽는 문서이자 프롬프트다.</p>
+    <div class="two">
+      <div class="code"><div class="bar"><span>도구 정의 예시 (JSON)</span><span>매 호출 입력에 포함</span></div>
+<pre>{
+  <span class="s">"name"</span>: <span class="s">"edit_file"</span>,
+  <span class="s">"description"</span>: <span class="s">"파일의 일부를 바꾼다. old_string은
+    파일에서 정확히 한 번 나와야 한다. 여러 곳을
+    바꾸려면 replace_all을 true로. 새 파일은
+    write_file을 쓴다."</span>,
+  <span class="s">"input_schema"</span>: {
+    <span class="s">"type"</span>: <span class="s">"object"</span>,
+    <span class="s">"properties"</span>: {
+      <span class="s">"path"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>,
+               <span class="s">"description"</span>: <span class="s">"절대 경로"</span>},
+      <span class="s">"old_string"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>},
+      <span class="s">"new_string"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>},
+      <span class="s">"replace_all"</span>: {<span class="s">"type"</span>: <span class="s">"boolean"</span>,
+                      <span class="s">"default"</span>: <span class="n">false</span>}
+    },
+    <span class="s">"required"</span>: [<span class="s">"path"</span>, <span class="s">"old_string"</span>, <span class="s">"new_string"</span>]
+  }
+}</pre></div>
+      <figure class="diagram" style="margin:18px 0">
+        <svg viewBox="0 0 360 400" role="img" aria-label="도구 정의의 각 부분이 하는 일">
+          <g class="t">
+            <rect x="10" y="10" width="340" height="70" rx="10" class="soft-tool"/><text x="24" y="34" class="t-b">이름</text><text x="24" y="54" class="t-dim">무엇을 하는 도구인지 한눈에. 동사_목적어.</text><text x="24" y="70" class="t-dim">비슷한 이름 둘은 선택 오류의 씨앗.</text>
+            <rect x="10" y="92" width="340" height="96" rx="10" class="soft-ctx"/><text x="24" y="116" class="t-b">설명</text><text x="24" y="136" class="t-dim">언제 쓰는지, 언제 쓰지 말아야 하는지,</text><text x="24" y="152" class="t-dim">흔한 실수와 대안 도구. 신입 동료에게</text><text x="24" y="168" class="t-dim">설명하듯 쓴다.</text>
+            <rect x="10" y="200" width="340" height="96" rx="10" class="soft-env"/><text x="24" y="224" class="t-b">입력 스키마</text><text x="24" y="244" class="t-dim">하네스가 실행 전에 검증한다.</text><text x="24" y="260" class="t-dim">상대 경로 대신 절대 경로처럼</text><text x="24" y="276" class="t-dim">실수하기 어려운 형태를 강제한다.</text>
+            <rect x="10" y="308" width="340" height="82" rx="10" class="soft-guard"/><text x="24" y="332" class="t-b">결과와 오류 (정의 밖이지만 설계 대상)</text><text x="24" y="352" class="t-dim">모델이 다음 행동을 정하는 유일한 근거.</text><text x="24" y="368" class="t-dim">길이를 제한하고, 오류에는 고칠 방법을 담는다.</text>
+          </g>
+        </svg>
+      </figure>
+    </div>
+    <p>설계 원칙을 몇 가지 정리하면 이렇다. ① <b>사람이 헷갈릴 도구는 모델도 헷갈린다.</b> 이름과 설명만 보고 동료가 바로 쓸 수 있는지 상상해 보자. ② <b>실수를 형식으로 막는다.</b> 상대 경로 때문에 실수가 잦았다면 절대 경로만 받게 바꾸는 식이다. ③ <b>낮은 수준의 API를 그대로 노출하지 않는다.</b> 목록 조회, 상세 조회, 필터를 따로 주기보다 에이전트가 실제로 하려는 일(“이름으로 사용자 찾기”)을 한 번에 해 주는 도구가 호출 수와 토큰을 줄인다.</p>
+    <div class="callout"><b class="h">MCP: 도구를 연결하는 표준</b><span class="term">MCP</span><span class="en">Model Context Protocol</span>는 도구와 데이터 소스를 하네스에 연결하는 개방형 프로토콜이다. 서버 하나를 만들면 여러 하네스에서 같은 도구를 쓸 수 있다. 다만 MCP 서버를 여러 개 붙이면 도구 정의가 순식간에 늘어나므로, 다음 절의 문제가 더 커진다.</div>
+  </section>
+
+  <section id="count">
+    <h2>몇 개의 도구를 줄까</h2>
+    <p>도구가 많으면 할 수 있는 일이 늘지만 대가가 두 가지 있다. 첫째, <b>모든 도구 정의가 매 호출 입력에 들어간다.</b> 도구 하나가 수백 토큰이면 수십 개만으로 수만 토큰이다. 둘째, <b>비슷한 도구가 많을수록 엉뚱한 것을 고를 확률이 오른다.</b> 해결책 중 하나는 <span class="term">도구 검색</span><span class="en">tool search · deferred loading</span>이다. 처음에는 검색 도구와 핵심 도구만 주고, 모델이 필요한 도구를 검색하면 그 정의를 불러온다. 대신 검색 한 번의 왕복과 검색이 빗나갈 위험이 생긴다.</p>
+    <div class="sim" id="sim-count">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>도구 개수의 함정 — 선택 정확도와 토큰 오버헤드</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="tc-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>연결된 도구 수 N <output id="tc-n-out"></output></span><input type="range" id="tc-n" min="1" max="200" step="1" value="60"></label>
+          <label class="ctrl"><span>도구 하나의 정의 크기 <output id="tc-t-out"></output></span><input type="range" id="tc-t" min="100" max="1500" step="50" value="400"></label>
+          <label class="ctrl"><span>이름·기능이 겹치는 정도 <output id="tc-o-out"></output></span><input type="range" id="tc-o" min="0" max="1" step="0.05" value="0.4"></label>
+          <label class="ctrl"><span>도구 검색의 재현율 <output id="tc-r-out"></output></span><input type="range" id="tc-r" min="0.7" max="1" step="0.01" value="0.95"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>모두 미리 로딩</span><span><i style="background:var(--env)"></i>도구 검색</span><span><i style="background:var(--tool)"></i>토큰 (점선)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">선택 정확도 · 미리 로딩</span><span class="v" id="tc-o1">—</span></div>
+        <div class="stat"><span class="k">선택 정확도 · 도구 검색</span><span class="v" id="tc-o2">—</span></div>
+        <div class="stat"><span class="k">호출당 도구 토큰 · 미리 로딩</span><span class="v" id="tc-o3">—</span></div>
+        <div class="stat"><span class="k">호출당 도구 토큰 · 도구 검색</span><span class="v" id="tc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 도구가 10개 안팎이면 미리 로딩이 낫다. 검색 왕복과 재현율 손실이 이득보다 크다. ② N을 늘려 두 선이 교차하는 지점을 찾자. 겹침이 클수록 교차가 빨리 온다. ③ 재현율을 0.8로 낮추면 검색 방식의 정확도 상한이 같이 내려간다 — 검색 품질이 곧 도구 선택 품질이다. (정확도 곡선은 개념을 보이기 위한 모형이다.)</div>
+    </div>
+  </section>
+
+  <section id="output">
+    <h2>도구 출력 설계</h2>
+    <p><code>grep</code> 결과가 2만 줄이라면? 그대로 넣으면 컨텍스트가 넘치거나, 넘치지 않더라도 정작 중요한 한 줄이 잡음에 묻힌다. 하네스는 도구 결과를 모델에게 돌려주기 전에 크기를 다스려야 한다. 아래 실험에서 2만 줄짜리 출력 속 어딘가에 있는 “정답 줄”을 모델이 볼 수 있는지 전략별로 비교해 보자.</p>
+    <div class="sim" id="sim-output">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>긴 출력 다루기 — 정답 줄은 살아남을까</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ou-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="ctrl"><span>전략</span><div class="seg" id="ou-s"><button data-v="all">전부</button><button data-v="head">앞부분</button><button data-v="ht" class="on">앞+뒤</button><button data-v="file">파일로 저장</button><button data-v="page">페이지</button></div></div>
+          <label class="ctrl"><span>출력 길이 (줄) <output id="ou-l-out"></output></span><input type="range" id="ou-l" min="50" max="40000" step="50" value="20000"></label>
+          <label class="ctrl"><span>정답 줄의 위치 <output id="ou-p-out"></output></span><input type="range" id="ou-p" min="0" max="1" step="0.01" value="0.62"></label>
+          <label class="ctrl"><span>결과 하나의 토큰 한도 <output id="ou-b-out"></output></span><input type="range" id="ou-b" min="2000" max="60000" step="1000" value="20000"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">컨텍스트에 넣은 토큰</span><span class="v" id="ou-o1">—</span></div>
+        <div class="stat"><span class="k">정답 줄이 보이나</span><span class="v" id="ou-o2">—</span></div>
+        <div class="stat"><span class="k">추가 도구 호출</span><span class="v" id="ou-o3">—</span></div>
+        <div class="stat"><span class="k">판정</span><span class="v" id="ou-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>전부</b>는 짧은 출력에서는 최선이지만 길이를 늘리면 컨텍스트를 덮는다. ② <b>앞+뒤</b>는 오류 메시지가 끝에 있는 빌드 로그에 강하지만, 정답이 가운데 있으면 놓친다. 단, 잘렸다는 사실과 전체 길이를 알려 주면 모델이 범위를 좁혀 다시 요청할 수 있다. ③ <b>파일로 저장</b>은 미리보기만 넣고 전체를 파일로 남긴다. 모델은 그 파일을 grep 한 번으로 뒤져 어디에 있든 찾는다 — 한 번의 추가 호출로 크기와 정확도를 함께 얻는 방식이다.</div>
+    </div>
+  </section>
+
+  <section id="errors">
+    <h2>오류 메시지는 다음 행동의 프롬프트다</h2>
+    <p>도구가 실패하면 그 오류 텍스트가 모델이 받는 유일한 단서다. 사람 개발자는 “Error”만 보고도 로그를 뒤지겠지만, 모델은 받은 텍스트 안에서 다음 행동을 고른다. 좋은 오류 메시지는 <b>무엇이 잘못됐는지, 왜인지, 어떻게 고칠 수 있는지</b>를 담는다. 아래 게임에서 실패한 도구 호출마다 모델이 가장 빨리 회복할 오류 메시지를 골라 보자.</p>
+    <div class="sim" id="sim-error">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>오류 메시지 고르기 — 모델이 회복할 수 있게</h3></div>
+      <div class="sim-body">
+        <div class="pane" id="er-call"></div>
+        <div class="choice" id="er-opts"></div>
+        <div class="pane" id="er-exp" style="font-family:var(--font);font-size:14px;min-height:46px">하나를 고르세요.</div>
+        <div class="btns"><button class="btn primary" id="er-next" disabled>다음 문제 ▶</button><button class="btn" id="er-reset">처음부터</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">문제</span><span class="v" id="er-o1">—</span></div>
+        <div class="stat"><span class="k">맞힘</span><span class="v" id="er-o2">0</span></div>
+        <div class="stat"><span class="k">예상 회복 턴 합계 (선택한 메시지 기준)</span><span class="v" id="er-o3">0</span></div>
+      </div>
+      <div class="sim-note">기준: 모델이 <b>다음 호출 한 번으로</b> 바로잡을 수 있는가? 스택 트레이스나 오류 코드만 있으면 모델은 추측으로 여러 번 시도하거나, 같은 실수를 반복한다(2장의 헛도는 루프).</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>도구의 이름·설명·스키마는 모델이 읽는 인터페이스다. 사람이 헷갈릴 도구는 모델도 헷갈린다.</li>
+      <li>도구가 많을수록 매 호출 토큰이 늘고 선택 오류가 오른다. 많을 때는 도구 검색(지연 로딩)이 낫지만 검색 품질이 상한을 정한다.</li>
+      <li>긴 출력은 크기를 제한하고, 잘렸다는 사실과 전체를 다시 볼 방법(파일, 페이지)을 함께 알려 준다.</li>
+      <li>오류 메시지에는 무엇이, 왜, 어떻게 고칠지를 담는다. 오류 메시지가 곧 다음 행동의 프롬프트다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 에이전트가 <code>search_users</code>와 <code>find_user</code> 중 엉뚱한 것을 자주 고른다. 가장 먼저 할 일은?</p><div class="opts">
+        <button class="opt">더 큰 모델로 바꾼다</button>
+        <button class="opt" data-correct>하나로 합치거나 이름과 설명에서 차이와 사용 시점을 분명히 한다</button>
+        <button class="opt">시스템 프롬프트에 “신중하게 고르라”고 쓴다</button>
+      </div><div class="quiz-exp">선택 오류는 대부분 인터페이스 문제다. 겹치는 도구를 줄이고 설명을 고치는 것이 가장 싸고 효과적이다.</div></div>
+      <div class="quiz-q"><p>2. 도구 120개, 정의 하나 평균 400토큰. 모두 미리 로딩하면 매 호출 도구 정의만으로 대략?</p><div class="opts">
+        <button class="opt">4.8천 토큰</button>
+        <button class="opt" data-correct>4.8만 토큰</button>
+        <button class="opt">48만 토큰</button>
+      </div><div class="quiz-exp">120 × 400 = 48,000. 캐시가 비용을 줄여도 윈도우 공간과 선택 혼란은 남는다.</div></div>
+      <div class="quiz-q"><p>3. 빌드 로그가 5만 줄이다. 대부분의 경우 가장 쓸모 있는 기본 전략은?</p><div class="opts">
+        <button class="opt">앞 200줄만 넣는다</button>
+        <button class="opt" data-correct>앞뒤 일부를 넣고 “중간 N줄 생략, 전체는 파일에 저장”을 알린다</button>
+        <button class="opt">전부 넣는다</button>
+      </div><div class="quiz-exp">빌드 오류는 대개 끝에 있다. 잘렸다는 사실과 전체를 볼 방법을 알려 주면 모델이 필요할 때 더 찾아본다.</div></div>
+      <div class="quiz-q"><p>4. 다음 중 모델의 회복에 가장 도움이 되는 오류 메시지는?</p><div class="opts">
+        <button class="opt">Error: invalid input</button>
+        <button class="opt">TypeError at handler.py:88</button>
+        <button class="opt" data-correct>필수 인자 'path'가 없습니다. 받은 인자: {"file": "a.ts"}. 'file' 대신 'path'를 쓰세요.</button>
+      </div><div class="quiz-exp">무엇이 빠졌는지, 무엇을 받았는지, 어떻게 고칠지를 모두 담았다. 다음 호출 한 번으로 고칠 수 있다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 도구 개수 ---------------- */
+(function () {
+  const cv = HB.canvas("tc-cv", { aspect: 0.6, draw });
+  const K = 6; // 검색으로 불러오는 도구 수
+  function acc(n, o) { return HB.clamp(0.985 - 0.045 * Math.log(Math.max(1, n)) * (0.35 + 1.3 * o) - 0.00012 * n, 0.2, 0.99); }
+  function m(n) {
+    const t = HB.val("tc-t"), o = HB.val("tc-o"), r = HB.val("tc-r");
+    const pre = acc(n, o);
+    const srch = n <= K ? pre : r * acc(K + 1, o) * 0.99;
+    return { pre, srch, tokPre: n * t, tokS: Math.min(n, K) * t + 350 + 250 };
+  }
+  function draw(c, w, h) {
+    const N = HB.val("tc-n");
+    const A = HB.axes(c, { box: { l: 46, t: 14, r: w - 56, b: h - 36 }, x: [1, 200], y: [0.3, 1], xt: [1, 50, 100, 150, 200], yt: [0.4, 0.6, 0.8, 1], yf: (v) => Math.round(v * 100) + "%", xl: "연결된 도구 수", yl: "선택 정확도" });
+    const tmax = 200 * 1500;
+    const TY = (v) => A.box.b - (v / (200 * HB.val("tc-t"))) * (A.box.b - A.box.t);
+    const pts = { pre: [], srch: [], tp: [], ts: [] };
+    for (let n = 1; n <= 200; n++) { const M = m(n); pts.pre.push([A.X(n), A.Y(M.pre)]); pts.srch.push([A.X(n), A.Y(M.srch)]); pts.tp.push([A.X(n), TY(M.tokPre)]); pts.ts.push([A.X(n), TY(M.tokS)]); }
+    HB.line(c, pts.tp, HB.col("tool"), 1.8, [5, 4]);
+    HB.line(c, pts.ts, HB.alpha(HB.col("tool"), 0.6), 1.5, [2, 3]);
+    HB.line(c, pts.pre, HB.col("accent"), 2.6);
+    HB.line(c, pts.srch, HB.col("env"), 2.6);
+    // 오른쪽 축
+    const T = HB.val("tc-t") * 200;
+    [0, T / 2, T].forEach((v) => HB.text(c, HB.si(v), A.box.r + 6, TY(v), { size: 10.5, mono: true, color: HB.col("tool") }));
+    HB.text(c, "토큰", A.box.r + 6, A.box.t - 4, { size: 10.5, color: HB.col("tool") });
+    HB.line(c, [[A.X(N), A.box.t], [A.X(N), A.box.b]], HB.col("text-faint"), 1.2, [3, 3]);
+    const M = m(N);
+    HB.set("tc-o1", HB.pct(M.pre), M.pre >= M.srch ? "good" : "warn");
+    HB.set("tc-o2", HB.pct(M.srch), M.srch > M.pre ? "good" : "warn");
+    HB.set("tc-o3", HB.si(M.tokPre), M.tokPre > 30000 ? "bad" : "");
+    HB.set("tc-o4", HB.si(M.tokS) + " +1왕복");
+  }
+  HB.wire(["tc-n", "tc-t", "tc-o", "tc-r"], () => cv.redraw(), { "tc-t": HB.si, "tc-o": (v) => HB.pct(v), "tc-r": (v) => HB.pct(v) });
+})();
+
+/* ---------------- 2. 긴 출력 ---------------- */
+(function () {
+  const TPL = 12; // 줄당 토큰
+  const strat = HB.seg("ou-s", () => cv.redraw());
+  const cv = HB.canvas("ou-cv", { aspect: 0.56, draw });
+  function plan() {
+    const s = strat(), L = HB.val("ou-l"), p = HB.val("ou-p"), B = HB.val("ou-b");
+    const needle = Math.floor(p * (L - 1));
+    const maxLines = Math.floor(B / TPL);
+    let ranges = [], calls = 0, tok = 0, note = "", overflow = false;
+    if (s === "all") { ranges = [[0, L]]; tok = L * TPL; overflow = tok > 150000; note = overflow ? "컨텍스트 초과" : ""; }
+    if (s === "head") { const n = Math.min(L, maxLines); ranges = [[0, n]]; tok = n * TPL; }
+    if (s === "ht") { if (L <= maxLines) { ranges = [[0, L]]; tok = L * TPL; } else { const hN = Math.floor(maxLines * 0.5), tN = maxLines - hN; ranges = [[0, hN], [L - tN, L]]; tok = maxLines * TPL + 30; } }
+    if (s === "file") { const n = Math.min(L, 40); ranges = [[0, n]]; tok = n * TPL + 60; if (!(needle < n)) { calls = 1; ranges.push([needle - 2, needle + 3]); tok += 5 * TPL + 40; } }
+    if (s === "page") { const ps = Math.min(maxLines, 2000); const pages = Math.floor(needle / ps) + 1; calls = pages - 1; ranges = []; for (let i = 0; i < pages; i++) ranges.push([i * ps, Math.min(L, (i + 1) * ps)]); tok = ranges.reduce((a, r) => a + (r[1] - r[0]) * TPL, 0); }
+    const seen = ranges.some(([a, b]) => needle >= a && needle < b) && !overflow;
+    return { s, L, needle, ranges, calls, tok, seen, overflow };
+  }
+  function draw(c, w, h) {
+    const P = plan();
+    const x0 = 70, sw = 70, y0 = 14, sh = h - 30;
+    const Y = (line) => y0 + (line / P.L) * sh;
+    c.fillStyle = HB.col("surface"); HB.rrect(c, x0, y0, sw, sh, 6); c.fill();
+    // 줄 무늬
+    c.strokeStyle = HB.col("grid"); for (let i = 0; i < 60; i++) { const y = y0 + (i / 60) * sh; c.beginPath(); c.moveTo(x0 + 6, y); c.lineTo(x0 + sw - 6 - (i * 13 % 30), y); c.stroke(); }
+    P.ranges.forEach(([a, b], i) => {
+      const col = P.overflow ? HB.col("guard") : (P.s === "file" && i === 1) || (P.s === "page" && i > 0) ? HB.col("accent-2") : HB.col("env");
+      c.fillStyle = HB.alpha(col, 0.35); c.fillRect(x0, Y(a), sw, Math.max(2, Y(b) - Y(a)));
+      c.strokeStyle = col; c.lineWidth = 1.5; c.strokeRect(x0 + 0.5, Y(a), sw - 1, Math.max(2, Y(b) - Y(a)));
+    });
+    const ny = Y(P.needle);
+    c.fillStyle = HB.col("tool"); c.beginPath(); c.moveTo(x0 + sw + 4, ny); c.lineTo(x0 + sw + 14, ny - 6); c.lineTo(x0 + sw + 14, ny + 6); c.fill();
+    HB.text(c, "정답 줄 #" + HB.fmt(P.needle + 1), x0 + sw + 18, ny, { size: 12, weight: 700, color: HB.col("tool") });
+    HB.text(c, "1", x0 - 8, y0 + 6, { size: 10.5, mono: true, align: "right", color: HB.col("text-faint") });
+    HB.text(c, HB.fmt(P.L), x0 - 8, y0 + sh - 4, { size: 10.5, mono: true, align: "right", color: HB.col("text-faint") });
+    // 오른쪽: 모델이 받는 텍스트 미리보기
+    const px = x0 + sw + 150, pw = w - px - 10;
+    if (pw > 120) {
+      c.fillStyle = HB.col("code-bg"); HB.rrect(c, px, y0, pw, sh, 8); c.fill(); c.strokeStyle = HB.col("border"); c.stroke();
+      const lines = {
+        all: [`$ grep -rn "timeout" .`, `(${HB.fmt(P.L)}줄 전체)`, P.overflow ? "⚠ 컨텍스트 한도 초과" : "…"],
+        head: [`$ grep -rn "timeout" .`, `(앞 ${HB.fmt(P.ranges[0][1])}줄)`, "…", "(뒤는 말없이 버려짐)"],
+        ht: [`$ grep -rn "timeout" .`, `(앞부분)`, `… [중간 ${HB.fmt(Math.max(0, P.L - (P.ranges[1] ? P.ranges[1][1] - P.ranges[1][0] + P.ranges[0][1] : P.L)))}줄 생략,`, `   전체는 다시 범위를 지정해 요청] …`, `(뒷부분)`],
+        file: [`$ grep -rn "timeout" .`, `(미리보기 40줄)`, `출력 ${HB.fmt(P.L)}줄 → /tmp/out_17.txt 저장`, P.calls ? `› grep "ECONNRESET" /tmp/out_17.txt` : "", P.calls ? `  ${HB.fmt(P.needle + 1)}: …ECONNRESET…` : ""],
+        page: [`$ grep -rn "timeout" . (page 1)`, `다음 페이지: offset=2000`, P.calls ? `› … page ${P.calls + 1}에서 발견` : ""],
+      }[P.s];
+      lines.filter(Boolean).forEach((s, i) => HB.text(c, s, px + 10, y0 + 18 + i * 20, { size: 11.5, mono: true, color: i === 0 ? HB.col("text") : HB.col("text-dim") }));
+    }
+    HB.set("ou-o1", HB.si(P.tok), P.tok > 50000 ? "bad" : P.tok > 20000 ? "warn" : "good");
+    HB.set("ou-o2", P.seen ? "예" : "아니오", P.seen ? "good" : "bad");
+    HB.set("ou-o3", P.calls + "회", P.calls > 3 ? "bad" : "");
+    const verdict = P.overflow ? "실패" : P.seen ? (P.tok < 20000 && P.calls <= 1 ? "최선" : "성공, 비쌈") : "놓침";
+    HB.set("ou-o4", verdict, verdict === "최선" ? "good" : verdict.startsWith("성공") ? "warn" : "bad");
+  }
+  HB.wire(["ou-l", "ou-p", "ou-b"], () => cv.redraw(), { "ou-l": (v) => HB.fmt(v), "ou-p": (v) => HB.pct(v), "ou-b": HB.si });
+})();
+
+/* ---------------- 3. 오류 메시지 게임 ---------------- */
+(function () {
+  const Q = [
+    { call: 'read_file {"path": "/repo/src/utlis/date.ts"}', opts: [["Error", 4], ["ENOENT: no such file or directory, open '/repo/src/utlis/date.ts'", 2], ["파일이 없습니다: /repo/src/utlis/date.ts\n비슷한 경로: /repo/src/utils/date.ts", 1]], ans: 2, exp: "오타를 바로잡을 후보를 주면 다음 호출 한 번으로 끝난다. ENOENT만 있으면 모델은 디렉터리를 다시 탐색해야 한다." },
+    { call: 'edit_file {"path": "/repo/app.ts", "old_string": "return null;", "new_string": "return undefined;"}', opts: [["Edit failed", 4], ["old_string이 3곳에서 일치합니다 (12, 40, 88행).\n주변 줄을 포함해 한 곳만 일치하게 하거나, 모두 바꾸려면 replace_all=true를 쓰세요.", 1], ["AssertionError at tools/edit.py:211", 4]], ans: 1, exp: "실패 이유(여러 곳 일치), 위치, 두 가지 해결 방법을 모두 준다." },
+    { call: 'bash {"cmd": "npm run build"}', opts: [["명령이 120초 제한을 넘어 중단되었습니다.\n마지막 출력 20줄: …webpack compiling (78%)…\n오래 걸리는 명령은 run_in_background=true로 실행하고 나중에 확인하세요.", 1], ["Killed", 3], ["timeout", 3]], ans: 0, exp: "왜 멈췄는지와 진행 상황, 대안(백그라운드 실행)을 함께 준다. “Killed”만 받으면 모델은 메모리 문제인지 시간 문제인지 모른다." },
+    { call: 'read_file {"file": "/repo/a.ts"}', opts: [["400 Bad Request", 3], ["TypeError: Cannot read properties of undefined (reading 'startsWith')", 3], ["입력 검증 실패: 필수 인자 'path'가 없습니다.\n받은 인자: {\"file\": \"/repo/a.ts\"}. 'file' 대신 'path'를 쓰세요.", 1]], ans: 2, exp: "하네스가 스키마로 먼저 검증하면 내부 예외 대신 고칠 방법이 담긴 메시지를 줄 수 있다." },
+    { call: 'bash {"cmd": "rm -rf build/ dist/"}', opts: [["denied", 3], ["사용자가 이 명령을 거부했습니다: rm -rf build/ dist/\n사유: “dist는 배포 산출물이라 지우지 마세요.”\nbuild/만 지우거나 다른 방법을 찾으세요.", 1], ["Permission denied (os error 13)", 3]], ans: 1, exp: "거부도 오류 결과다. 사유를 전달하면 모델이 같은 요청을 다시 하지 않고 대안으로 간다(6장)." },
+    { call: 'web_search {"q": "node 22 fetch timeout default"}', opts: [["429", 3], ["error: quota", 3], ["검색 API 요청 한도를 넘었습니다. 30초 뒤에 다시 시도할 수 있습니다.\n그동안 저장소의 문서나 node_modules 안의 타입 정의를 먼저 확인해 보세요.", 1]], ans: 2, exp: "언제 다시 될지와 그동안 할 수 있는 일을 알려 주면 모델이 기다리며 같은 호출을 반복하지 않는다(9장)." },
+  ];
+  let qi = 0, score = 0, turns = 0, answered = false;
+  function render() {
+    const q = Q[qi];
+    HB.el("er-call").innerHTML = `<div class="ln" style="--k:var(--tool)">tool_use ${HB.esc(q.call)}</div><div class="ln" style="--k:var(--guard)">tool_result (is_error) → <b>어떤 메시지를 돌려줄까?</b></div>`;
+    HB.el("er-opts").innerHTML = q.opts.map((o, i) => `<button class="opt" data-i="${i}">${HB.esc(o[0])}</button>`).join("");
+    HB.el("er-exp").textContent = "하나를 고르세요.";
+    HB.set("er-o1", `${qi + 1} / ${Q.length}`); HB.set("er-o2", score, "good"); HB.set("er-o3", turns);
+    HB.el("er-next").disabled = true; answered = false;
+  }
+  HB.el("er-opts").addEventListener("click", (e) => {
+    const b = e.target.closest(".opt"); if (!b || answered) return;
+    answered = true;
+    const q = Q[qi], i = +b.dataset.i, ok = i === q.ans;
+    if (ok) score++;
+    turns += q.opts[i][1];
+    HB.$$(".opt", HB.el("er-opts")).forEach((o, j) => { if (j === q.ans) o.classList.add("right"); else if (j === i) o.classList.add("wrong"); });
+    HB.el("er-exp").innerHTML = `${ok ? "✓ 맞았습니다." : "✗ 더 나은 메시지가 있습니다."} 이 메시지라면 회복까지 약 <b>${q.opts[i][1]}턴</b>. ${HB.esc(q.exp)}`;
+    HB.set("er-o2", score, "good"); HB.set("er-o3", turns, turns > qi + 1 ? "warn" : "good");
+    HB.el("er-next").disabled = qi >= Q.length - 1;
+    if (qi >= Q.length - 1) HB.el("er-exp").innerHTML += `<br><b>끝! ${Q.length}문제 중 ${score}개. 최선을 모두 골랐다면 회복 턴 합계는 ${Q.length}입니다.</b>`;
+  });
+  HB.el("er-next").addEventListener("click", () => { qi++; render(); });
+  HB.el("er-reset").addEventListener("click", () => { qi = 0; score = 0; turns = 0; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

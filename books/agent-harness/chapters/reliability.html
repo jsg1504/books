@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오류 처리 · 재시도 · 관측성 · HarnessBook</title>
+<meta name="description" content="단계마다 곱해지는 실패, 지수 백오프와 지터, 트레이스로 지연과 비용의 병목을 찾는 법을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #tr-detail { min-height: 120px; }
+  #tr-q .opt { font-size: 14px; }
+</style>
+</head>
+<body data-root="../" data-chapter="reliability">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 09</div>
+    <h1>오류 처리 · 재시도 · 관측성</h1>
+    <p class="lead">에이전트 실행 하나는 수십 번의 모델 호출과 도구 실행으로 이루어진다. 그중 하나만 실패해도 전체가 무너질 수 있다. 하네스는 실패를 세 겹으로 다룬다. <b>알아채고</b>(피드백과 검증), <b>다시 하고</b>(재시도와 폴백), <b>기록한다</b>(트레이스). 이 장에서는 실패가 단계 수만큼 곱해지는 효과, 재시도가 서버를 더 아프게 만드는 경우, 트레이스로 느리고 비싼 곳을 찾는 법을 실험한다.</p>
+    <ul class="objectives">
+      <li>단계별 성공률이 전체 성공률로 곱해지는 효과와, 감지·재시도가 그것을 바꾸는 방식을 계산할 수 있다.</li>
+      <li>오류를 일시적·영구적·모델 출력 오류로 나누고 각각의 처리 방법을 말할 수 있다.</li>
+      <li>지수 백오프에 지터가 필요한 이유를 동시 재시도 폭주로 설명할 수 있다.</li>
+      <li>트레이스와 스팬으로 한 실행의 지연과 비용을 분해할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="compound">
+    <h2>실패는 곱해진다</h2>
+    <p>한 단계를 성공할 확률이 <var>p</var>이고 단계가 <var>n</var>개라면, 실패를 바로잡을 방법이 없을 때 전체 성공 확률은 <var>p</var><sup><var>n</var></sup>이다. 95%짜리 단계 20개면 36%, 50개면 8%다. 긴 작업에서 에이전트가 무너지는 이유의 상당 부분이 이 곱셈이다. 하네스는 두 가지로 곱셈을 끊는다. <b>실패를 알아채게 하고</b>(테스트, 타입 검사, 스키마 검증, 명확한 오류 메시지), <b>알아챈 실패를 다시 시도하게</b> 한다.</p>
+    <div class="formula"><div class="eq"><var>P</var><sub>단계</sub> = <var>p</var> · Σ<sub><var>i</var>=0..<var>r</var></sub> ((1 − <var>p</var>) <var>d</var>)<sup><var>i</var></sup> &nbsp;&nbsp;·&nbsp;&nbsp; <var>P</var><sub>전체</sub> = <var>P</var><sub>단계</sub><sup><var>n</var></sup></div>
+      <div class="where"><var>d</var>: 실패를 알아챌 확률(감지율), <var>r</var>: 최대 재시도 횟수. 알아채지 못한 실패는 조용히 다음 단계로 넘어가 결국 틀린 결과가 된다. 감지율이 낮으면 재시도를 아무리 늘려도 소용없다 — <b>재시도보다 감지가 먼저</b>다.</div></div>
+    <div class="sim" id="sim-compound">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>곱해지는 실패 — 감지와 재시도가 끊는 곱셈</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>단계 성공률 p <output id="cp-p-out"></output></span><input type="range" id="cp-p" min="0.8" max="0.999" step="0.001" value="0.95"></label>
+          <label class="ctrl"><span>실패 감지율 d <output id="cp-d-out"></output></span><input type="range" id="cp-d" min="0" max="1" step="0.05" value="0.8"></label>
+          <label class="ctrl"><span>최대 재시도 r <output id="cp-r-out"></output></span><input type="range" id="cp-r" min="0" max="5" step="1" value="2"></label>
+          <label class="ctrl"><span>표시할 단계 수 n <output id="cp-n-out"></output></span><input type="range" id="cp-n" min="5" max="200" step="5" value="50"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>하네스 없음 pⁿ</span><span><i style="background:var(--accent)"></i>현재 설정</span><span><i style="background:var(--env)"></i>완벽한 감지</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">단계 성공률 (재시도 포함)</span><span class="v" id="cp-o1">—</span></div>
+        <div class="stat"><span class="k">20단계 성공</span><span class="v" id="cp-o2">—</span></div>
+        <div class="stat"><span class="k">n단계 성공</span><span class="v" id="cp-o3">—</span></div>
+        <div class="stat"><span class="k">단계당 기대 시도 횟수</span><span class="v" id="cp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① d를 0으로 두고 r을 5까지 올려 보자. 아무 변화가 없다. 실패를 모르면 다시 할 수도 없다. ② d를 0.8에서 0.95로 올리는 것과 p를 0.95에서 0.97로 올리는 것(더 좋은 모델) 중 무엇이 n = 50에서 더 효과적인지 비교해 보자. ③ 기대 시도 횟수는 비용이다. 감지율이 높으면 재시도 비용을 내고 성공을 산다.</div>
+    </div>
+  </section>
+
+  <section id="retry">
+    <h2>재시도와 백오프</h2>
+    <p>모든 오류를 다시 시도하면 안 된다. 오류의 종류에 따라 처리가 다르다.</p>
+    <table class="tbl">
+      <tr><th>종류</th><th>예</th><th>하네스의 처리</th></tr>
+      <tr><td><b style="color:var(--tool)">일시적</b></td><td>요청 한도 초과(429), 서버 과부하·5xx, 네트워크 타임아웃</td><td>백오프하며 자동 재시도. 응답의 Retry-After를 존중. 계속 실패하면 다른 모델이나 지역으로 <b>폴백</b></td></tr>
+      <tr><td><b style="color:var(--guard)">영구적</b></td><td>잘못된 요청(400), 인증 실패(401), 컨텍스트 초과</td><td>재시도 금지. 입력을 고치거나(압축 등) 사용자에게 알림</td></tr>
+      <tr><td><b style="color:var(--state)">모델 출력 오류</b></td><td>스키마에 맞지 않는 도구 인자, 없는 도구 이름</td><td>오류를 tool_result로 모델에게 되먹여 스스로 고치게 함(4장)</td></tr>
+      <tr><td><b style="color:var(--ctx)">도구 실행 오류</b></td><td>테스트 실패, 파일 없음, 명령 타임아웃</td><td>정상적인 결과로 모델에게 전달 — 이것이 피드백 루프다</td></tr>
+    </table>
+    <p>일시적 오류를 재시도할 때 흔한 실수가 <b>즉시 재시도</b>다. 서버가 과부하로 요청을 거절했는데 모든 클라이언트가 바로 다시 보내면 과부하가 더 심해진다. 그래서 실패할 때마다 대기 시간을 두 배로 늘리는 <span class="term">지수 백오프</span><span class="en">exponential backoff</span>를 쓴다. 그런데 모두가 같은 순간에 실패했다면 모두가 같은 순간(1초, 2초, 4초 뒤)에 다시 몰린다. 대기 시간에 무작위성을 섞는 <span class="term">지터</span><span class="en">jitter</span>가 이 동기화를 깬다.</p>
+    <div class="sim" id="sim-backoff">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>재시도 폭주 — 50개 에이전트가 동시에 429를 받으면</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="bo-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="ctrl"><span>재시도 전략</span><div class="seg" id="bo-s"><button data-v="now">즉시</button><button data-v="fixed">고정 1초</button><button data-v="exp">지수</button><button data-v="jit" class="on">지수 + 지터</button></div></div>
+          <label class="ctrl"><span>동시 클라이언트 <output id="bo-n-out"></output></span><input type="range" id="bo-n" min="10" max="150" step="5" value="50"></label>
+          <label class="ctrl"><span>서버 처리 용량 (요청/초) <output id="bo-c-out"></output></span><input type="range" id="bo-c" min="2" max="40" step="1" value="8"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>처리됨</span><span><i style="background:var(--guard)"></i>거절됨 (429)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">총 요청</span><span class="v" id="bo-o1">—</span></div>
+        <div class="stat"><span class="k">거절된 요청</span><span class="v" id="bo-o2">—</span></div>
+        <div class="stat"><span class="k">모두 끝난 시각</span><span class="v" id="bo-o3">—</span></div>
+        <div class="stat"><span class="k">최대 순간 부하 (용량 대비)</span><span class="v" id="bo-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>즉시</b>는 요청 수가 폭발한다. 서버는 대부분의 시간을 거절에 쓴다. ② <b>지수</b>는 요청 수는 줄지만 위쪽 막대가 1, 2, 4, 8초에 뾰족하게 솟는다. 모두가 같은 박자로 돌아오기 때문이다. ③ <b>지수 + 지터</b>는 같은 대기 상한에서 부하가 고르게 퍼져 거절이 가장 적다. 각 점은 한 클라이언트의 시도다.</div>
+    </div>
+  </section>
+
+  <section id="trace">
+    <h2>관측성: 트레이스로 병목 찾기</h2>
+    <p>“에이전트가 느리다”, “어제보다 비싸다”는 불만에 답하려면 실행 하나를 단계별로 다시 볼 수 있어야 한다. 이것을 위해 하네스는 실행 전체를 <b>트레이스</b>로, 모델 호출·도구 실행·훅·하위 에이전트를 각각 <b>스팬</b>으로 기록한다. 스팬마다 시작·끝 시각, 입력·출력 토큰, 캐시 적중, 오류를 남겨 두면 나중에 지연과 비용을 분해할 수 있다. 아래는 실제와 비슷하게 만든 한 실행의 트레이스다. 막대를 눌러 자세히 보자.</p>
+    <div class="sim" id="sim-trace">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>트레이스 폭포 — 이 실행은 어디서 시간과 돈을 썼나</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="tr-mode"><button data-v="kind" class="on">종류별 색</button><button data-v="cost">비용 강조</button></div>
+        <div class="sim-view"><canvas id="tr-cv"></canvas></div>
+        <div class="pane" id="tr-detail" style="font-family:var(--font);font-size:14px"></div>
+        <div class="quiz-q" id="tr-q"><p>질문: 이 실행의 <b>지연</b>을 가장 크게 줄일 수 있는 변경은?</p><div class="opts">
+          <button class="opt" data-k="model">모델 호출을 더 빠른 모델로 모두 바꾼다</button>
+          <button class="opt" data-k="test" data-correct>전체 테스트 대신 바뀐 파일의 테스트만 돌린다</button>
+          <button class="opt" data-k="hook">포매터 훅을 끈다</button>
+        </div><div class="quiz-exp">트레이스에서 가장 긴 스팬은 npm test(약 42초)로 전체의 40%를 넘는다. 모델 호출을 모두 빠르게 해도 그만큼 줄지 않고, 훅은 1.5초뿐이다. 최적화는 추측이 아니라 측정에서 시작한다.</div></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">총 시간</span><span class="v" id="tr-o1">—</span></div>
+        <div class="stat"><span class="k">모델 호출 시간 비중</span><span class="v" id="tr-o2">—</span></div>
+        <div class="stat"><span class="k">도구 실행 시간 비중</span><span class="v" id="tr-o3">—</span></div>
+        <div class="stat"><span class="k">총 비용 (교육용 단가)</span><span class="v" id="tr-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>비용 강조</b>로 바꾸면 시간의 병목(테스트)과 비용의 병목(긴 컨텍스트의 모델 호출)이 다르다는 것이 보인다. ② 하위 에이전트 스팬을 눌러 보자. 자식 스팬이 들어 있다. 트레이스는 나무 구조다. ③ 같은 트레이스를 수천 개 모으면 “평균 비용”, “p95 지연”, “가장 자주 실패하는 도구” 같은 운영 지표가 된다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>실패는 단계 수만큼 곱해진다. 감지가 재시도보다 먼저다. 알아채지 못한 실패는 다시 할 수 없다.</li>
+      <li>일시적 오류는 백오프로 재시도하고, 영구적 오류는 재시도하지 않으며, 모델 출력 오류는 모델에게 되먹인다.</li>
+      <li>지수 백오프만으로는 동시에 실패한 클라이언트들이 같은 박자로 돌아온다. 지터로 동기화를 깬다.</li>
+      <li>트레이스와 스팬으로 한 실행의 지연과 비용을 분해한다. 시간의 병목과 돈의 병목은 다를 수 있다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 단계 성공률 98%인 30단계 작업을 실패 감지 없이 돌리면 전체 성공률은 대략?</p><div class="opts">
+        <button class="opt">98%</button>
+        <button class="opt" data-correct>55%</button>
+        <button class="opt">30%</button>
+      </div><div class="quiz-exp">0.98³⁰ ≈ 0.545.</div></div>
+      <div class="quiz-q"><p>2. 401 인증 오류를 받았다. 하네스의 올바른 처리는?</p><div class="opts">
+        <button class="opt">지수 백오프로 다섯 번 재시도한다</button>
+        <button class="opt" data-correct>재시도하지 않고 자격 증명 문제를 알린다</button>
+        <button class="opt">모델에게 다시 생각하라고 되먹인다</button>
+      </div><div class="quiz-exp">영구적 오류는 다시 보내도 같다. 재시도는 시간과 한도만 낭비한다.</div></div>
+      <div class="quiz-q"><p>3. 지수 백오프에 지터를 더하는 이유는?</p><div class="opts">
+        <button class="opt">평균 대기 시간을 줄이려고</button>
+        <button class="opt" data-correct>동시에 실패한 클라이언트들이 같은 순간에 다시 몰리지 않게 하려고</button>
+        <button class="opt">재시도 횟수를 늘리려고</button>
+      </div><div class="quiz-exp">지터는 재시도 시각을 흩어 순간 부하의 봉우리를 없앤다.</div></div>
+      <div class="quiz-q"><p>4. 에이전트가 느리다는 불만을 받았다. 가장 먼저 할 일은?</p><div class="opts">
+        <button class="opt">더 빠른 모델로 바꾼다</button>
+        <button class="opt" data-correct>트레이스에서 가장 긴 스팬이 무엇인지 확인한다</button>
+        <button class="opt">프롬프트를 줄인다</button>
+      </div><div class="quiz-exp">병목은 모델이 아니라 도구 실행이나 대기일 수 있다. 측정이 먼저다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 곱해지는 실패 ---------------- */
+(function () {
+  const cv = HB.canvas("cp-cv", { aspect: 0.6, draw });
+  const stepOk = (p, d, r) => { const q = 1 - p; let s = 0; for (let i = 0; i <= r; i++) s += Math.pow(q * d, i); return p * s; };
+  const attempts = (p, d, r) => { const q = 1 - p; let s = 0; for (let i = 0; i <= r; i++) s += Math.pow(q * d, i); return s; };
+  function draw(c, w, h) {
+    const p = HB.val("cp-p"), d = HB.val("cp-d"), r = HB.val("cp-r"), N = HB.val("cp-n");
+    const A = HB.axes(c, { box: { l: 46, t: 12, r: w - 12, b: h - 36 }, x: [0, N], y: [0, 1], xt: [0, N / 4, N / 2, (3 * N) / 4, N].map(Math.round), yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "단계 수 n", yl: "전체 성공 확률" });
+    const ps = stepOk(p, d, r), pp = stepOk(p, 1, r);
+    const curve = (q) => { const pts = []; for (let n = 0; n <= N; n++) pts.push([A.X(n), A.Y(Math.pow(q, n))]); return pts; };
+    HB.line(c, curve(p), HB.col("guard"), 2.2, [5, 4]);
+    HB.line(c, curve(pp), HB.col("env"), 2, [2, 3]);
+    HB.line(c, curve(ps), HB.col("accent"), 3);
+    HB.line(c, [[A.X(20), A.box.t], [A.X(20), A.box.b]], HB.col("text-faint"), 1, [3, 3]);
+    HB.set("cp-o1", HB.pct(ps, 2));
+    const s20 = Math.pow(ps, 20), sN = Math.pow(ps, N);
+    HB.set("cp-o2", HB.pct(s20, 1), s20 > 0.8 ? "good" : s20 < 0.4 ? "bad" : "warn");
+    HB.set("cp-o3", HB.pct(sN, 1), sN > 0.8 ? "good" : sN < 0.4 ? "bad" : "warn");
+    HB.set("cp-o4", attempts(p, d, r).toFixed(3));
+  }
+  HB.wire(["cp-p", "cp-d", "cp-r", "cp-n"], () => cv.redraw(), { "cp-p": (v) => HB.pct(v, 1), "cp-d": (v) => HB.pct(v), "cp-r": (v) => v + "회" });
+})();
+
+/* ---------------- 2. 재시도 폭주 ---------------- */
+(function () {
+  const strat = HB.seg("bo-s", () => cv.redraw());
+  const DT = 0.1, TMAX = 40;
+  function sim() {
+    const s = strat(), N = HB.val("bo-n"), C = HB.val("bo-c");
+    const rnd = HB.rng(42);
+    const cl = Array.from({ length: N }, (_, i) => ({ next: 0, k: 0, done: false, i }));
+    const pts = [], load = []; let tot = 0, rej = 0, finish = 0, peak = 0, carry = 0;
+    for (let step = 0; step * DT < TMAX; step++) {
+      const t = step * DT;
+      const arr = cl.filter((c) => !c.done && c.next <= t + 1e-9);
+      // 서버는 이번 틱에 C*DT개까지 (소수점은 이월)
+      carry += C * DT; let cap = Math.floor(carry); carry -= cap;
+      // 도착 순서 섞기
+      arr.sort(() => rnd() - 0.5);
+      load.push([t, arr.length]); peak = Math.max(peak, arr.length / (C * DT));
+      arr.forEach((c) => {
+        tot++;
+        if (cap > 0) { cap--; c.done = true; finish = t; pts.push([t, c.i, true]); }
+        else {
+          rej++; pts.push([t, c.i, false]); c.k++;
+          const base = 0.5 * Math.pow(2, c.k - 1), capW = 16;
+          const wait = s === "now" ? DT : s === "fixed" ? 1 : s === "exp" ? Math.min(capW, base) : rnd() * Math.min(capW, base);
+          c.next = t + Math.max(DT, Math.round(wait / DT) * DT);
+        }
+      });
+      if (cl.every((c) => c.done)) break;
+    }
+    return { pts, load, tot, rej, finish, peak, N, C, all: cl.every((c) => c.done) };
+  }
+  const cv = HB.canvas("bo-cv", { aspect: 0.72, draw });
+  function draw(c, w, h) {
+    const R = sim();
+    const tmax = Math.min(TMAX, Math.max(8, R.finish + 1));
+    const topH = h * 0.3;
+    // 위: 틱당 도착 수
+    const A1 = HB.axes(c, { box: { l: 46, t: 10, r: w - 12, b: topH }, x: [0, tmax], y: [0, Math.max(...R.load.map((l) => l[1]), R.C * DT * 2)], xt: [], yt: [0], yl: "도착/0.1s", ylOff: 34 });
+    R.load.forEach(([t, n]) => { if (t > tmax) return; c.fillStyle = HB.alpha(HB.col(n > R.C * DT ? "guard" : "env"), 0.7); c.fillRect(A1.X(t), A1.Y(n), Math.max(1, A1.X(DT) - A1.X(0) - 0.5), A1.Y(0) - A1.Y(n)); });
+    HB.line(c, [[A1.X(0), A1.Y(R.C * DT)], [A1.X(tmax), A1.Y(R.C * DT)]], HB.col("accent"), 1.5, [4, 3]);
+    HB.text(c, "용량", A1.X(tmax) - 4, A1.Y(R.C * DT) - 8, { size: 10.5, align: "right", color: HB.col("accent") });
+    // 아래: 클라이언트별 시도
+    const A2 = HB.axes(c, { box: { l: 46, t: topH + 18, r: w - 12, b: h - 34 }, x: [0, tmax], y: [0, R.N], xt: [0, tmax / 4, tmax / 2, (3 * tmax) / 4, tmax].map((v) => Math.round(v)), yt: [0, R.N], xl: "초", yl: "클라이언트", ylOff: 34 });
+    R.pts.forEach(([t, i, ok]) => { if (t > tmax) return; c.fillStyle = HB.alpha(HB.col(ok ? "env" : "guard"), ok ? 0.95 : 0.55); c.beginPath(); c.arc(A2.X(t), A2.Y(i + 0.5), ok ? 3 : 2.2, 0, 7); c.fill(); });
+    HB.set("bo-o1", HB.fmt(R.tot)); HB.set("bo-o2", HB.fmt(R.rej), R.rej > R.N * 4 ? "bad" : R.rej > R.N * 2 ? "warn" : "good");
+    HB.set("bo-o3", R.all ? R.finish.toFixed(1) + " s" : TMAX + " s 넘음", R.all ? "" : "bad");
+    HB.set("bo-o4", R.peak.toFixed(1) + "×", R.peak > 5 ? "bad" : R.peak > 2 ? "warn" : "good");
+  }
+  HB.wire(["bo-n", "bo-c"], () => cv.redraw());
+})();
+
+/* ---------------- 3. 트레이스 폭포 ---------------- */
+(function () {
+  // [이름, 종류, 시작, 끝, 깊이, 입력, 캐시, 출력, 설명]
+  const SP = [
+    ["run: 날짜 버그 고치기", "run", 0, 96, 0, 0, 0, 0, "트레이스 전체. 사용자 요청부터 최종 응답까지."],
+    ["model #1", "model", 0, 4.2, 1, 14200, 0, 380, "첫 호출. 캐시가 비어 있어 시스템 프롬프트와 도구 정의를 모두 새로 계산했다."],
+    ["grep parseDate", "tool", 4.2, 4.5, 1, 0, 0, 0, "도구 실행 0.3초. 결과 1.1K 토큰."],
+    ["model #2", "model", 4.5, 9.8, 1, 15600, 14200, 520, "앞부분이 캐시에 맞았다(14.2K)."],
+    ["bash: npm test", "tool", 9.8, 52, 1, 0, 0, 0, "전체 테스트 스위트 42초. 실패 2건의 로그 6.3K 토큰을 결과로 돌려줌. 이 실행에서 가장 긴 스팬."],
+    ["hook: formatter", "hook", 52, 53.5, 1, 0, 0, 0, "PostToolUse 훅. prettier 실행 1.5초."],
+    ["model #3", "model", 53.5, 60, 1, 22400, 15600, 640, "테스트 로그가 붙어 입력이 커졌다."],
+    ["subagent: 타임존 사용처 조사", "sub", 60, 84, 1, 0, 0, 0, "하위 에이전트. 자기 컨텍스트에서 파일 9개를 읽고 1.4K 요약을 돌려줬다."],
+    ["model (sub) #1", "model", 60.3, 64.5, 2, 9800, 0, 300, "하위 에이전트의 첫 호출. 자기 시스템 프롬프트를 새로 읽는다."],
+    ["read × 4", "tool", 64.5, 66, 2, 0, 0, 0, "파일 4개 읽기."],
+    ["model (sub) #2", "model", 66, 71.5, 2, 18900, 9800, 420, ""],
+    ["read × 5", "tool", 71.5, 73.2, 2, 0, 0, 0, "파일 5개 읽기."],
+    ["model (sub) #3", "model", 73.2, 83.6, 2, 31200, 18900, 1400, "요약 작성. 출력이 길어 시간이 걸렸다."],
+    ["model #4", "model", 84, 96, 1, 25300, 22400, 2100, "최종 수정과 설명. 출력 2.1K 토큰 생성에 시간이 들었다."],
+  ];
+  const PRICE = { in: 3, cache: 0.3, out: 15 }; // 백만 토큰당 교육용 단가
+  const cost = (s) => ((s[5] - s[6]) * PRICE.in + s[6] * PRICE.cache + s[7] * PRICE.out) / 1e6;
+  const KC = { run: "user", model: "accent", tool: "tool", hook: "guard", sub: "ctx" };
+  const NAME = { run: "트레이스", model: "모델 호출", tool: "도구 실행", hook: "훅", sub: "하위 에이전트" };
+  const mode = HB.seg("tr-mode", () => cv.redraw());
+  let sel = 4, rects = [];
+  const maxCost = Math.max(...SP.map(cost));
+  const cv = HB.canvas("tr-cv", { height: (w) => 30 + SP.length * 24, draw });
+  function draw(c, w, h) {
+    const L = Math.min(210, w * 0.36), R = w - 12, T = 96;
+    const X = (t) => L + (t / T) * (R - L);
+    rects = [];
+    [0, 24, 48, 72, 96].forEach((t) => { HB.line(c, [[X(t), 18], [X(t), h]], HB.col("grid"), 1); HB.text(c, t + "s", X(t), 9, { size: 10.5, mono: true, align: "center", color: HB.col("text-faint") }); });
+    SP.forEach((s, i) => {
+      const y = 22 + i * 24, x0 = X(s[2]), x1 = Math.max(X(s[3]), x0 + 3);
+      HB.text(c, s[0], 8 + s[4] * 14, y + 9, { size: 11.5, mono: true, color: i === sel ? HB.col("text") : HB.col("text-dim"), weight: i === sel ? 700 : 400 });
+      let col = HB.col(KC[s[1]]), a = 0.75;
+      if (mode() === "cost") { if (s[1] === "model") { a = 0.25 + 0.75 * (cost(s) / maxCost); col = HB.col("guard"); } else a = 0.15; }
+      c.fillStyle = HB.alpha(col.length === 7 ? col : "#888888", s[1] === "run" ? 0.25 : a);
+      HB.rrect(c, x0, y, x1 - x0, 18, 4); c.fill();
+      if (i === sel) { c.strokeStyle = HB.col("text"); c.lineWidth = 2; HB.rrect(c, x0 - 1, y - 1, x1 - x0 + 2, 20, 5); c.stroke(); }
+      const lbl = mode() === "cost" && s[1] === "model" ? "$" + cost(s).toFixed(3) : (s[3] - s[2]).toFixed(1) + "s";
+      if (x1 - x0 > 40) HB.text(c, lbl, x0 + 5, y + 9.5, { size: 10.5, mono: true, color: s[1] === "run" ? HB.col("text-dim") : "#fff", weight: 700 });
+      else HB.text(c, lbl, x1 + 4, y + 9.5, { size: 10.5, mono: true, color: HB.col("text-dim") });
+      rects.push([0, y - 3, w, 24, i]);
+    });
+  }
+  HB.el("tr-cv").addEventListener("click", (e) => {
+    const b = HB.el("tr-cv").getBoundingClientRect(), y = e.clientY - b.top;
+    const hit = rects.find((r) => y >= r[1] && y < r[1] + r[3]);
+    if (hit) { sel = hit[4]; cv.redraw(); detail(); }
+  });
+  HB.el("tr-cv").style.cursor = "pointer";
+  function detail() {
+    const s = SP[sel];
+    let html = `<b>${HB.esc(s[0])}</b> <span class="badge" style="--k:var(--${KC[s[1]]})">${NAME[s[1]]}</span> · ${(s[3] - s[2]).toFixed(1)}초 (${s[2]}s → ${s[3]}s)`;
+    if (s[1] === "model") html += `<br>입력 ${HB.fmt(s[5])} 토큰 (캐시 ${HB.fmt(s[6])}) · 출력 ${HB.fmt(s[7])} 토큰 · 비용 $${cost(s).toFixed(4)}`;
+    if (s[1] === "sub" || s[1] === "run") { const kids = SP.filter((x) => x[4] > s[4] && x[2] >= s[2] && x[3] <= s[3] && x !== s); const cc = kids.filter((k) => k[1] === "model").reduce((a, k) => a + cost(k), 0); html += `<br>자식 스팬 ${kids.length}개 · 모델 비용 합계 $${cc.toFixed(4)}`; }
+    if (s[8]) html += `<br><span style="color:var(--text-dim)">${HB.esc(s[8])}</span>`;
+    HB.el("tr-detail").innerHTML = html;
+  }
+  const top = SP.filter((s) => s[4] === 1);
+  const mT = top.filter((s) => s[1] === "model").reduce((a, s) => a + s[3] - s[2], 0) + SP.filter((s) => s[4] === 2 && s[1] === "model").reduce((a, s) => a + s[3] - s[2], 0);
+  const tT = SP.filter((s) => s[1] === "tool" || s[1] === "hook").reduce((a, s) => a + s[3] - s[2], 0);
+  HB.set("tr-o1", "96 s"); HB.set("tr-o2", HB.pct(mT / 96)); HB.set("tr-o3", HB.pct(tT / 96));
+  HB.set("tr-o4", "$" + SP.reduce((a, s) => a + cost(s), 0).toFixed(3));
+  detail();
+  cv.redraw();
+  // 질문 (공통 퀴즈 처리기와 별개로 동작)
+  const q = HB.el("tr-q");
+  HB.$$(".opt", q).forEach((b) => b.addEventListener("click", () => {
+    if (q.classList.contains("done")) return; q.classList.add("done");
+    HB.$$(".opt", q).forEach((o) => o.hasAttribute("data-correct") && o.classList.add("right"));
+    if (!b.hasAttribute("data-correct")) b.classList.add("wrong");
+  }));
+})();
+</script>
+</body>
+</html>
