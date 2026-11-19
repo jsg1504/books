@@ -1,5 +1,6 @@
 """Create books and assemble the GitHub Pages publication. Python 3.9+."""
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -75,6 +76,22 @@ def render_reader(folder, book, dest):
     return [f"{len(chapters)}개 장"]
 
 
+ASSET = re.compile(r'((?:src|href)=")([^":?#]+\.(?:css|js))"')
+
+
+def fingerprint(dest):
+    """Version local CSS/JS links by content so browsers never mix old and new files."""
+    for page in dest.rglob("*.html"):
+        def stamp(m):
+            target = (page.parent / m.group(2)).resolve()
+            if not target.is_file():
+                return m.group(0)
+            digest = hashlib.sha256(target.read_bytes()).hexdigest()[:10]
+            return f'{m.group(1)}{m.group(2)}?v={digest}"'
+        html = page.read_text(encoding="utf-8")
+        page.write_text(ASSET.sub(stamp, html), encoding="utf-8")
+
+
 def book_card(folder, book, facts):
     path = f'./{folder.name}/'
     title = text(book["title"])
@@ -114,6 +131,7 @@ def build(args):
                 facts = book.get("details", [])
             else:
                 raise ValueError(f"{folder.name}: reader 또는 index.html이 있는 custom 형식이 필요합니다.")
+            fingerprint(dest)
             if not book["published"]:
                 facts = ["초안", *facts]
             cards.append(book_card(folder, book, facts))
