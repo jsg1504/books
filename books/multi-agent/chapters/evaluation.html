@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>평가와 관측 · ChorusBook</title>
+<meta name="description" content="여러 에이전트의 실행을 트레이스로 읽어 병목을 찾고, 제거 실험과 섀플리 값으로 기여도를 나누고, 실행 편차 속에서 개선을 확인하려면 몇 번 돌려야 하는지 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #tr-cv { cursor: pointer; }
+  #tr-info { min-height: 96px; }
+  #ab-tog { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+</head>
+<body data-root="../" data-chapter="evaluation">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 11</div>
+    <h1>평가와 관측</h1>
+    <p class="lead">멀티에이전트 시스템은 같은 입력에도 매번 다른 경로로 간다. 리더가 이번에는 워커를 셋, 다음에는 다섯 띄우고, 워커들은 다른 순서로 다른 출처를 읽는다. 그래서 단일 에이전트보다 평가가 어렵다. 무엇이 느렸는지, 누구 때문에 틀렸는지, 바꾼 것이 정말 나아졌는지. 이 장에서는 세 가지 도구를 다룬다. 실행을 시간 축에 펼쳐 보는 <b>트레이스</b>, 각 에이전트의 몫을 가려내는 <b>기여도 분석</b>, 그리고 편차 속에서 차이를 확인하는 <b>반복 실행의 통계</b>.</p>
+    <ul class="objectives">
+      <li>다중 에이전트 트레이스에서 병목(임계 경로)과 낭비(유휴, 중복)를 찾을 수 있다.</li>
+      <li>제거 실험과 섀플리 값으로 각 에이전트의 기여도를 나눌 수 있다.</li>
+      <li>최종 상태 평가와 LLM 심판을 언제 쓰는지 설명할 수 있다.</li>
+      <li>실행 편차가 있을 때 개선을 확인하는 데 필요한 실행 횟수를 추정할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="trace">
+    <h2>트레이스 읽기</h2>
+    <p>트레이스는 한 실행에서 일어난 일을 <span class="term">스팬</span><span class="en">span</span>들의 나무로 기록한 것이다. 리더의 스팬 아래 워커의 스팬이, 워커의 스팬 아래 모델 호출과 도구 호출이 매달린다. 시간 축에 펼치면 무엇이 동시에 돌았고, 누가 누구를 기다렸고, 어디서 시간이 새는지가 보인다. Anthropic의 리서치 시스템 사례도 에이전트의 결정 패턴과 상호작용 구조를 추적하는 운영 관측이 디버깅에 필수였다고 설명한다.</p>
+    <div class="sim" id="sim-trace">
+      <div class="sim-head"><span class="sim-tag">VISUALIZATION</span><h3>다중 에이전트 트레이스 — 병목 찾기</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="tr-sel"><button data-v="a" class="on">실행 A · 느린 워커</button><button data-v="b">실행 B · 순차 위임</button><button data-v="c">실행 C · 재시도 폭풍</button></div>
+        <div class="sim-view"><canvas id="tr-cv"></canvas></div>
+        <div class="verdict" id="tr-info">스팬을 눌러 자세히 보세요.</div>
+        <label class="check"><input type="checkbox" id="tr-crit" checked> 임계 경로 강조</label>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전체 시간</span><span class="v" id="tr-o1">—</span></div>
+        <div class="stat"><span class="k">리더가 기다린 시간</span><span class="v" id="tr-o2">—</span></div>
+        <div class="stat"><span class="k">토큰 합계</span><span class="v" id="tr-o3">—</span></div>
+        <div class="stat"><span class="k">진단</span><span class="v" id="tr-o4" style="font-size:15px">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>실행 A</b>에서 워커 3의 웹 읽기 하나가 전체를 붙잡고 있다. 다른 워커는 일찍 끝나고 리더는 기다린다. 워커별 시간 상한이나 부분 결과 반환이 처방이다. ② <b>실행 B</b>는 워커들이 겹치지 않고 차례로 돈다. 리더가 하나를 보내고 결과를 받은 뒤 다음을 보낸 것이다. 독립적인 위임은 한 턴에 한꺼번에 보내야 병렬이 된다. ③ <b>실행 C</b>는 API 한도에 걸린 워커들이 같은 순간에 재시도해 다시 걸린다. 지터 없는 재시도가 만든 동기화된 실패다.</div>
+    </div>
+  </section>
+
+  <section id="credit">
+    <h2>누구 덕분이고 누구 탓인가</h2>
+    <p>시스템 점수가 70점일 때, 그중 리서처의 몫은 얼마일까? 가장 단순한 방법은 <span class="term">제거 실험</span><span class="en">ablation</span>이다. 리서처를 빼고(또는 단순한 대체물로 바꾸고) 다시 돌려 점수가 얼마나 떨어지는지 본다. 그런데 에이전트들은 서로 의존한다. 검증자는 리서처가 있어야 쓸모가 있고, 리서처는 검증자가 없으면 틀린 것을 가져와도 걸러지지 않는다. 그래서 “하나씩 빼 보기”의 합은 전체와 맞지 않는다. 모든 조합을 평균 내 공정하게 나누는 방법이 게임 이론의 <b>섀플리 값</b>이다.</p>
+    <div class="formula"><div class="eq"><var>φ</var><sub><var>i</var></sub> = <span style="font-size:1.3em">Σ</span><sub><var>S</var> ⊆ <var>N</var>∖{<var>i</var>}</sub> <span class="frac"><span>|<var>S</var>|! (<var>n</var> − |<var>S</var>| − 1)!</span><span><var>n</var>!</span></span> [ <var>v</var>(<var>S</var> ∪ {<var>i</var>}) − <var>v</var>(<var>S</var>) ]</div>
+      <div class="where"><var>v</var>(<var>S</var>): 에이전트 집합 <var>S</var>만으로 돌렸을 때의 점수. 에이전트 <var>i</var>를 모든 가능한 순서로 끼워 넣을 때 늘어나는 점수의 평균이다. 섀플리 값의 합은 정확히 전체 점수 − 빈 시스템 점수가 된다. 대가는 2<sup><var>n</var></sup>번의 평가다.</div></div>
+    <div class="sim" id="sim-ablate">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>제거 실험과 섀플리 값 — 기여도 나누기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ab-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="ctrl"><span>켜 둘 에이전트 (현재 구성)</span><div id="ab-tog"></div></div>
+          <label class="ctrl"><span>리서처 ↔ 검증자 상호 의존 <output id="ab-s-out"></output></span><input type="range" id="ab-s" min="0" max="30" step="1" value="14"></label>
+          <label class="ctrl"><span>리서처 ↔ 두 번째 리서처 중복 <output id="ab-d-out"></output></span><input type="range" id="ab-d" min="0" max="20" step="1" value="10"></label>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>하나 빼기 (제거 실험)</span><span><i style="background:var(--accent-2)"></i>섀플리 값</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">현재 구성 점수</span><span class="v" id="ab-o1">—</span></div>
+        <div class="stat"><span class="k">전체 구성 점수</span><span class="v" id="ab-o2">—</span></div>
+        <div class="stat"><span class="k">하나 빼기 합 / 전체 이득</span><span class="v" id="ab-o3">—</span></div>
+        <div class="stat"><span class="k">필요한 평가 횟수 (섀플리)</span><span class="v" id="ab-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 중복을 20으로 올리면 두 리서처 각각의 “하나 빼기” 기여가 작아진다. 하나를 빼도 다른 하나가 메우기 때문이다. 하지만 둘 다 빼면 크게 떨어진다. 섀플리 값은 이 몫을 둘에게 나눠 준다. ② 상호 의존을 30으로 올리면 검증자의 “하나 빼기” 기여가 커져, 하나 빼기의 합이 전체 이득을 넘는다. 상호작용이 있을 때 하나 빼기 결과를 그대로 더하면 안 된다. ③ 에이전트를 끄고 켜 보며 어떤 조합이 점수 대비 효율적인지 찾아보자. 실제 시스템에서는 각 조합을 여러 번 돌려야 하므로(다음 절) 섀플리 값은 비싸다. 몇 개의 핵심 조합만 재는 것이 현실적이다.</div>
+    </div>
+    <div class="callout"><b class="h">경로가 아니라 결과를 채점한다</b>멀티에이전트 시스템은 같은 목표에 매번 다른 경로로 간다. 그래서 “정해진 단계를 밟았는가”보다 <span class="term">최종 상태 평가</span><span class="en">end-state evaluation</span>, 즉 결과물이 요구를 만족하는지로 채점하는 편이 맞다. 결과물이 글이라면 기준표를 준 <span class="term">LLM 심판</span><span class="en">LLM-as-judge</span>이 유용하다. 사실 정확성, 인용 정확성, 완결성, 출처 품질, 도구 사용 효율처럼 기준을 나눠 각각 점수를 매기게 한다. 다만 6장의 심판 편향을 잊지 말고, 사람이 뽑아 본 표본으로 심판의 판정을 주기적으로 맞춰 본다.</div>
+  </section>
+
+  <section id="runs">
+    <h2>몇 번 돌려야 믿을까</h2>
+    <p>새 지시서로 바꿨더니 점수가 62에서 66으로 올랐다. 진짜 나아진 걸까? 멀티에이전트 시스템은 실행마다 점수가 크게 흔들린다. 한 번씩 돌려 비교하면 그 차이는 대개 잡음이다. 차이 <var>δ</var>를 실행 간 표준편차 <var>σ</var> 속에서 구분하려면 각 쪽을 대략 다음만큼 돌려야 한다.</p>
+    <div class="formula"><div class="eq"><var>n</var> ≈ <span class="frac"><span>2 (<var>z</var><sub>α/2</sub> + <var>z</var><sub>β</sub>)<sup>2</sup> <var>σ</var><sup>2</sup></span><span><var>δ</var><sup>2</sup></span></span> &nbsp;&nbsp;(95% 신뢰, 80% 검정력이면 (1.96 + 0.84)<sup>2</sup> ≈ 7.85)</div>
+      <div class="where">차이가 절반이 되면 필요한 실행 수는 네 배가 된다. 같은 과제 묶음을 두 버전에 똑같이 돌리면(짝지어 비교) 과제 난이도에서 오는 편차가 빠져 <var>σ</var>가 줄어든다.</div></div>
+    <div class="sim" id="sim-runs">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>반복 실행 — 차이가 잡음보다 커지는 순간</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rn-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>실제 개선 δ (점) <output id="rn-d-out"></output></span><input type="range" id="rn-d" min="0" max="15" step="0.5" value="4"></label>
+          <label class="ctrl"><span>실행 간 표준편차 σ (점) <output id="rn-s-out"></output></span><input type="range" id="rn-s" min="2" max="25" step="0.5" value="12"></label>
+          <label class="ctrl"><span>버전당 실행 수 n <output id="rn-n-out"></output></span><input type="range" id="rn-n" min="1" max="200" step="1" value="10"></label>
+          <label class="check"><input type="checkbox" id="rn-pair"> 같은 과제로 짝지어 비교 (편차 60% 감소)</label>
+          <div class="btns"><button class="btn" id="rn-roll">다시 실행</button></div>
+          <div class="legend"><span><i style="background:var(--user)"></i>기존</span><span><i style="background:var(--env)"></i>새 버전</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">이번 관측 차이</span><span class="v" id="rn-o1">—</span></div>
+        <div class="stat"><span class="k">95% 신뢰구간</span><span class="v" id="rn-o2">—</span></div>
+        <div class="stat"><span class="k">유의한 개선으로 판정될 확률</span><span class="v" id="rn-o3">—</span></div>
+        <div class="stat"><span class="k">80% 검정력에 필요한 n</span><span class="v" id="rn-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값(개선 4점, 편차 12점, 각 10회)에서 “다시 실행”을 여러 번 눌러 보자. 새 버전이 진 것처럼 보이는 경우도 자주 나온다. ② n을 140까지 올리면 신뢰구간이 0을 비켜 간다. 4점 차이를 확인하려면 각각 140번 넘게 돌려야 한다. ③ <b>짝지어 비교</b>를 켜면 필요한 n이 크게 준다. 같은 과제 묶음을 고정해 두는 것이 평가 비용을 줄이는 가장 싼 방법이다. ④ 개선을 0으로 두고 여러 번 돌려 보자. 5% 정도는 “유의한 개선”이 우연히 나온다. 여러 변경을 동시에 시험하면 우연한 승리가 늘어난다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>트레이스를 시간 축에 펼치면 병목(임계 경로), 리더의 대기, 순차 위임, 동기화된 재시도 같은 구조적 문제가 보인다.</li>
+      <li>에이전트들이 서로 의존하면 하나 빼기 결과의 합은 전체와 맞지 않는다. 섀플리 값은 공정하게 나누지만 2<sup>n</sup>번의 평가가 든다.</li>
+      <li>경로가 매번 다른 시스템은 최종 상태로 채점하고, 글 결과물은 기준표를 준 LLM 심판을 사람 표본으로 보정해 쓴다.</li>
+      <li>실행 편차가 크면 작은 개선을 확인하는 데 수백 번이 필요하다. 같은 과제 묶음으로 짝지어 비교해 편차를 줄인다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 트레이스에서 워커 스팬들이 겹치지 않고 하나씩 차례로 이어진다. 가장 그럴듯한 원인은?</p><div class="opts">
+        <button class="opt">워커가 너무 빠르다</button>
+        <button class="opt" data-correct>리더가 위임을 한 번에 하나씩 보내고 결과를 기다린 뒤 다음을 보냈다</button>
+        <button class="opt">임계 경로가 짧다</button>
+      </div><div class="quiz-exp">독립적인 위임은 한 번에 함께 보내야 병렬로 돈다. 지시문이나 하네스가 병렬 호출을 지원하는지 확인한다.</div></div>
+      <div class="quiz-q"><p>2. 리서처를 빼면 −10점, 검증자를 빼면 −12점, 둘 다 빼면 −14점. 하나 빼기 합(22)이 둘 다 빼기(14)보다 큰 이유는?</p><div class="opts">
+        <button class="opt">측정 오류</button>
+        <button class="opt" data-correct>둘이 서로를 필요로 하는 상호작용이 있어서, 하나만 빠져도 다른 하나의 가치가 함께 줄어든다</button>
+        <button class="opt">점수가 음수라서</button>
+      </div><div class="quiz-exp">상보적인 에이전트들이다. 하나 빼기 값을 그대로 더하면 몫을 두 번 센다.</div></div>
+      <div class="quiz-q"><p>3. 표준편차 10점인 시스템에서 2점 개선을 95% 신뢰·80% 검정력으로 확인하려면 버전당 대략 몇 번?</p><div class="opts">
+        <button class="opt">약 20번</button>
+        <button class="opt">약 80번</button>
+        <button class="opt" data-correct>약 400번</button>
+      </div><div class="quiz-exp">2 × 7.85 × 100 / 4 ≈ 392. 차이가 작을수록 필요한 실행이 제곱으로 는다.</div></div>
+      <div class="quiz-q"><p>4. 멀티에이전트 리서치 시스템의 평가 방식으로 가장 알맞은 것은?</p><div class="opts">
+        <button class="opt">미리 정한 도구 호출 순서를 그대로 밟았는지 채점</button>
+        <button class="opt" data-correct>최종 보고서를 기준표(정확성, 인용, 완결성 등)로 채점하고 사람 표본으로 보정</button>
+        <button class="opt">토큰을 적게 쓴 실행이 좋은 실행</button>
+      </div><div class="quiz-exp">경로가 매번 달라도 좋은 결과일 수 있다. 결과물을 기준으로, 심판은 보정해서 쓴다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 트레이스 ---------------- */
+(function () {
+  // 스팬: [줄, 시작, 끝, 종류, 라벨, 토큰, 설명]
+  const RUNS = {
+    a: { rows: ["리더", "워커 1", "워커 2", "워커 3", "워커 4"], spans: [
+      [0, 0, 6, "lead", "계획", 9000, "작업을 4개로 나누고 위임을 한 번에 보냄"], [0, 6, 64, "wait", "대기", 0, "모든 워커의 결과를 기다림"], [0, 64, 74, "lead", "합성", 22000, "요약 4개를 읽고 보고서 작성"],
+      [1, 6, 22, "worker", "검색·읽기", 31000, "출처 6개"], [2, 6, 26, "worker", "검색·읽기", 34000, "출처 7개"],
+      [3, 6, 12, "worker", "검색", 8000, ""], [3, 12, 60, "tool", "web_fetch (느린 PDF)", 52000, "120쪽 PDF를 통째로 읽음 — 시간 상한 없음"], [3, 60, 64, "worker", "요약", 4000, ""],
+      [4, 6, 19, "worker", "검색·읽기", 27000, "출처 5개"]],
+      crit: [[0, 0], [3, 1], [3, 2], [3, 3], [0, 2]], diag: "느린 워커 하나가 병목" },
+    b: { rows: ["리더", "워커 1", "워커 2", "워커 3", "워커 4"], spans: [
+      [0, 0, 6, "lead", "계획", 9000, "작업을 4개로 나눔"],
+      [1, 6, 22, "worker", "검색·읽기", 31000, ""], [0, 22, 25, "lead", "다음 위임", 7000, "결과를 받고 나서 다음 워커를 띄움"],
+      [2, 25, 44, "worker", "검색·읽기", 33000, ""], [0, 44, 47, "lead", "다음 위임", 8000, ""],
+      [3, 47, 61, "worker", "검색·읽기", 29000, ""], [0, 61, 64, "lead", "다음 위임", 9000, ""],
+      [4, 64, 77, "worker", "검색·읽기", 27000, ""], [0, 77, 87, "lead", "합성", 22000, ""]],
+      crit: "all", diag: "순차 위임 — 병렬이 아님" },
+    c: { rows: ["리더", "워커 1", "워커 2", "워커 3", "워커 4"], spans: [
+      [0, 0, 6, "lead", "계획", 9000, ""], [0, 6, 58, "wait", "대기", 0, ""], [0, 58, 68, "lead", "합성", 22000, ""],
+      ...[1, 2, 3, 4].flatMap((r) => [[r, 6, 10, "worker", "검색", 6000, ""], [r, 10, 11, "fail", "429", 0, "API 한도 초과"], [r, 13, 14, "fail", "429", 0, "2초 뒤 일제히 재시도 → 다시 초과"], [r, 18, 19, "fail", "429", 0, "4초 뒤 일제히 재시도 → 다시 초과"], [r, 27, 28, "fail", "429", 0, "8초 뒤 일제히 재시도"], [r, 28 + r * 2, 46 + r * 3, "worker", "읽기", 26000, "재시도가 흩어진 뒤에야 진행"]])],
+      crit: [[0, 0], [4, 5], [0, 2]], diag: "지터 없는 재시도 폭풍" },
+  };
+  let key = "a", hit = [], sel = null;
+  const COL = { lead: "accent", worker: "ctx", tool: "tool", wait: "surface-2", fail: "guard" };
+  const cv = MA.canvas("tr-cv", { aspect: 0.42, draw });
+  function draw(c, w, h) {
+    const R = RUNS[key], T = Math.max(...R.spans.map((s) => s[2])) * 1.03, l = 62, rh = (h - 30) / R.rows.length;
+    const X = (t) => l + (t / T) * (w - l - 10);
+    hit = [];
+    R.rows.forEach((name, i) => { MA.text(c, name, 6, 10 + i * rh + rh / 2, { size: 11.5, weight: 700, color: i ? MA.col("ctx") : MA.col("accent") }); c.fillStyle = MA.col("surface"); c.fillRect(l, 10 + i * rh + 4, w - l - 10, rh - 8); });
+    const crit = MA.el("tr-crit").checked;
+    const critSet = R.crit === "all" ? new Set(R.spans.map((_, i) => i)) : new Set();
+    if (R.crit !== "all") R.crit.forEach(([row, k]) => { const idx = R.spans.map((s, i) => [s, i]).filter(([s]) => s[0] === row)[k]; if (idx) critSet.add(idx[1]); });
+    R.spans.forEach((s, i) => {
+      const [row, a, b, k, lab] = s, y = 10 + row * rh + 6, x1 = X(a), x2 = X(b);
+      c.fillStyle = k === "wait" ? MA.alpha(MA.col("text-faint"), 0.18) : MA.alpha(MA.col(COL[k]), 0.65);
+      MA.rrect(c, x1, y, Math.max(2, x2 - x1 - 1), rh - 12, 4); c.fill();
+      if (k === "wait") { c.strokeStyle = MA.col("text-faint"); c.setLineDash([3, 3]); MA.rrect(c, x1, y, Math.max(2, x2 - x1 - 1), rh - 12, 4); c.stroke(); c.setLineDash([]); }
+      if (crit && critSet.has(i) && k !== "wait") { c.strokeStyle = MA.col("guard"); c.lineWidth = 2.2; MA.rrect(c, x1, y, Math.max(2, x2 - x1 - 1), rh - 12, 4); c.stroke(); }
+      if (sel === i) { c.strokeStyle = MA.col("text"); c.lineWidth = 2.4; MA.rrect(c, x1 - 1, y - 1, Math.max(2, x2 - x1 + 1), rh - 10, 4); c.stroke(); }
+      if (x2 - x1 > 46) MA.text(c, lab, x1 + 5, y + (rh - 12) / 2, { size: 10.5, color: k === "wait" ? MA.col("text-faint") : MA.col("text") });
+      hit.push([x1, y, x2, y + rh - 12, i]);
+    });
+    for (let t = 0; t <= T; t += 10) MA.text(c, t + "s", X(t), h - 10, { size: 10, mono: true, align: "center", color: MA.col("text-faint") });
+    const end = Math.max(...R.spans.map((s) => s[2])), wait = R.spans.filter((s) => s[3] === "wait").reduce((a, s) => a + s[2] - s[1], 0) || R.spans.filter((s) => s[0] !== 0).length && 0;
+    const leadBusy = R.spans.filter((s) => s[0] === 0 && s[3] === "lead").reduce((a, s) => a + s[2] - s[1], 0);
+    MA.set("tr-o1", end + "s", end > 80 ? "bad" : end > 65 ? "warn" : "good");
+    MA.set("tr-o2", (wait || end - leadBusy) + "s");
+    MA.set("tr-o3", MA.si(R.spans.reduce((a, s) => a + s[5], 0)));
+    MA.set("tr-o4", R.diag, "bad");
+  }
+  cv.on("click", (x, y) => {
+    const f = hit.find(([a, b, c2, d]) => x >= a && x <= c2 && y >= b && y <= d);
+    sel = f ? f[4] : null;
+    const s = f && RUNS[key].spans[f[4]];
+    MA.el("tr-info").innerHTML = s ? `<b>${RUNS[key].rows[s[0]]} · ${MA.esc(s[4])}</b> — ${s[1]}s → ${s[2]}s (${s[2] - s[1]}s)${s[5] ? ` · ${MA.si(s[5])} 토큰` : ""}${s[6] ? `<br>${MA.esc(s[6])}` : ""}` : "스팬을 눌러 자세히 보세요.";
+    cv.redraw();
+  });
+  MA.el("tr-crit").addEventListener("change", () => cv.redraw());
+  MA.seg("tr-sel", (v) => { key = v; sel = null; MA.el("tr-info").textContent = "스팬을 눌러 자세히 보세요."; cv.redraw(); });
+  cv.redraw();
+})();
+
+/* ---------------- 2. 제거 실험과 섀플리 ---------------- */
+(function () {
+  const AG = [["R1", "리서처 1", 18], ["R2", "리서처 2", 16], ["V", "검증자", 6], ["W", "작성자", 12]];
+  const on = new Set(AG.map((a) => a[0]));
+  MA.el("ab-tog").innerHTML = AG.map(([k, n]) => `<label class="check"><input type="checkbox" data-k="${k}" checked> ${n}</label>`).join("");
+  MA.$$("#ab-tog input").forEach((i) => i.addEventListener("change", () => { i.checked ? on.add(i.dataset.k) : on.delete(i.dataset.k); cv.redraw(); }));
+  const cv = MA.canvas("ab-cv", { aspect: 0.62, draw });
+  function v(S) {
+    const syn = MA.val("ab-s"), dup = MA.val("ab-d");
+    let s = 30; // 빈 시스템(리더 혼자)
+    AG.forEach(([k, , base]) => { if (S.has(k)) s += base; });
+    if (S.has("R1") && S.has("R2")) s -= dup; // 중복
+    const anyR = S.has("R1") || S.has("R2");
+    if (S.has("V") && anyR) s += syn; // 검증자는 리서처가 있어야 의미
+    if (S.has("V") && !anyR) s -= 4; // 검증할 게 없으면 비용만
+    if (S.has("W")) s += 0; else s -= 4;
+    return MA.clamp(s, 0, 100);
+  }
+  function shapley() {
+    const ks = AG.map((a) => a[0]), n = ks.length, fact = (m) => (m <= 1 ? 1 : m * fact(m - 1));
+    return ks.map((k) => {
+      const others = ks.filter((x) => x !== k); let phi = 0;
+      for (let mask = 0; mask < 1 << others.length; mask++) {
+        const S = new Set(others.filter((_, j) => mask & (1 << j)));
+        const wgt = (fact(S.size) * fact(n - S.size - 1)) / fact(n);
+        const S2 = new Set(S); S2.add(k);
+        phi += wgt * (v(S2) - v(S));
+      }
+      return phi;
+    });
+  }
+  function draw(c, w, h) {
+    const all = new Set(AG.map((a) => a[0])), full = v(all), empty = v(new Set());
+    const loo = AG.map(([k]) => { const S = new Set(all); S.delete(k); return full - v(S); });
+    const sh = shapley();
+    const max = Math.max(5, ...loo, ...sh) * 1.15;
+    const A = MA.axes(c, { box: { l: 44, t: 14, r: w - 10, b: h - 40 }, x: [0, AG.length], y: [Math.min(0, ...loo, ...sh) * 1.2, max], yt: [0, Math.round(max / 2), Math.round(max)], yl: "점수 기여", ylOff: 34 });
+    const gw = (A.X(1) - A.X(0)), bw = gw * 0.32;
+    AG.forEach(([k, name], i) => {
+      const cx = A.X(i + 0.5);
+      [[loo[i], "ctx", -1], [sh[i], "accent-2", 1]].forEach(([val, col, side]) => {
+        const x = cx + (side < 0 ? -bw - 2 : 2);
+        c.fillStyle = MA.alpha(MA.col(col), 0.8); const y0 = A.Y(0), y1 = A.Y(val);
+        c.fillRect(x, Math.min(y0, y1), bw, Math.abs(y1 - y0));
+        MA.text(c, val.toFixed(1), x + bw / 2, Math.min(y0, y1) - 8, { size: 10.5, mono: true, align: "center", color: MA.col("text-dim") });
+      });
+      MA.text(c, name, cx, A.box.b + 14, { size: 11.5, weight: on.has(k) ? 700 : 400, align: "center", color: on.has(k) ? MA.col("text") : MA.col("text-faint") });
+    });
+    const sumLoo = loo.reduce((a, b) => a + b, 0);
+    MA.set("ab-o1", v(on).toFixed(0) + "점");
+    MA.set("ab-o2", full.toFixed(0) + "점");
+    MA.set("ab-o3", `${sumLoo.toFixed(0)} / ${(full - empty).toFixed(0)}`, Math.abs(sumLoo - (full - empty)) > 3 ? "warn" : "good");
+    MA.set("ab-o4", (1 << AG.length) + "가지 조합");
+  }
+  MA.wire(["ab-s", "ab-d"], () => cv.redraw(), { "ab-s": (v) => "+" + v, "ab-d": (v) => "−" + v });
+})();
+
+/* ---------------- 3. 반복 실행 ---------------- */
+(function () {
+  let seed = 1;
+  const cv = MA.canvas("rn-cv", { aspect: 0.62, draw });
+  const Phi = (z) => 0.5 * (1 + Math.tanh(0.7978845608 * (z + 0.044715 * z * z * z)));
+  function draw(c, w, h) {
+    const d = MA.val("rn-d"), s0 = MA.val("rn-s"), n = MA.val("rn-n"), pair = MA.el("rn-pair").checked;
+    const s = pair ? s0 * 0.4 : s0, r = MA.rng(seed * 997 + n);
+    const base = 62, A0 = [], B0 = [];
+    for (let i = 0; i < n; i++) { const task = MA.normal(r) * (pair ? s0 * 0.9 : 0); A0.push(base + task + MA.normal(r) * s); B0.push(base + d + task + MA.normal(r) * s); }
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    const ma = mean(A0), mb = mean(B0);
+    const se = s * Math.sqrt(2 / n), diff = mb - ma, lo = diff - 1.96 * se, hi = diff + 1.96 * se;
+    const power = 1 - Phi(1.96 - d / se);
+    const need = Math.ceil((2 * 7.85 * s * s) / Math.max(0.01, d * d));
+    // 그림: 점 구름 두 줄 + 평균
+    const A = MA.axes(c, { box: { l: 60, t: 14, r: w - 12, b: h - 70 }, x: [base - 3 * s0, base + 3 * s0 + 15], y: [0, 2], xt: [Math.round(base - 2 * s0), base, Math.round(base + 2 * s0)], yt: [], xl: "점수" });
+    [[A0, ma, "user", 1.45, "기존"], [B0, mb, "env", 0.55, "새 버전"]].forEach(([arr, m, col, yy, lab]) => {
+      MA.text(c, lab, 6, A.Y(yy), { size: 11.5, weight: 700, color: MA.col(col) });
+      arr.slice(0, 300).forEach((v, i) => { c.fillStyle = MA.alpha(MA.col(col), 0.45); c.beginPath(); c.arc(A.X(MA.clamp(v, base - 3 * s0, base + 3 * s0 + 15)), A.Y(yy) + ((i * 7919) % 21 - 10), 3, 0, 7); c.fill(); });
+      MA.line(c, [[A.X(m), A.Y(yy) - 16], [A.X(m), A.Y(yy) + 16]], MA.col(col), 3);
+    });
+    // 차이 신뢰구간 막대 (아래)
+    const y = h - 26, X2 = (v) => w / 2 + (v / Math.max(15, Math.abs(lo), Math.abs(hi))) * (w / 2 - 70);
+    MA.line(c, [[X2(-15), y], [X2(15), y]], MA.col("axis"), 1);
+    MA.line(c, [[X2(0), y - 8], [X2(0), y + 8]], MA.col("text-faint"), 1.2);
+    MA.line(c, [[X2(lo), y], [X2(hi), y]], lo > 0 ? MA.col("env") : MA.col("tool"), 5);
+    c.fillStyle = MA.col("text"); c.beginPath(); c.arc(X2(diff), y, 4, 0, 7); c.fill();
+    MA.text(c, "차이의 95% 신뢰구간", 8, y, { size: 11, color: MA.col("text-dim") });
+    MA.set("rn-o1", (diff >= 0 ? "+" : "") + diff.toFixed(1), diff > 0 ? "good" : "bad");
+    MA.set("rn-o2", `[${lo.toFixed(1)}, ${hi.toFixed(1)}]`, lo > 0 ? "good" : "warn");
+    MA.set("rn-o3", MA.pct(d > 0 ? power : 0.025), power > 0.8 ? "good" : power < 0.4 ? "bad" : "warn");
+    MA.set("rn-o4", d > 0 ? need.toLocaleString("ko-KR") + "회" : "∞");
+  }
+  MA.el("rn-roll").addEventListener("click", () => { seed++; cv.redraw(); });
+  MA.el("rn-pair").addEventListener("change", () => cv.redraw());
+  MA.wire(["rn-d", "rn-s", "rn-n"], () => cv.redraw(), { "rn-d": (v) => "+" + v, "rn-s": (v) => "±" + v, "rn-n": (v) => v + "회" });
+})();
+</script>
+</body>
+</html>

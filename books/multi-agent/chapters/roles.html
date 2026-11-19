@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>역할 설계와 전문화 · ChorusBook</title>
+<meta name="description" content="전문가와 만능가 에이전트의 비교, 라우터 정확도, 역할별 도구 배분과 최소 권한, 생성자-비평가 루프의 함정을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .mx { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .mx th, .mx td { border: 1px solid var(--border); padding: 0; text-align: center; }
+  .mx th { background: var(--surface); font-weight: 600; padding: 6px 4px; font-size: 12px; }
+  .mx th.r { text-align: left; padding-left: 10px; white-space: nowrap; }
+  .mx td button { width: 100%; height: 34px; border: 0; background: transparent; cursor: pointer; font-size: 15px; }
+  .mx td button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .mx td button.need { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--env) 60%, transparent); }
+  .mx td button.on.risk { background: color-mix(in srgb, var(--guard) 25%, transparent); }
+  .mx-wrap { overflow-x: auto; }
+  #tl-warn { display: grid; gap: 6px; }
+</style>
+</head>
+<body data-root="../" data-chapter="roles">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>역할 설계와 전문화</h1>
+    <p class="lead">“당신은 기획자입니다”, “당신은 비평가입니다”. 멀티에이전트 시스템의 에이전트는 대개 역할을 갖는다. 역할을 나누는 이유는 사람 조직과 비슷하다. 지시문이 짧아지고, 각자 필요한 도구만 갖고, 서로의 일을 점검할 수 있다. 하지만 역할을 나누면 <b>누구에게 보낼지 고르는 일</b>이 새로 생기고, 비평가가 생성자와 같은 맹점을 갖고 있으면 점검은 의식(儀式)에 그친다. 이 장은 역할을 언제, 어떻게 나눌지 실험한다.</p>
+    <ul class="objectives">
+      <li>역할의 네 요소(지시문, 도구, 모델, 출력 형식)를 설계할 수 있다.</li>
+      <li>전문가 시스템이 만능가를 이기는 조건(라우터 정확도, 전문성 차이, 지시문 간섭)을 설명할 수 있다.</li>
+      <li>역할마다 필요한 도구만 주는 최소 권한 원칙을 적용하고 위험한 도구 조합을 찾을 수 있다.</li>
+      <li>생성자-비평가 루프의 이득과 함정(같은 맹점, 끝없는 트집)을 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="anatomy">
+    <h2>역할을 이루는 것</h2>
+    <p>역할은 이름표가 아니다. 한 에이전트의 역할은 네 가지로 정해진다. <b>무엇을 하라는 지시문</b>, <b>쓸 수 있는 도구</b>, <b>어떤 모델</b>, <b>무엇을 돌려줄지(출력 형식)</b>. “당신은 보안 전문가입니다” 한 줄은 거의 아무것도 바꾸지 않는다. 보안 검토에 필요한 체크리스트, 정적 분석 도구, 정해진 보고 형식이 역할을 만든다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 220" role="img" aria-label="역할의 네 요소와 기획자-실행자-비평가 구성">
+        <g transform="translate(20,20)">
+          <rect width="330" height="180" rx="14" class="f-surface"/>
+          <text x="20" y="28" class="t-b">역할 카드: 비평가</text>
+          <rect x="20" y="42" width="290" height="28" rx="6" class="soft-ctx"/><text x="30" y="61" class="t"><tspan style="font-weight:700">지시문</tspan> · 기준표 6항목으로 채점, 고칠 점만</text>
+          <rect x="20" y="76" width="290" height="28" rx="6" class="soft-tool"/><text x="30" y="95" class="t"><tspan style="font-weight:700">도구</tspan> · read_file, run_tests (쓰기 없음)</text>
+          <rect x="20" y="110" width="290" height="28" rx="6" class="f-acc-soft"/><text x="30" y="129" class="t"><tspan style="font-weight:700">모델</tspan> · 생성자와 다른 계열 권장</text>
+          <rect x="20" y="144" width="290" height="28" rx="6" class="soft-env"/><text x="30" y="163" class="t"><tspan style="font-weight:700">출력</tspan> · {pass, issues[], severity}</text>
+        </g>
+        <g transform="translate(420,20)">
+          <circle cx="170" cy="40" r="30" class="soft-state" stroke-width="2"/><text x="170" y="38" text-anchor="middle" class="t-b">기획자</text><text x="170" y="54" text-anchor="middle" class="t-mono">plan</text>
+          <circle cx="60" cy="150" r="30" class="soft-ctx" stroke-width="2"/><text x="60" y="148" text-anchor="middle" class="t-b">실행자</text><text x="60" y="164" text-anchor="middle" class="t-mono">act</text>
+          <circle cx="280" cy="150" r="30" class="f-acc2-soft" stroke-width="2"/><text x="280" y="148" text-anchor="middle" class="t-b">비평가</text><text x="280" y="164" text-anchor="middle" class="t-mono">check</text>
+          <g stroke="var(--tool)" stroke-width="1.8" fill="none"><path d="M148 62 L80 124"/><path d="M92 156 H246"/><path d="M262 124 L194 62"/></g>
+          <text x="96" y="90" class="t-mono" style="fill:var(--tool)">단계</text><text x="170" y="176" text-anchor="middle" class="t-mono" style="fill:var(--tool)">결과물</text><text x="236" y="90" class="t-mono" style="fill:var(--tool)">반려·통과</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 7-1.</b> 왼쪽: 역할은 지시문·도구·모델·출력 형식의 묶음이다. 비평가에게 쓰기 도구를 주지 않는 것도 역할 설계다. 오른쪽: 가장 흔한 역할 조합인 기획자-실행자-비평가.</figcaption>
+    </figure>
+  </section>
+
+  <section id="specialist">
+    <h2>전문가 대 만능가</h2>
+    <p>세 종류의 일을 하는 시스템을 만든다고 하자. 만능가 하나에게 세 역할을 다 주면 지시문이 길어지고 서로 간섭한다. 전문가 셋을 두면 각자는 잘하지만 <span class="term">라우터</span><span class="en">router</span>가 들어온 일을 맞는 전문가에게 보내야 한다. 라우터가 틀리면 전문가가 자기 분야가 아닌 일을 받는다. 전문화의 이득은 이 세 숫자의 줄다리기다.</p>
+    <div class="formula"><div class="eq"><var>Q</var><sub>전문가</sub> = <var>r</var> · <var>s</var> + (1 − <var>r</var>) · <var>s</var><sub>off</sub> &nbsp;&nbsp;vs&nbsp;&nbsp; <var>Q</var><sub>만능가</sub> = <var>g</var> · (1 − <var>i</var>)<sup><var>K</var>−1</sup></div>
+      <div class="where"><var>r</var>: 라우터 정확도, <var>s</var>: 전문가가 자기 분야에서 내는 품질, <var>s</var><sub>off</sub>: 남의 분야 일을 받았을 때 품질, <var>g</var>: 만능가의 기본 품질, <var>i</var>: 역할이 하나 늘 때마다 생기는 지시문 간섭, <var>K</var>: 일의 종류 수.</div></div>
+    <div class="sim" id="sim-spec">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>전문가 대 만능가 — 일의 종류가 늘어날 때</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>일의 종류 K <output id="sp-k-out"></output></span><input type="range" id="sp-k" min="1" max="12" step="1" value="4"></label>
+          <label class="ctrl"><span>라우터 정확도 r <output id="sp-r-out"></output></span><input type="range" id="sp-r" min="0.5" max="1" step="0.01" value="0.9"></label>
+          <label class="ctrl"><span>전문가 이점 (s − g) <output id="sp-a-out"></output></span><input type="range" id="sp-a" min="0" max="0.25" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>역할당 지시문 간섭 i <output id="sp-i-out"></output></span><input type="range" id="sp-i" min="0" max="0.06" step="0.002" value="0.015"></label>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>전문가 + 라우터</span><span><i style="background:var(--accent)"></i>만능가 하나</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전문가 시스템</span><span class="v" id="sp-o1">—</span></div>
+        <div class="stat"><span class="k">만능가</span><span class="v" id="sp-o2">—</span></div>
+        <div class="stat"><span class="k">전문가가 이기는 최소 r</span><span class="v" id="sp-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① K=1이면 라우터가 할 일이 없고 전문가 이점만 남는다. ② 라우터 정확도를 0.6으로 낮추면 전문가 이점 0.08로는 만능가를 이기지 못한다. 라우터가 전문화의 성패를 쥔다. ③ 간섭 i를 0.04로 올리고 K를 10으로 늘리면 만능가가 급히 무너진다. 역할이 많고 서로 충돌하는 지시를 담아야 할수록 나누는 편이 낫다. 단, 라우터 자체도 모델 호출 하나와 지연을 더한다.</div>
+    </div>
+  </section>
+
+  <section id="tools">
+    <h2>도구 나눠 주기와 최소 권한</h2>
+    <p>역할을 나누면 도구도 나눌 수 있다. 이것은 성능 문제이자 보안 문제다. 도구가 적을수록 에이전트는 덜 헷갈리고, 잘못된 행동의 <b>피해 반경</b>이 줄어든다. <span class="term">최소 권한</span><span class="en">least privilege</span>은 각 에이전트에게 그 역할에 꼭 필요한 도구만 주는 원칙이다. 특히 10장에서 다룰 위험한 조합, 즉 <b>신뢰할 수 없는 입력을 읽는 도구 + 비공개 데이터 도구 + 외부로 보내는 도구</b>가 한 에이전트에 모이지 않게 한다.</p>
+    <div class="sim" id="sim-tools">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>도구 배분표 — 역할마다 필요한 것만</h3></div>
+      <div class="sim-body">
+        <p style="margin:0;font-size:14.5px;color:var(--text-dim)">칸을 눌러 도구를 주거나 뺏어 보자. 초록 테두리는 그 역할의 일에 <b>꼭 필요한</b> 도구다. 시스템이 일을 하려면 초록 칸이 모두 켜져야 하고, 나머지는 적을수록 좋다.</p>
+        <div class="mx-wrap"><table class="mx" id="tl-mx"></table></div>
+        <div id="tl-warn"></div>
+        <div class="btns"><button class="btn" id="tl-all">모두에게 전부 주기</button><button class="btn" id="tl-min">최소 권한 배분</button><button class="btn" id="tl-clear">모두 빼기</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">필요한 도구 충족</span><span class="v" id="tl-o1">—</span></div>
+        <div class="stat"><span class="k">불필요한 권한</span><span class="v" id="tl-o2">—</span></div>
+        <div class="stat"><span class="k">위험한 조합을 가진 에이전트</span><span class="v" id="tl-o3">—</span></div>
+        <div class="stat"><span class="k">도구 정의 토큰 (합계)</span><span class="v" id="tl-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “모두에게 전부 주기”를 누르면 네 에이전트 모두가 위험한 조합을 갖는다. 웹 문서 하나에 숨은 지시가 고객 DB를 이메일로 내보낼 수 있다. ② “최소 권한 배분”에서는 웹을 읽는 리서처가 DB와 메일을 갖지 않는다. ③ 작성자에게 web_fetch를 하나만 더 주면 어떻게 되는지 보자. 권한 하나가 조합을 완성한다.</div>
+    </div>
+  </section>
+
+  <section id="critic">
+    <h2>생성자-비평가 루프</h2>
+    <p>한 에이전트가 만들고 다른 에이전트가 평가해 고치게 하는 <span class="term">생성자-비평가</span><span class="en">generator-critic</span> 구조는 가장 널리 쓰이는 역할 조합이다. 비평가가 진짜 문제를 짚으면 결과가 좋아진다. 그러나 비평가도 틀린다. 문제를 놓치기도(<b>놓침</b>), 멀쩡한 것을 트집 잡기도(<b>헛경보</b>) 한다. 헛경보를 받은 생성자는 멀쩡한 부분을 고치다 오히려 망가뜨릴 수 있다. 그리고 비평가가 생성자와 같은 모델이면 <b>같은 곳을 같이 못 본다</b>.</p>
+    <div class="sim" id="sim-critic">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>비평가 루프 — 반복할수록 좋아지나</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cr-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>비평가가 실제 문제를 잡는 비율 <output id="cr-d-out"></output></span><input type="range" id="cr-d" min="0" max="1" step="0.02" value="0.7"></label>
+          <label class="ctrl"><span>헛경보 비율 (멀쩡한데 고치라 함) <output id="cr-f-out"></output></span><input type="range" id="cr-f" min="0" max="0.6" step="0.02" value="0.15"></label>
+          <label class="ctrl"><span>헛경보를 따르다 망가뜨릴 확률 <output id="cr-b-out"></output></span><input type="range" id="cr-b" min="0" max="1" step="0.05" value="0.35"></label>
+          <label class="ctrl"><span>최대 반복 <output id="cr-n-out"></output></span><input type="range" id="cr-n" min="1" max="10" step="1" value="6"></label>
+          <label class="check"><input type="checkbox" id="cr-same"> 비평가가 생성자와 같은 모델 (맹점 공유)</label>
+          <div class="legend"><span><i style="background:var(--env)"></i>결함 없음</span><span><i style="background:var(--guard)"></i>결함 있음</span><span><i style="background:transparent;border:2px dashed var(--guard)"></i>결함 있는데 통과</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">처음 결함 없는 비율</span><span class="v" id="cr-o1">—</span></div>
+        <div class="stat"><span class="k">최종 결함 없는 비율</span><span class="v" id="cr-o2">—</span></div>
+        <div class="stat"><span class="k">결함 있는데 통과한 비율</span><span class="v" id="cr-o3">—</span></div>
+        <div class="stat"><span class="k">평균 반복 횟수</span><span class="v" id="cr-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 반복할수록 결함 없는 비율(초록)이 오른다. ② “같은 모델”을 켜면 비평가가 잡는 비율이 사실상 크게 떨어진다. 생성자가 놓친 결함은 비평가도 놓친다. 결함 있는 채 통과(빨간 점선)가 는다. ③ 헛경보를 0.5, 망가뜨릴 확률을 0.8로 올리고 탐지율을 0.3으로 내리면 반복이 오히려 해롭다. 최종 결함 없는 비율이 처음보다 낮아진다. 이럴 때는 비평가의 기준을 구체적으로(체크리스트, 테스트) 만들고, <b>반복 상한</b>을 둔다. 테스트 실행처럼 모델 바깥의 검사가 있으면 가장 좋다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>역할은 지시문·도구·모델·출력 형식의 묶음이다. 이름표 한 줄은 거의 아무것도 바꾸지 않는다.</li>
+      <li>전문화는 라우터 정확도가 충분하고, 전문가 이점이 크고, 한 지시문에 담을 역할이 서로 간섭할 때 이긴다.</li>
+      <li>역할마다 필요한 도구만 준다. 신뢰할 수 없는 입력·비공개 데이터·외부 전송이 한 에이전트에 모이지 않게 한다.</li>
+      <li>비평가는 놓침과 헛경보를 모두 가진다. 생성자와 다른 관점(다른 모델, 구체적 기준, 실행 결과)을 주고 반복에 상한을 둔다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 전문가 에이전트 다섯을 두었는데 만능가 하나보다 성능이 낮다. 가장 먼저 의심할 것은?</p><div class="opts">
+        <button class="opt" data-correct>라우터가 일을 잘못된 전문가에게 보내는 비율</button>
+        <button class="opt">전문가의 이름</button>
+        <button class="opt">전문가 수가 홀수인 것</button>
+      </div><div class="quiz-exp">r이 낮으면 전문가들이 남의 일을 받는다. 라우팅 정확도부터 잰다.</div></div>
+      <div class="quiz-q"><p>2. 웹을 검색하는 리서처 에이전트에게 주지 말아야 할 도구 조합은?</p><div class="opts">
+        <button class="opt">web_search와 read_file</button>
+        <button class="opt" data-correct>고객 DB 조회와 이메일 발송</button>
+        <button class="opt">요약 도구</button>
+      </div><div class="quiz-exp">신뢰할 수 없는 웹 입력 + 비공개 데이터 + 외부 전송이 모이면 주입 공격으로 유출될 수 있다(10장).</div></div>
+      <div class="quiz-q"><p>3. 생성자와 같은 모델·같은 프롬프트 계열로 비평가를 만들면 생기는 문제는?</p><div class="opts">
+        <button class="opt">비용이 줄어든다</button>
+        <button class="opt" data-correct>같은 맹점을 공유해 생성자가 놓친 결함을 비평가도 놓친다</button>
+        <button class="opt">비평가가 항상 반려한다</button>
+      </div><div class="quiz-exp">6장의 오류 상관과 같은 원리다. 다른 모델, 구체적인 기준, 실행 결과로 독립성을 만든다.</div></div>
+      <div class="quiz-q"><p>4. 비평가 루프가 반복될수록 결과가 나빠진다. 알맞은 조치는?</p><div class="opts">
+        <button class="opt">반복 상한을 없앤다</button>
+        <button class="opt" data-correct>헛경보를 줄이도록 기준을 구체화하고, 반복 상한을 둔다</button>
+        <button class="opt">비평가를 두 명 더 둔다</button>
+      </div><div class="quiz-exp">트집을 따르다 멀쩡한 부분을 망가뜨리는 것이 원인이다. 비평가를 늘리면 헛경보도 는다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 전문가 대 만능가 ---------------- */
+(function () {
+  const cv = MA.canvas("sp-cv", { aspect: 0.62, draw });
+  const g = 0.78;
+  function q(K, r) {
+    const a = MA.val("sp-a"), i = MA.val("sp-i");
+    const s = Math.min(0.99, g + a), soff = g * 0.7;
+    const rr = K === 1 ? 1 : r;
+    return { spec: rr * s + (1 - rr) * soff, gen: g * Math.pow(1 - i, K - 1) };
+  }
+  function draw(c, w, h) {
+    const K = MA.val("sp-k"), r = MA.val("sp-r");
+    const A = MA.axes(c, { box: { l: 46, t: 12, r: w - 12, b: h - 36 }, x: [1, 12], y: [0.4, 1], xt: [1, 3, 6, 9, 12], yt: [0.4, 0.6, 0.8, 1], yf: (v) => v.toFixed(1), xl: "일의 종류 K", yl: "품질", ylOff: 34 });
+    const a = [], b = [];
+    for (let k = 1; k <= 12; k++) { const v = q(k, r); a.push([A.X(k), A.Y(v.spec)]); b.push([A.X(k), A.Y(v.gen)]); }
+    MA.line(c, a, MA.col("ctx"), 2.8); MA.line(c, b, MA.col("accent"), 2.8);
+    MA.line(c, [[A.X(K), A.box.t], [A.X(K), A.box.b]], MA.col("text-faint"), 1.2, [4, 4]);
+    const v = q(K, r);
+    MA.set("sp-o1", v.spec.toFixed(3), v.spec > v.gen ? "good" : "bad");
+    MA.set("sp-o2", v.gen.toFixed(3), v.gen >= v.spec ? "good" : "bad");
+    // 전문가가 이기는 최소 r
+    let rmin = null; for (let rr = 0.5; rr <= 1.0001; rr += 0.005) { if (q(K, rr).spec > v.gen) { rmin = rr; break; } }
+    MA.set("sp-o3", K === 1 ? "라우터 불필요" : rmin == null ? "없음" : MA.pct(rmin, 1), rmin == null && K > 1 ? "bad" : "");
+  }
+  MA.wire(["sp-k", "sp-r", "sp-a", "sp-i"], () => cv.redraw(), { "sp-r": (v) => MA.pct(v), "sp-a": (v) => "+" + v.toFixed(2), "sp-i": (v) => MA.pct(v, 1), "sp-k": (v) => v + "종" });
+})();
+
+/* ---------------- 2. 도구 배분표 ---------------- */
+(function () {
+  const AG = [["리서처", "web"], ["분석가", "data"], ["작성자", "write"], ["운영자", "ops"]];
+  const TL = [
+    ["web_search", "untrusted", 320], ["web_fetch", "untrusted", 280], ["read_file", "", 180], ["write_file", "", 200],
+    ["run_python", "", 260], ["customer_db", "private", 340], ["send_email", "exfil", 240], ["deploy", "", 300],
+  ];
+  const NEED = { 0: [0, 1], 1: [2, 4, 5], 2: [2, 3], 3: [6, 7] };
+  const MIN = { 0: [0, 1, 2], 1: [2, 4, 5], 2: [2, 3], 3: [3, 6, 7] };
+  let on = AG.map(() => TL.map(() => false));
+  function risky(a) { const has = (k) => TL.some((t, j) => on[a][j] && t[1] === k); return has("untrusted") && has("private") && has("exfil"); }
+  function partial(a) { const has = (k) => TL.some((t, j) => on[a][j] && t[1] === k); const n = ["untrusted", "private", "exfil"].filter(has).length; return n; }
+  function render() {
+    MA.el("tl-mx").innerHTML = `<tr><th class="r">역할 \\ 도구</th>${TL.map((t) => `<th><span class="mono">${t[0]}</span>${t[1] ? `<br><span class="badge" style="--k:var(${t[1] === "untrusted" ? "--tool" : t[1] === "private" ? "--state" : "--guard"})">${{ untrusted: "외부 입력", private: "비공개", exfil: "외부 전송" }[t[1]]}</span>` : ""}</th>`).join("")}</tr>` +
+      AG.map(([name], a) => `<tr><th class="r">${name}${risky(a) ? ' <span class="badge" style="--k:var(--guard)">위험</span>' : ""}</th>${TL.map((t, j) => `<td><button data-a="${a}" data-j="${j}" class="${on[a][j] ? "on" : ""} ${NEED[a].includes(j) ? "need" : ""} ${on[a][j] && risky(a) && t[1] ? "risk" : ""}" aria-label="${name}에게 ${t[0]} ${on[a][j] ? "빼기" : "주기"}">${on[a][j] ? "●" : "·"}</button></td>`).join("")}</tr>`).join("");
+    MA.$$("#tl-mx button").forEach((b) => b.addEventListener("click", () => { on[+b.dataset.a][+b.dataset.j] = !on[+b.dataset.a][+b.dataset.j]; render(); }));
+    let need = 0, got = 0, extra = 0, tok = 0, risk = 0;
+    AG.forEach((_, a) => { NEED[a].forEach((j) => { need++; if (on[a][j]) got++; }); TL.forEach((t, j) => { if (on[a][j]) { tok += t[2]; if (!NEED[a].includes(j)) extra++; } }); if (risky(a)) risk++; });
+    MA.set("tl-o1", `${got} / ${need}`, got === need ? "good" : "bad");
+    MA.set("tl-o2", String(extra), extra === 0 ? "good" : extra > 6 ? "bad" : "warn");
+    MA.set("tl-o3", String(risk), risk ? "bad" : "good");
+    MA.set("tl-o4", MA.si(tok) + " tok");
+    const warns = [];
+    AG.forEach(([name], a) => {
+      if (risky(a)) warns.push(["guard", `${name}: 외부 입력 + 비공개 데이터 + 외부 전송이 한곳에 모였다. 읽은 문서에 숨은 지시가 데이터를 내보낼 수 있다.`]);
+      else if (partial(a) === 2) warns.push(["tool", `${name}: 위험한 세 요소 중 둘을 가졌다. 하나만 더 주면 조합이 완성된다.`]);
+      const miss = NEED[a].filter((j) => !on[a][j]);
+      if (miss.length) warns.push(["state", `${name}: 일에 필요한 ${miss.map((j) => TL[j][0]).join(", ")}이(가) 없다.`]);
+    });
+    if (!warns.length) warns.push(["env", "모든 역할이 일을 할 수 있고, 위험한 조합이 없다."]);
+    MA.el("tl-warn").innerHTML = warns.map(([k, s]) => `<div class="mem" style="--k:var(--${k})"><span class="t">${MA.esc(s)}</span></div>`).join("");
+  }
+  MA.el("tl-all").addEventListener("click", () => { on = AG.map(() => TL.map(() => true)); render(); });
+  MA.el("tl-clear").addEventListener("click", () => { on = AG.map(() => TL.map(() => false)); render(); });
+  MA.el("tl-min").addEventListener("click", () => { on = AG.map((_, a) => TL.map((_, j) => MIN[a].includes(j))); render(); });
+  on = AG.map(() => TL.map(() => true));
+  render();
+})();
+
+/* ---------------- 3. 비평가 루프 ---------------- */
+(function () {
+  const cv = MA.canvas("cr-cv", { aspect: 0.62, draw });
+  function sim() {
+    let d = MA.val("cr-d"); const f = MA.val("cr-f"), b = MA.val("cr-b"), N = MA.val("cr-n"), same = MA.el("cr-same").checked;
+    const T = 2000, rnd = MA.rng(17), p0 = 0.45;
+    const good = Array(N + 1).fill(0), passedBad = Array(N + 1).fill(0);
+    let iters = 0, finalGood = 0, finalPassBad = 0;
+    for (let t = 0; t < T; t++) {
+      let ok = rnd() < p0, done = false, k = 0;
+      // 같은 모델이면 생성자가 놓친 결함(=처음부터 있던 결함)을 비평가도 높은 확률로 놓친다
+      const blind = same && !ok && rnd() < 0.6;
+      good[0] += ok ? 1 : 0;
+      for (k = 1; k <= N; k++) {
+        if (!done) {
+          const flag = ok ? rnd() < f : !(blind) && rnd() < d;
+          if (!flag) { done = true; if (!ok) passedBad[k] += 0; }
+          else {
+            iters++;
+            if (ok) { if (rnd() < b) ok = false; } // 헛경보를 따르다 망가뜨림
+            else if (rnd() < 0.8) ok = true; // 진짜 지적은 대개 고쳐진다
+          }
+        }
+        good[k] += ok ? 1 : 0;
+        if (done && !ok) passedBad[k]++;
+      }
+      if (ok) finalGood++; else if (done) finalPassBad++;
+    }
+    return { good: good.map((v) => v / T), passedBad: passedBad.map((v) => v / T), iters: iters / T, finalGood: finalGood / T, finalPassBad: finalPassBad / T, N };
+  }
+  function draw(c, w, h) {
+    const R = sim();
+    const A = MA.axes(c, { box: { l: 46, t: 14, r: w - 12, b: h - 36 }, x: [0, R.N], y: [0, 1], xt: Array.from({ length: R.N + 1 }, (_, i) => i), yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "반복 횟수", yl: "비율", ylOff: 36 });
+    // 막대: 결함 없음 / 결함 있음
+    const bw = Math.min(40, (A.X(1) - A.X(0)) * 0.6);
+    R.good.forEach((g, k) => {
+      const x = A.X(k) - bw / 2;
+      c.fillStyle = MA.alpha(MA.col("env"), 0.7); c.fillRect(x, A.Y(g), bw, A.Y(0) - A.Y(g));
+      c.fillStyle = MA.alpha(MA.col("guard"), 0.5); c.fillRect(x, A.Y(1), bw, A.Y(g) - A.Y(1));
+    });
+    MA.line(c, R.passedBad.map((v, k) => [A.X(k), A.Y(v)]).slice(1), MA.col("guard"), 2.2, [5, 4]);
+    MA.line(c, R.good.map((v, k) => [A.X(k), A.Y(v)]), MA.col("text"), 1.6);
+    MA.set("cr-o1", MA.pct(R.good[0]));
+    MA.set("cr-o2", MA.pct(R.finalGood), R.finalGood > R.good[0] + 0.05 ? "good" : R.finalGood < R.good[0] ? "bad" : "warn");
+    MA.set("cr-o3", MA.pct(R.finalPassBad), R.finalPassBad > 0.2 ? "bad" : R.finalPassBad > 0.08 ? "warn" : "good");
+    MA.set("cr-o4", R.iters.toFixed(2) + "회");
+  }
+  MA.el("cr-same").addEventListener("change", () => cv.redraw());
+  MA.wire(["cr-d", "cr-f", "cr-b", "cr-n"], () => cv.redraw(), { "cr-d": (v) => MA.pct(v), "cr-f": (v) => MA.pct(v), "cr-b": (v) => MA.pct(v), "cr-n": (v) => v + "회" });
+})();
+</script>
+</body>
+</html>

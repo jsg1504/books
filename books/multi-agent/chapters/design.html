@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>설계 플레이그라운드와 용어집 · ChorusBook</title>
+<meta name="description" content="토폴로지, 워커 수, 통신, 공유 상태, 검증, 모델, 보안을 골라 시나리오에 맞는 멀티에이전트 시스템을 설계하고, 체크리스트와 용어집, 종합 퀴즈로 정리한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #pl-opts { display: grid; gap: 12px; }
+  #pl-opts .ctrl > span { font-weight: 600; color: var(--text); }
+  #pl-opts .seg button { font-size: 12.5px; padding: 5px 9px; }
+  #pl-warn { display: grid; gap: 6px; }
+  #gl-q { max-width: 360px; }
+  .gloss h4 { margin: 0; padding: 10px 14px 4px; background: var(--surface); font-size: 12px; letter-spacing: .1em; color: var(--text-faint); }
+</style>
+</head>
+<body data-root="../" data-chapter="design">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 12</div>
+    <h1>설계 플레이그라운드와 용어집</h1>
+    <p class="lead">지금까지 멀티에이전트 시스템의 부품을 하나씩 떼어 보았다. 실제 설계에서는 이것들을 한꺼번에 고르고, 고른 것들이 서로 얽힌다. 워커를 늘리면 리더의 창이 차고, 메시로 바꾸면 채널이 폭발하고, 요약만 주고받으면 결정이 어긋나고, 웹을 읽는 에이전트가 메일을 보낼 수 있으면 위험해진다. 이 장에서는 시나리오에 맞게 부품을 조립해 보고, 설계 체크리스트와 용어집, 종합 퀴즈로 책을 정리한다.</p>
+    <ul class="objectives">
+      <li>시나리오의 요구(폭, 결합도, 위험, 검증 가능성, 속도)에 맞게 멀티에이전트 시스템을 조립할 수 있다.</li>
+      <li>부품 사이의 상호작용(토폴로지 ↔ 워커 수, 통신 ↔ 공유 상태, 검증 ↔ 모델 다양성)을 설명할 수 있다.</li>
+      <li>설계 질문을 체크리스트로 점검할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="play">
+    <h2>멀티에이전트 설계 플레이그라운드</h2>
+    <p>시나리오를 고르고 부품을 골라 보자. 레이더 차트의 실선이 내 설계, 점선이 시나리오가 요구하는 수준이다. 아래 경고는 부품 조합에서 생기는 문제를 알려 준다. 점수는 이 책의 실험에서 본 경향을 단순하게 합친 교육용 모형이다.</p>
+    <div class="sim" id="sim-play">
+      <div class="sim-head"><span class="sim-tag game">PLAYGROUND</span><h3>멀티에이전트 설계 플레이그라운드 — 시나리오에 맞춰 조립하기</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="pl-scn"><button data-v="research" class="on">시장 리서치 보고서</button><button data-v="refactor">대규모 코드 변경</button><button data-v="batch">문서 일괄 추출</button><button data-v="support">고객 지원</button><button data-v="debate">전략 검토 토론</button></div>
+        <p id="pl-desc" style="margin:0;font-size:14.5px;color:var(--text-dim)"></p>
+        <div class="two">
+          <div id="pl-opts"></div>
+          <div><div class="sim-view"><canvas id="pl-cv"></canvas></div><div class="verdict" id="pl-verdict" style="margin-top:10px"></div></div>
+        </div>
+        <div id="pl-warn"></div>
+        <div class="btns"><button class="btn" id="pl-rec">이 시나리오의 추천 구성</button><button class="btn" id="pl-rand">무작위 구성</button></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">품질</span><span class="v" id="pl-o1">—</span></div>
+        <div class="stat"><span class="k">비용 효율</span><span class="v" id="pl-o2">—</span></div>
+        <div class="stat"><span class="k">속도</span><span class="v" id="pl-o3">—</span></div>
+        <div class="stat"><span class="k">견고성</span><span class="v" id="pl-o4">—</span></div>
+        <div class="stat"><span class="k">안전</span><span class="v" id="pl-o5">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>대규모 코드 변경</b>에서 중앙집중 + 워커 12명을 골라 보자. 결합도가 높아 품질이 떨어지고 경고가 뜬다. 단일 에이전트 또는 워커 2–3명 + 결정 기록이 낫다. ② <b>시장 리서치</b>에서 통신을 “자유 문장 요약”으로 바꾸면 견고성과 품질이 떨어진다. 아티팩트 참조로 바꿔 보자. ③ <b>고객 지원</b>에서 보안을 “없음”으로 두면 안전 점수가 바닥이다. 고객 데이터와 외부 메일이 한 시스템 안에 있다. ④ <b>전략 검토 토론</b>에서 검증을 “다수결”로 두고 모델을 “전부 같은 대형”으로 두면 경고가 뜬다. 같은 모델의 다수결은 같은 맹점의 다수결이다.</div>
+    </div>
+  </section>
+
+  <section id="checklist">
+    <h2>설계 체크리스트</h2>
+    <p>새 멀티에이전트 시스템을 만들거나 기존 시스템을 점검할 때 아래 질문에 답해 보자. 대답하지 못하는 칸이 다음에 손볼 곳이다.</p>
+    <table class="tbl">
+      <tr><th>영역</th><th>물어볼 것</th><th>장</th></tr>
+      <tr><td style="font-weight:700">필요성</td><td>단일 에이전트나 워크플로로 안 되는 이유가 측정으로 확인됐는가? 하위 작업들이 정말 독립적인가?</td><td><a href="why.html">1장</a></td></tr>
+      <tr><td style="color:var(--accent);font-weight:700">토폴로지</td><td>리더의 부하가 창을 넘지 않는가? 단일 장애점이 다시 띄울 수 있게 되어 있는가? 메시라면 에이전트 수가 몇인가?</td><td><a href="topology.html">2장</a></td></tr>
+      <tr><td style="color:var(--state);font-weight:700">분해 · 위임</td><td>임계 경로가 얼마인가? 긴 갈래를 먼저 띄우는가? 지시서에 목표·출력 형식·범위·출처·완료 기준·예산이 있는가? 노력이 작업 크기에 맞춰져 있는가?</td><td><a href="decompose.html">3장</a></td></tr>
+      <tr><td style="color:var(--tool);font-weight:700">통신</td><td>결과가 몇 단계 요약을 거치는가? 긴 결과는 참조로 넘기는가? 메시지에 스키마가 있고 받는 순간 검사하는가? 핸드오프할 때 무엇을 함께 넘기는가?</td><td><a href="comms.html">4장</a></td></tr>
+      <tr><td style="color:var(--env);font-weight:700">공유 상태</td><td>여럿이 같은 것을 고치는가? 그렇다면 버전 확인이나 소유권 분리가 있는가? 결정 사항을 기록해 공유하는가? 계획과 진행 상황이 에이전트 바깥에 있는가?</td><td><a href="state.html">5장</a></td></tr>
+      <tr><td style="color:var(--accent-2);font-weight:700">합의 · 검증</td><td>투표자들이 서로 다르게 틀리는가(모델·프롬프트·자료 다양성)? 토론 전에 독립적으로 답하는가? 검증이 모델 바깥의 근거(테스트, 출처)를 쓰는가?</td><td><a href="consensus.html">6장</a></td></tr>
+      <tr><td style="font-weight:700">역할</td><td>라우터 정확도를 재고 있는가? 역할마다 필요한 도구만 갖는가? 비평가 루프에 반복 상한이 있는가?</td><td><a href="roles.html">7장</a></td></tr>
+      <tr><td style="color:var(--guard);font-weight:700">실패</td><td>검증 관문이 일찍, 적당한 곳에 있는가? 핑퐁 루프를 감지하고 올릴 곳이 있는가? 실패 기록을 범주별로 모으고 있는가?</td><td><a href="failures.html">8장</a></td></tr>
+      <tr><td style="color:var(--tool);font-weight:700">비용 · 확장</td><td>토큰 배수만큼 가치가 있는가? 캐시가 맞도록 고정부를 앞에 두는가? 역할마다 알맞은 모델을 쓰는가? 에이전트를 더 늘리면 오히려 느려지지 않는가?</td><td><a href="scale.html">9장</a></td></tr>
+      <tr><td style="color:var(--guard);font-weight:700">보안</td><td>오염과 비공개 데이터가 같은 에이전트에서 만나 외부로 나갈 수 있는 경로가 있는가? 외부 텍스트는 격리된 곳에서만 읽는가? 사람 승인이 드물고 의미 있는가?</td><td><a href="security.html">10장</a></td></tr>
+      <tr><td style="color:var(--state);font-weight:700">평가 · 관측</td><td>실행마다 트레이스가 남는가? 최종 상태로 채점하는가? 바꾼 것의 효과를 짝지은 반복 실행으로 확인하는가?</td><td><a href="evaluation.html">11장</a></td></tr>
+    </table>
+  </section>
+
+  <section id="glossary">
+    <h2>용어집</h2>
+    <p>이 책에 나온 용어를 모았다. 상단 검색창에서도 찾을 수 있다.</p>
+    <label class="ctrl" style="margin-bottom:12px"><span>용어 거르기</span><input type="text" id="gl-q" placeholder="예: 블랙보드, 섀플리, trifecta"></label>
+    <div class="gloss" id="gl-list"></div>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>종합 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 멀티에이전트 구성을 고려하기 전에 먼저 확인할 것은?</p><div class="opts">
+        <button class="opt" data-correct>단일 에이전트나 워크플로로 부족하다는 근거와, 하위 작업들의 독립성</button>
+        <button class="opt">에이전트 이름과 말투</button>
+        <button class="opt">가능한 한 많은 에이전트 수</button>
+      </div><div class="quiz-exp">가장 단순한 구조에서 시작한다. 결합도가 높으면 나누는 것이 해롭다(1장).</div></div>
+      <div class="quiz-q"><p>2. 에이전트 15개가 서로 자유롭게 토론하는 메시의 채널 수는?</p><div class="opts">
+        <button class="opt">15</button>
+        <button class="opt" data-correct>105</button>
+        <button class="opt">225</button>
+      </div><div class="quiz-exp">15 × 14 / 2 = 105(2장). 일관성 비용 κ도 함께 커진다(9장).</div></div>
+      <div class="quiz-q"><p>3. 워커를 8명에서 16명으로 늘렸는데 완료 시간이 그대로다. 가장 그럴듯한 이유는?</p><div class="opts">
+        <button class="opt">워커가 게을러서</button>
+        <button class="opt" data-correct>임계 경로(나눌 수 없는 사슬)에 이미 닿았다</button>
+        <button class="opt">토큰이 부족해서</button>
+      </div><div class="quiz-exp">max(W/n, L)에서 L이 이기고 있다(3장).</div></div>
+      <div class="quiz-q"><p>4. 하위 에이전트가 만든 5만 토큰짜리 표를 리더와 작성자가 모두 써야 한다. 좋은 전달은?</p><div class="opts">
+        <button class="opt">표 전체를 두 번 메시지로 보낸다</button>
+        <button class="opt" data-correct>공유 저장소에 쓰고, 요약과 참조만 넘긴다</button>
+        <button class="opt">세 줄 요약만 넘긴다</button>
+      </div><div class="quiz-exp">참조 전달은 손실과 중간 토큰을 함께 줄인다(4장, 5장).</div></div>
+      <div class="quiz-q"><p>5. 두 에이전트가 같은 설정 파일을 30초 간격으로 읽고 고쳐 썼더니 한쪽 변경이 사라졌다. 알맞은 처방은?</p><div class="opts">
+        <button class="opt">더 빠른 모델로 바꾼다</button>
+        <button class="opt" data-correct>버전 확인(낙관적 동시성)이나 파일 소유권 분리</button>
+        <button class="opt">에이전트에게 조심하라고 지시한다</button>
+      </div><div class="quiz-exp">갱신 손실은 구조로 막는다(5장).</div></div>
+      <div class="quiz-q"><p>6. 같은 모델로 답을 30번 뽑아 다수결을 했는데 정확도가 거의 그대로다. 개선책은?</p><div class="opts">
+        <button class="opt">60번으로 늘린다</button>
+        <button class="opt" data-correct>모델·프롬프트·자료를 다양화해 오류 상관을 낮춘다</button>
+        <button class="opt">온도를 0으로 낮춘다</button>
+      </div><div class="quiz-exp">n_eff = n / (1 + (n−1)ρ). 온도 0은 ρ를 오히려 1로 만든다(6장).</div></div>
+      <div class="quiz-q"><p>7. 생성자와 같은 모델의 비평가가 결함을 자주 통과시킨다. 이유는?</p><div class="opts">
+        <button class="opt" data-correct>같은 맹점을 공유해서</button>
+        <button class="opt">비평가가 너무 엄격해서</button>
+        <button class="opt">반복 상한이 있어서</button>
+      </div><div class="quiz-exp">다른 모델, 구체적 기준표, 실행 결과로 독립성을 만든다(7장).</div></div>
+      <div class="quiz-q"><p>8. 6단계 파이프라인의 최종 오류율이 너무 높다. 관문을 하나만 둘 수 있다면?</p><div class="opts">
+        <button class="opt">마지막 단계 뒤</button>
+        <button class="opt" data-correct>중간쯤, 오류가 싸게 고쳐질 수 있는 곳</button>
+        <button class="opt">첫 단계 앞</button>
+      </div><div class="quiz-exp">마지막 관문은 재작업 비용이 크다. 일찍 잡을수록 되돌아갈 거리가 짧다(8장).</div></div>
+      <div class="quiz-q"><p>9. 리서처(웹), 분석가(고객 DB), 발송 담당(메일)이 각자 능력 하나씩만 가진다. 안전한가?</p><div class="opts">
+        <button class="opt">그렇다. 한 에이전트에 셋이 모이지 않았다</button>
+        <button class="opt" data-correct>메시지 경로로 오염과 비공개 데이터가 발송 담당에서 만나면 시스템 수준 삼중주다</button>
+        <button class="opt">분석가만 위험하다</button>
+      </div><div class="quiz-exp">점검은 경로 단위로 한다(10장).</div></div>
+      <div class="quiz-q"><p>10. 새 지시서로 점수가 3점 올랐다. 실행 간 표준편차가 15점이고 각각 5번씩 돌렸다. 결론은?</p><div class="opts">
+        <button class="opt">확실히 개선되었다</button>
+        <button class="opt" data-correct>잡음과 구분할 수 없다. 짝지은 반복 실행으로 훨씬 많이 돌려야 한다</button>
+        <button class="opt">오히려 나빠졌다</button>
+      </div><div class="quiz-exp">필요한 n ≈ 2 × 7.85 × 225 / 9 ≈ 392(11장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 플레이그라운드 ---------------- */
+(function () {
+  const SC = {
+    research: { name: "시장 리서치 보고서", desc: "수십 개 회사·보고서를 넓게 조사해 출처가 달린 보고서를 쓴다. 갈래끼리 독립적이고 자료가 한 창을 훨씬 넘는다. 웹을 읽는다.", b: 0.9, c: 0.2, risk: 0.5, verif: 0.5, speed: 0.6, target: [0.8, 0.5, 0.6, 0.6, 0.6] },
+    refactor: { name: "대규모 코드 변경", desc: "수백 개 파일에 걸친 API 이름 변경과 동작 수정. 파일들이 서로 얽혀 있고, 테스트로 검증할 수 있다.", b: 0.5, c: 0.85, risk: 0.3, verif: 0.9, speed: 0.4, target: [0.85, 0.5, 0.4, 0.7, 0.6] },
+    batch: { name: "문서 일괄 추출", desc: "계약서 2,000건에서 정해진 필드를 뽑아 표로 만든다. 문서끼리 완전히 독립적이고 형식이 정해져 있다.", b: 1, c: 0, risk: 0.3, verif: 0.6, speed: 0.8, target: [0.7, 0.85, 0.8, 0.6, 0.5] },
+    support: { name: "고객 지원", desc: "고객 문의를 받아 주문·환불·기술 담당으로 나눠 처리하고 답장을 보낸다. 고객 데이터와 외부 메일을 다룬다. 응답이 빨라야 한다.", b: 0.3, c: 0.4, risk: 0.9, verif: 0.4, speed: 0.9, target: [0.7, 0.7, 0.8, 0.6, 0.9] },
+    debate: { name: "전략 검토 토론", desc: "투자 제안서를 여러 관점에서 검토해 찬반 근거와 결론을 낸다. 관점의 다양성이 가치다. 정답을 바로 검증하기 어렵다.", b: 0.5, c: 0.5, risk: 0.2, verif: 0.2, speed: 0.4, target: [0.8, 0.5, 0.4, 0.6, 0.5] },
+  };
+  const OPT = [
+    ["topo", "구조", [["single", "단일 에이전트"], ["star", "중앙집중"], ["tree", "계층형"], ["mesh", "메시"], ["pipe", "파이프라인"], ["board", "블랙보드"]]],
+    ["comm", "통신", [["free", "자유 문장 요약"], ["struct", "구조화 메시지"], ["ref", "구조화 + 아티팩트 참조"]]],
+    ["share", "공유 상태", [["none", "없음"], ["dec", "결정 기록"], ["full", "대화 전체"]]],
+    ["check", "합의 · 검증", [["none", "없음"], ["vote", "다수결"], ["critic", "비평가 (다른 모델)"], ["ext", "바깥 검증 (테스트·출처)"]]],
+    ["model", "모델", [["big", "전부 같은 대형"], ["tier", "대형 리더 + 소형 워커"], ["small", "전부 소형"]]],
+    ["sec", "보안", [["none", "없음"], ["least", "최소 권한"], ["quar", "최소 권한 + 격리 읽기"]]],
+  ];
+  const REC = {
+    research: { topo: "star", n: 6, comm: "ref", share: "dec", check: "ext", model: "tier", sec: "quar" },
+    refactor: { topo: "single", n: 1, comm: "struct", share: "dec", check: "ext", model: "big", sec: "least" },
+    batch: { topo: "star", n: 12, comm: "struct", share: "none", check: "vote", model: "tier", sec: "least" },
+    support: { topo: "star", n: 3, comm: "struct", share: "dec", check: "critic", model: "tier", sec: "quar" },
+    debate: { topo: "mesh", n: 4, comm: "struct", share: "dec", check: "critic", model: "tier", sec: "least" },
+  };
+  let scn = "research", cfg = Object.assign({}, REC.research);
+  const box = MA.el("pl-opts");
+  function buildOpts() {
+    box.innerHTML = `<label class="ctrl"><span>워커 수 <output id="pl-n-out"></output></span><input type="range" id="pl-n" min="1" max="16" step="1" value="${cfg.n}"></label>` +
+      OPT.map(([k, lab, ch]) => `<div class="ctrl"><span>${lab}</span><div class="seg" id="pl-${k}">${ch.map(([v, t]) => `<button data-v="${v}" class="${cfg[k] === v ? "on" : ""}">${t}</button>`).join("")}</div></div>`).join("");
+    OPT.forEach(([k]) => MA.seg("pl-" + k, (v) => { cfg[k] = v; if (k === "topo" && v === "single") { cfg.n = 1; MA.el("pl-n").value = 1; MA.el("pl-n-out").textContent = "1명"; } if (k === "topo" && v !== "single" && cfg.n < 2) { cfg.n = 3; MA.el("pl-n").value = 3; MA.el("pl-n-out").textContent = "3명"; } score(); }));
+    const n = MA.el("pl-n");
+    n.addEventListener("input", () => { cfg.n = +n.value; MA.el("pl-n-out").textContent = cfg.n + "명"; if (cfg.n === 1 && cfg.topo !== "single") { cfg.topo = "single"; buildOpts(); } score(); });
+    MA.el("pl-n-out").textContent = cfg.n + "명";
+  }
+  const cv = MA.canvas("pl-cv", { aspect: 0.86, draw });
+  let last = null;
+  function evalCfg() {
+    const S = SC[scn], n = cfg.topo === "single" ? 1 : cfg.n, w = [];
+    const warn = (k, s) => w.push([k, s]);
+    // 구조 적합도
+    const fit = { single: 1 - S.b * 0.7 + S.c * 0.3, star: 0.55 + S.b * 0.45 - S.c * 0.35, tree: 0.45 + S.b * 0.5 - S.c * 0.4 + (n > 8 ? 0.1 : -0.1), mesh: 0.4 + (scn === "debate" ? 0.45 : 0) - S.b * 0.1 - S.c * 0.1, pipe: 0.5 + (scn === "batch" ? 0.25 : 0) - S.c * 0.2, board: 0.5 + S.b * 0.2 - S.c * 0.15 }[cfg.topo];
+    // 폭 커버리지: 워커가 많을수록 넓게 본다 (단, 결합도가 높으면 충돌)
+    const cover = cfg.topo === "single" ? 1 - S.b * 0.45 : 1 - S.b * 0.45 * Math.exp(-(n - 1) / 3);
+    const conflictBase = S.c * (1 - 1 / n);
+    const shareFix = { none: 1, dec: 0.35, full: 0.15 }[cfg.share];
+    const conflict = conflictBase * shareFix;
+    const commQ = { free: 0.82, struct: 0.93, ref: 1 }[cfg.comm];
+    const loss = cfg.topo === "tree" ? 0.94 : 1;
+    const checkQ = { none: 0, vote: 0.04 + (cfg.model === "big" || cfg.model === "small" ? -0.03 : 0.02), critic: 0.06, ext: 0.12 * S.verif + 0.02 }[cfg.check];
+    const modelQ = { big: 1, tier: 0.97 - (S.c > 0.6 ? 0.06 : 0), small: 0.8 }[cfg.model];
+    // 대화 전체 공유는 창을 터뜨린다
+    const fullBlow = cfg.share === "full" && n > 4 ? 0.12 * Math.min(1, (n - 4) / 6) : 0;
+    let quality = MA.clamp((0.25 + 0.75 * MA.clamp(fit, 0, 1)) * cover * (1 - 0.8 * conflict) * commQ * loss * modelQ + checkQ - fullBlow, 0, 1);
+    // 비용: 토큰 배수 → 효율
+    const per = { big: 1, tier: 0.4, small: 0.15 }[cfg.model];
+    const tok = (cfg.topo === "single" ? 1.6 : 1 + n * (cfg.comm === "ref" ? 0.85 : 1)) * (cfg.topo === "mesh" ? 1 + n * 0.25 : 1) * (cfg.share === "full" ? 1 + n * 0.3 : 1) * (cfg.check === "vote" ? 1.5 : cfg.check === "critic" ? 1.25 : cfg.check === "ext" ? 1.1 : 1);
+    const cost = MA.clamp(1.15 - Math.log(1 + tok * per) / 3.2, 0, 1);
+    // 속도: 병렬성, 지름, 메시 일관성
+    const par = cfg.topo === "single" ? 1 : cfg.topo === "pipe" ? 1.2 : Math.min(n, 1 + S.b * (n - 1)) / (1 + (cfg.topo === "mesh" ? 0.012 * n * (n - 1) : 0.004 * n * n));
+    const speed = MA.clamp(0.25 + Math.log2(1 + par) / 4.2 - (cfg.check === "critic" ? 0.08 : cfg.check === "ext" ? 0.05 : 0) - (cfg.model === "big" ? 0.05 : 0) - (cfg.topo === "tree" ? 0.05 : 0), 0, 1);
+    // 견고성: 단일 장애점, 구조화, 검증, 루프
+    const robust = MA.clamp(0.4 + (cfg.comm === "free" ? -0.12 : cfg.comm === "ref" ? 0.12 : 0.06) + (cfg.share === "dec" ? 0.1 : 0) + (cfg.check === "ext" ? 0.2 : cfg.check === "critic" ? 0.1 : cfg.check === "vote" ? 0.08 : -0.05) + (cfg.topo === "mesh" ? 0.05 - (n > 6 ? 0.2 : 0) : 0) + (cfg.topo === "pipe" && cfg.check === "none" ? -0.2 : 0) + (cfg.topo === "single" ? 0.05 : 0), 0, 1);
+    // 안전
+    const sec = MA.clamp(1 - S.risk * ({ none: 0.9, least: 0.4, quar: 0.1 }[cfg.sec]) - (cfg.comm === "free" ? 0.1 * S.risk : 0) + (cfg.check === "ext" ? 0.03 : 0), 0, 1);
+    // 경고
+    if (cfg.topo === "single" && S.b > 0.8) warn("tool", "폭이 넓은 일을 단일 에이전트가 하고 있다. 자료가 한 창을 넘어 요약을 반복하게 된다(1장).");
+    if (cfg.topo !== "single" && S.c > 0.7 && n > 3) warn("guard", `결합도가 높은 일을 ${n}명에게 나눴다. 서로 모르는 결정이 충돌한다. 워커를 줄이거나 결정 기록을 공유하자(1장, 5장).`);
+    if (cfg.topo === "star" && n > 10) warn("tool", `리더 혼자 워커 ${n}명의 결과를 읽는다. 리더 창이 넘칠 수 있다. 계층형을 고려하자(2장).`);
+    if (cfg.topo === "mesh" && n > 6) warn("guard", `메시에 ${n}명: 채널 ${n * (n - 1) / 2}개. 일관성 비용으로 오히려 느려진다(2장, 9장).`);
+    if (cfg.topo === "pipe" && cfg.check === "none") warn("guard", "검증 관문 없는 파이프라인은 앞 단계의 오류가 끝까지 흐른다(8장).");
+    if (cfg.comm === "free" && cfg.topo !== "single") warn("tool", "자유 문장 요약만 주고받는다. 전달될수록 사실이 사라지고 오독이 쌓인다(4장).");
+    if (cfg.share === "full" && n > 4) warn("guard", `대화 전체를 ${n}명이 공유한다. 각자의 창이 다른 에이전트의 기록으로 넘친다(5장).`);
+    if (cfg.share === "none" && S.c > 0.4 && n > 1) warn("tool", "결정 사항을 공유하지 않는다. 얽힌 일에서는 서로 다른 결정이 합쳐지지 않는다(5장).");
+    if (cfg.check === "vote" && (cfg.model === "big" || cfg.model === "small")) warn("tool", "모든 에이전트가 같은 모델이다. 다수결의 오류 상관이 커서 투표 이득이 작다(6장).");
+    if (cfg.check === "none" && S.verif > 0.7) warn("tool", "테스트로 검증할 수 있는 일인데 검증이 없다. 가장 싼 품질 향상을 놓치고 있다(6장, 8장).");
+    if (cfg.model === "small" && S.c > 0.5) warn("tool", "판단이 많이 필요한 일에 소형 모델만 쓴다. 리더의 계획과 합성이 흔들린다(9장).");
+    if (cfg.sec === "none" && S.risk > 0.6) warn("guard", "외부 입력·비공개 데이터·외부 전송이 함께 있는 시나리오에 보안 구성이 없다. 시스템 수준 삼중주가 열려 있다(10장).");
+    if (cfg.sec === "least" && S.risk > 0.8) warn("tool", "최소 권한만으로는 메시지 경로를 통한 오염 전파가 남는다. 외부 텍스트는 격리된 에이전트만 읽게 하자(10장).");
+    return { v: [quality, cost, speed, robust, sec], w, tok };
+  }
+  function score() {
+    last = evalCfg();
+    const S = SC[scn];
+    MA.el("pl-desc").textContent = S.desc;
+    const names = ["pl-o1", "pl-o2", "pl-o3", "pl-o4", "pl-o5"];
+    last.v.forEach((v, i) => MA.set(names[i], Math.round(v * 100) + "", v >= S.target[i] ? "good" : v < S.target[i] - 0.2 ? "bad" : "warn"));
+    const met = last.v.filter((v, i) => v >= S.target[i] - 0.05).length;
+    const vd = MA.el("pl-verdict");
+    vd.style.setProperty("--k", met >= 5 ? "var(--env)" : met >= 3 ? "var(--tool)" : "var(--guard)");
+    vd.innerHTML = `<b>${met} / 5</b> 항목이 요구 수준에 닿았다 · 예상 토큰 배수 약 ${last.tok.toFixed(1)}×`;
+    MA.el("pl-warn").innerHTML = last.w.length ? last.w.map(([k, s]) => `<div class="mem" style="--k:var(--${k})"><span class="t">${MA.esc(s)}</span></div>`).join("") : `<div class="mem" style="--k:var(--env)"><span class="t">눈에 띄는 조합 문제가 없다.</span></div>`;
+    cv.redraw();
+  }
+  function draw(c, w, h) {
+    if (!last) return;
+    const S = SC[scn], labels = ["품질", "비용 효율", "속도", "견고성", "안전"];
+    MA.radar(c, w / 2, h / 2 + 6, Math.min(w, h) * 0.34, labels.map((l, i) => ({ label: l, v: last.v[i], target: S.target[i] })), { color: MA.col("accent") });
+  }
+  MA.seg("pl-scn", (v) => { scn = v; score(); });
+  MA.el("pl-rec").addEventListener("click", () => { cfg = Object.assign({}, REC[scn]); buildOpts(); score(); });
+  MA.el("pl-rand").addEventListener("click", () => { const r = Math.random; OPT.forEach(([k, , ch]) => (cfg[k] = ch[Math.floor(r() * ch.length)][0])); cfg.n = cfg.topo === "single" ? 1 : 2 + Math.floor(r() * 14); buildOpts(); score(); });
+  buildOpts(); score();
+})();
+
+/* ---------------- 2. 용어집 ---------------- */
+(function () {
+  const list = MA.el("gl-list"), q = MA.el("gl-q");
+  function render() {
+    const v = q.value.trim().toLowerCase();
+    const groups = MA.CHAPTERS.map((c) => ({ c, items: MA.GLOSSARY.filter((g) => g[3] === c.slug && (!v || (g[0] + g[1] + g[2]).toLowerCase().includes(v))) })).filter((g) => g.items.length);
+    list.innerHTML = groups.length ? groups.map((g) => `<h4>CH.${g.c.num} ${g.c.title}</h4>` + g.items.map(([t, en, d, ch]) => `<div><b>${MA.esc(t)}</b><i>${MA.esc(en)}</i><a href="${ch}.html">${g.c.num}장 →</a><p>${MA.esc(d)}</p></div>`).join("")).join("") : `<div>“${MA.esc(q.value)}”에 맞는 용어가 없습니다.</div>`;
+  }
+  q.addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업 분해와 위임 · ChorusBook</title>
+<meta name="description" content="의존 그래프와 임계 경로, 워커 수에 따른 일정, 분해 입도의 U자 곡선, 좋은 위임 지시서의 요소를 애니메이션과 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #br-opts { display: grid; gap: 6px; }
+  #br-out { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .wk { border: 1px solid var(--border); border-top: 4px solid var(--k, var(--ctx)); border-radius: 10px; padding: 10px 12px; background: var(--bg); font-size: 13.5px; line-height: 1.5; }
+  .wk b { display: block; font-size: 14px; margin-bottom: 4px; }
+  .wk ul { margin: 4px 0 0; padding-left: 1.1em; }
+  .wk li { margin: 2px 0; }
+  .wk .bad { color: var(--guard); } .wk .ok { color: var(--env); }
+</style>
+</head>
+<body data-root="../" data-chapter="decompose">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>작업 분해와 위임</h1>
+    <p class="lead">멀티에이전트 시스템의 성패는 대개 리더가 <b>일을 어떻게 쪼개고, 쪼갠 일을 어떻게 설명하는가</b>에서 갈린다. 쪼갠 조각들 사이에는 순서가 있어서 아무리 워커를 늘려도 넘을 수 없는 시간이 있다. 조각을 너무 잘게 만들면 설명하고 합치는 비용이 일 자체보다 커진다. 그리고 설명이 모호하면 워커들은 같은 일을 하거나 엉뚱한 일을 한다. 이 장은 이 세 가지를 차례로 다룬다.</p>
+    <ul class="objectives">
+      <li>작업을 의존 그래프로 그리고 임계 경로로 최소 소요 시간을 구할 수 있다.</li>
+      <li>워커 수와 스케줄링 우선순위가 전체 시간에 주는 영향을 설명할 수 있다.</li>
+      <li>분해 입도의 U자 곡선을 이해하고 적정 조각 크기를 고를 수 있다.</li>
+      <li>좋은 위임 지시서의 요소(목표, 출력 형식, 범위, 도구·출처, 완료 기준, 예산)를 갖춰 쓸 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="dag">
+    <h2>의존 그래프와 임계 경로</h2>
+    <p>“보고서를 써 줘”라는 일을 쪼개면 하위 작업들 사이에 <b>먼저 끝나야 하는 관계</b>가 생긴다. 검색이 끝나야 교차 검증을 하고, 표가 있어야 합성을 한다. 이것을 노드(작업)와 화살표(의존)로 그린 것이 <span class="term">의존 그래프</span><span class="en">dependency DAG</span>다. 그래프에서 시간이 가장 긴 경로를 <span class="term">임계 경로</span><span class="en">critical path</span>라 하는데, 워커가 무한히 많아도 전체 일은 이보다 빨리 끝날 수 없다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 220" role="img" aria-label="리서치 작업의 의존 그래프와 임계 경로">
+        <defs><marker id="m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--axis)"/></marker>
+        <marker id="m3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--guard)"/></marker></defs>
+        <g class="t">
+          <rect x="20" y="90" width="80" height="40" rx="8" class="soft-state" stroke-width="2.4" style="stroke:var(--guard)"/><text x="60" y="108" text-anchor="middle" class="t-b">계획</text><text x="60" y="123" text-anchor="middle" class="t-mono">2</text>
+          <rect x="160" y="14" width="90" height="36" rx="8" class="soft-state"/><text x="205" y="31" text-anchor="middle" class="t">검색 A</text><text x="205" y="44" text-anchor="middle" class="t-mono">4</text>
+          <rect x="160" y="64" width="90" height="36" rx="8" class="soft-state"/><text x="205" y="81" text-anchor="middle" class="t">검색 B</text><text x="205" y="94" text-anchor="middle" class="t-mono">3</text>
+          <rect x="160" y="114" width="90" height="36" rx="8" class="soft-state" stroke-width="2.4" style="stroke:var(--guard)"/><text x="205" y="131" text-anchor="middle" class="t">검색 C</text><text x="205" y="144" text-anchor="middle" class="t-mono">6</text>
+          <rect x="160" y="164" width="90" height="36" rx="8" class="soft-state"/><text x="205" y="181" text-anchor="middle" class="t">검색 D</text><text x="205" y="194" text-anchor="middle" class="t-mono">3</text>
+          <rect x="320" y="40" width="100" height="36" rx="8" class="soft-state"/><text x="370" y="57" text-anchor="middle" class="t">교차 검증</text><text x="370" y="70" text-anchor="middle" class="t-mono">3</text>
+          <rect x="320" y="140" width="100" height="36" rx="8" class="soft-state" stroke-width="2.4" style="stroke:var(--guard)"/><text x="370" y="157" text-anchor="middle" class="t">표 작성</text><text x="370" y="170" text-anchor="middle" class="t-mono">2</text>
+          <rect x="490" y="90" width="90" height="40" rx="8" class="f-acc-soft" stroke-width="2.4" style="stroke:var(--guard)"/><text x="535" y="108" text-anchor="middle" class="t-b">합성</text><text x="535" y="123" text-anchor="middle" class="t-mono">3</text>
+          <rect x="640" y="90" width="80" height="40" rx="8" class="soft-env" stroke-width="2.4" style="stroke:var(--guard)"/><text x="680" y="108" text-anchor="middle" class="t-b">교정</text><text x="680" y="123" text-anchor="middle" class="t-mono">1</text>
+        </g>
+        <g fill="none" stroke="var(--axis)" stroke-width="1.5">
+          <path d="M100 104 L158 34" marker-end="url(#m3)"/><path d="M100 108 L158 82" marker-end="url(#m3)"/><path d="M100 120 L158 182" marker-end="url(#m3)"/>
+          <path d="M250 32 L318 54" marker-end="url(#m3)"/><path d="M250 82 L318 64" marker-end="url(#m3)"/><path d="M250 182 L318 164" marker-end="url(#m3)"/>
+          <path d="M420 58 L488 104" marker-end="url(#m3)"/>
+        </g>
+        <g fill="none" stroke="var(--guard)" stroke-width="2.6"><path d="M100 114 L158 132" marker-end="url(#m3c)"/><path d="M250 132 L318 152" marker-end="url(#m3c)"/><path d="M420 158 L488 118" marker-end="url(#m3c)"/><path d="M580 110 H638" marker-end="url(#m3c)"/></g>
+        <text x="390" y="212" text-anchor="middle" class="t-acc" style="fill:var(--guard)">임계 경로: 계획 → 검색 C → 표 작성 → 합성 → 교정 = 2 + 6 + 2 + 3 + 1 = 14</text>
+      </svg>
+      <figcaption><b>그림 3-1.</b> 리서치 작업의 의존 그래프. 숫자는 소요 시간. 모든 작업을 혼자 하면 27이 걸리지만, 워커가 아무리 많아도 빨간 경로의 14보다 빨라지지는 않는다. 속도의 천장은 <b>총 작업량 ÷ 임계 경로 = 27 / 14 ≈ 1.9배</b>다.</figcaption>
+    </figure>
+    <div class="formula"><div class="eq">max( <span class="frac"><span><var>W</var></span><span><var>n</var></span></span> , <var>L</var><sub>crit</sub> ) &nbsp;≤&nbsp; 완료 시간 <var>T</var><sub><var>n</var></sub> &nbsp;≤&nbsp; <span class="frac"><span><var>W</var></span><span><var>n</var></span></span> + <var>L</var><sub>crit</sub></div>
+      <div class="where"><var>W</var>: 모든 작업 시간의 합, <var>n</var>: 워커 수, <var>L</var><sub>crit</sub>: 임계 경로 길이. 왼쪽은 어떤 스케줄로도 깰 수 없는 하한이고, 오른쪽은 “쉬는 워커가 있으면 준비된 작업을 바로 맡긴다”는 단순한 탐욕 스케줄만으로도 보장되는 상한이다(그레이엄의 리스트 스케줄링).</div></div>
+    <div class="sim" id="sim-dag">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>임계 경로 스케줄러 — 워커를 늘리면 언제까지 빨라지나</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="dg-sel" style="margin-bottom:10px"><button data-v="research" class="on">리서치 보고서</button><button data-v="migrate">코드 마이그레이션</button><button data-v="wide">넓은 조사</button></div>
+          <canvas id="dg-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>워커 수 n <output id="dg-n-out"></output></span><input type="range" id="dg-n" min="1" max="8" step="1" value="2"></label>
+          <div class="ctrl"><span>준비된 작업이 여럿이면</span><div class="seg" id="dg-pr"><button data-v="crit" class="on">임계 경로 우선</button><button data-v="fifo">목록 순서대로</button></div></div>
+          <label class="ctrl"><span>위임 오버헤드 (작업당) <output id="dg-o-out"></output></span><input type="range" id="dg-o" min="0" max="2" step="0.25" value="0.5"></label>
+          <div class="btns"><button class="btn primary" id="dg-play">▶ 다시 재생</button></div>
+          <div class="legend"><span><i style="background:var(--state)"></i>대기</span><span><i style="background:var(--ctx)"></i>실행 중</span><span><i style="background:var(--env)"></i>완료</span><span><i style="background:var(--guard)"></i>임계 경로</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">완료 시간</span><span class="v" id="dg-o1">—</span></div>
+        <div class="stat"><span class="k">임계 경로 (하한)</span><span class="v" id="dg-o2">—</span></div>
+        <div class="stat"><span class="k">속도 향상 (n=1 대비)</span><span class="v" id="dg-o3">—</span></div>
+        <div class="stat"><span class="k">워커 가동률</span><span class="v" id="dg-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>리서치 보고서</b>에서 n을 1 → 2 → 3 → 8로 올려 보자. 3에서 이미 거의 하한에 닿고, 그 뒤로는 워커가 놀기만 한다. ② <b>목록 순서대로</b>로 바꾸고 n=2로 두면 시간이 늘어난다. 긴 갈래(검색 C)를 늦게 시작하기 때문이다. 리더가 무엇부터 맡길지도 설계다. ③ <b>넓은 조사</b>는 임계 경로가 짧아 워커를 늘리는 만큼 빨라진다. 반대로 <b>코드 마이그레이션</b>은 사슬이 길어 n=2 이상은 거의 의미가 없다. ④ 위임 오버헤드를 2로 올리면 작은 작업이 많은 그래프일수록 손해가 커진다. 다음 절의 주제다.</div>
+    </div>
+  </section>
+
+  <section id="grain">
+    <h2>얼마나 잘게 쪼갤까</h2>
+    <p>같은 일을 2조각으로 나눌 수도, 40조각으로 나눌 수도 있다. 조각이 클수록 한 워커의 창이 넘치고 병렬성이 적다. 조각이 작을수록 <b>조각마다 드는 고정 비용</b>(지시서 작성, 워커의 시작 프롬프트, 결과 요약, 리더의 합성)이 늘고, 원래 한 맥락에 있어야 할 것들이 갈라진다. 그래서 전체 시간과 품질은 조각 수에 대해 U자(품질은 ∩자) 모양이 된다. 이것이 <span class="term">입도</span><span class="en">granularity</span> 문제다.</p>
+    <div class="formula"><div class="eq"><var>T</var>(<var>k</var>) = ⌈<span class="frac"><span><var>k</var></span><span><var>n</var></span></span>⌉ · ( <span class="frac"><span><var>W</var></span><span><var>k</var></span></span> + <var>o</var> ) + <var>m</var> · <var>k</var></div>
+      <div class="where"><var>k</var>: 조각 수, <var>n</var>: 동시에 돌 수 있는 워커 수, <var>o</var>: 조각 하나의 고정 비용, <var>m</var>: 리더가 결과 하나를 읽고 합치는 비용. 품질 쪽은 조각 하나가 창에 들어가는지(<var>W</var>/<var>k</var> ≤ 창)와 조각 사이 결합도에 따른 손실로 단순화했다.</div></div>
+    <div class="sim" id="sim-grain">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>분해 입도의 U자 곡선</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="gr-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>조각 수 k <output id="gr-k-out"></output></span><input type="range" id="gr-k" min="1" max="40" step="1" value="6"></label>
+          <label class="ctrl"><span>동시 워커 수 n <output id="gr-n-out"></output></span><input type="range" id="gr-n" min="1" max="16" step="1" value="5"></label>
+          <label class="ctrl"><span>작업량 W (창 단위) <output id="gr-w-out"></output></span><input type="range" id="gr-w" min="0.5" max="12" step="0.5" value="4"></label>
+          <label class="ctrl"><span>조각당 고정 비용 o <output id="gr-o-out"></output></span><input type="range" id="gr-o" min="0" max="1" step="0.05" value="0.25"></label>
+          <label class="ctrl"><span>조각 사이 결합도 <output id="gr-c-out"></output></span><input type="range" id="gr-c" min="0" max="1" step="0.05" value="0.3"></label>
+          <div class="legend"><span><i style="background:var(--tool)"></i>완료 시간</span><span><i style="background:var(--env)"></i>품질</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">완료 시간</span><span class="v" id="gr-o1">—</span></div>
+        <div class="stat"><span class="k">품질</span><span class="v" id="gr-o2">—</span></div>
+        <div class="stat"><span class="k">가장 빠른 k</span><span class="v" id="gr-o3">—</span></div>
+        <div class="stat"><span class="k">품질이 가장 높은 k</span><span class="v" id="gr-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 작업량 W=4(창 네 개 분량)에서 k=1이면 품질이 낮다. 한 창에 다 넣을 수 없다. k를 4 근처로 올리면 품질이 급히 오른다. ② k를 40까지 올리면 시간은 다시 늘고 품질은 서서히 떨어진다. 고정 비용과 맥락 단절 때문이다. ③ 결합도를 0.9로 올리면 품질 곡선 전체가 내려앉고, 가장 높은 k가 창에 겨우 들어가는 크기 쪽으로 당겨진다. 얽힌 일일수록 창이 허락하는 한 크게, 적게 쪼갠다. ④ 시간이 가장 짧은 k는 대개 n의 배수 근처다. 워커 다섯 명에게 여섯 조각을 주면 한 명이 두 번 일하는 동안 넷이 논다.</div>
+    </div>
+    <div class="callout"><b class="h">노력을 작업 크기에 맞춘다</b>Anthropic의 리서치 시스템 사례는 리더의 지시문에 “간단한 사실 확인에는 하위 에이전트 하나와 적은 도구 호출, 비교 분석에는 몇 명, 복잡한 조사에는 더 많이”처럼 <b>규모에 따른 기준</b>을 적어 두었다고 설명한다. 그런 기준이 없을 때 초기 버전은 쉬운 질문에도 하위 에이전트를 여럿 띄우는 실수를 했다고 한다.</div>
+  </section>
+
+  <section id="brief">
+    <h2>위임 지시서 쓰기</h2>
+    <p>워커는 리더의 머릿속을 볼 수 없다. 워커가 아는 것은 리더가 써 준 <span class="term">위임 지시서</span><span class="en">delegation brief</span>뿐이다. “반도체 공급 부족을 조사해”처럼 짧은 지시는 사람에게는 충분해 보여도, 서로를 모르는 워커 셋에게 주면 셋이 같은 기사를 읽고, 한 명은 2021년을, 한 명은 2024년을 조사하고, 각자 다른 형식으로 돌려준다. 좋은 지시서에는 대체로 다음이 들어간다.</p>
+    <table class="tbl">
+      <tr><th>요소</th><th>빠지면 생기는 일</th></tr>
+      <tr><td><b>목표와 이유</b></td><td>무엇을 위해 찾는지 몰라 엉뚱한 측면을 판다.</td></tr>
+      <tr><td><b>출력 형식</b></td><td>워커마다 다른 모양으로 돌려줘 리더가 합칠 수 없다.</td></tr>
+      <tr><td><b>범위와 경계</b></td><td>다른 워커의 몫까지 조사해 일이 겹치거나, 범위를 넘어 끝없이 넓어진다.</td></tr>
+      <tr><td><b>도구 · 출처 안내</b></td><td>검색 결과 상위의 저품질 출처에 의존한다.</td></tr>
+      <tr><td><b>완료 기준</b></td><td>언제 멈출지 몰라 너무 일찍 끝내거나 끝내지 않는다.</td></tr>
+      <tr><td><b>예산</b></td><td>도구 호출 상한이 없어 한 워커가 시간과 토큰을 다 쓴다.</td></tr>
+    </table>
+    <div class="sim" id="sim-brief">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>위임 지시서 만들기 — 세 워커에게 보내 보기</h3></div>
+      <div class="sim-body">
+        <p style="margin:0;font-size:14.5px;color:var(--text-dim)"><b>상황:</b> 사용자가 “전기차 배터리 재활용 시장을 조사해 줘”라고 했다. 리더는 이 일을 세 워커(정책, 기업, 기술)에게 나누려 한다. 지시서에 넣을 요소를 고르고 보내 보자. 지시서가 길어질수록 워커 시작 비용도 는다.</p>
+        <div class="two">
+          <div id="br-opts"></div>
+          <div>
+            <div class="pane" id="br-text" style="min-height:180px;white-space:pre-wrap"></div>
+            <div class="btns" style="margin-top:10px"><button class="btn primary" id="br-send">세 워커에게 보내기</button><button class="btn" id="br-best">모범 답안</button></div>
+          </div>
+        </div>
+        <div id="br-out"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">지시서 길이</span><span class="v" id="br-o1">—</span></div>
+        <div class="stat"><span class="k">합성 가능한 결과</span><span class="v" id="br-o2">—</span></div>
+        <div class="stat"><span class="k">중복 · 이탈</span><span class="v" id="br-o3">—</span></div>
+        <div class="stat"><span class="k">총 토큰 (추정)</span><span class="v" id="br-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 아무것도 고르지 않고 보내 보자. 세 워커가 같은 일을 한다. ② <b>출력 형식</b>만 빠뜨려 보자. 내용은 좋아도 리더가 표로 합치지 못한다. ③ 모든 요소를 넣으면 지시서가 길어지지만, 워커 쪽 낭비가 훨씬 크게 줄어든다. 지시서 몇백 토큰은 워커 하나의 헛탐색 수만 토큰보다 싸다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>하위 작업 사이의 순서는 의존 그래프로 그린다. 임계 경로가 완료 시간의 하한이고, 총 작업량 ÷ 임계 경로가 속도 향상의 천장이다.</li>
+      <li>워커가 많을 때는 무엇부터 맡기느냐(임계 경로 우선)가 시간을 바꾼다.</li>
+      <li>조각이 너무 크면 창이 넘치고 병렬성이 없고, 너무 작으면 고정 비용과 맥락 단절이 커진다. 얽힌 일일수록 크게 쪼갠다.</li>
+      <li>워커는 지시서만 본다. 목표·출력 형식·범위·도구와 출처·완료 기준·예산을 적어 중복과 이탈을 막는다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 총 작업량 40, 임계 경로 10인 일을 워커 100명에게 맡기면 완료 시간은 최소 얼마인가?</p><div class="opts">
+        <button class="opt">0.4</button>
+        <button class="opt" data-correct>10</button>
+        <button class="opt">40</button>
+      </div><div class="quiz-exp">max(W/n, L) = max(0.4, 10) = 10. 임계 경로는 워커 수와 무관하다.</div></div>
+      <div class="quiz-q"><p>2. 워커 두 명이 있고 준비된 작업이 셋(길이 1, 1, 6)이다. 무엇부터 맡겨야 하나?</p><div class="opts">
+        <button class="opt" data-correct>길이 6짜리를 먼저(임계 경로 우선)</button>
+        <button class="opt">짧은 것 두 개를 먼저</button>
+        <button class="opt">상관없다</button>
+      </div><div class="quiz-exp">긴 작업을 늦게 시작하면 끝에 혼자 남아 전체를 늦춘다. 긴 갈래를 먼저 띄우는 것이 기본 휴리스틱이다.</div></div>
+      <div class="quiz-q"><p>3. 조각 수를 계속 늘릴 때 결국 시간이 다시 늘어나는 이유는?</p><div class="opts">
+        <button class="opt">모델이 피곤해져서</button>
+        <button class="opt" data-correct>조각마다 드는 지시·시작·합성 비용이 쌓여서</button>
+        <button class="opt">병렬성이 줄어서</button>
+      </div><div class="quiz-exp">T(k)의 o와 m·k 항이다. 병렬성은 n에서 이미 포화된다.</div></div>
+      <div class="quiz-q"><p>4. 워커 셋이 같은 출처를 읽고 거의 같은 결과를 돌려줬다. 지시서에서 가장 먼저 보강할 요소는?</p><div class="opts">
+        <button class="opt">출력 형식</button>
+        <button class="opt" data-correct>범위와 경계(각자 맡을 몫과 다른 워커의 몫)</button>
+        <button class="opt">예산</button>
+      </div><div class="quiz-exp">서로의 존재와 몫을 모르면 같은 곳부터 판다. “당신은 정책 쪽, 기업 동향은 다른 워커가 맡는다”처럼 경계를 적는다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 임계 경로 스케줄러 ---------------- */
+(function () {
+  const G = {
+    research: [["계획", 2, []], ["검색 A", 4, [0]], ["검색 B", 3, [0]], ["검색 C", 6, [0]], ["검색 D", 3, [0]], ["교차 검증", 3, [1, 2]], ["표 작성", 2, [3, 4]], ["합성", 3, [5, 6]], ["교정", 1, [7]]],
+    migrate: [["의존성 분석", 3, []], ["API 변경", 4, [0]], ["모듈 1", 3, [1]], ["모듈 2", 5, [1]], ["모듈 3", 2, [1]], ["통합 테스트", 4, [2, 3, 4]], ["회귀 수정", 3, [5]], ["문서", 2, [1]], ["릴리스", 1, [6, 7]]],
+    wide: [["계획", 1, []]].concat(Array.from({ length: 12 }, (_, i) => ["검색 " + (i + 1), [3, 5, 2, 4, 3, 2, 5, 4, 3, 2, 4, 3][i], [0]])).concat([["합성", 3, Array.from({ length: 12 }, (_, i) => i + 1)]]),
+  };
+  let key = "research", T = null, clock = 0, playing = true;
+  const cv = MA.canvas("dg-cv", { aspect: 0.78, draw });
+  const pri = MA.seg("dg-pr", () => { run(); });
+  function analyze(tasks) {
+    const n = tasks.length, tail = Array(n).fill(0), level = Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) { let best = 0; tasks.forEach((t, j) => { if (t[2].includes(i)) best = Math.max(best, tail[j]); }); tail[i] = tasks[i][1] + best; }
+    tasks.forEach((t, i) => { level[i] = t[2].length ? Math.max(...t[2].map((d) => level[d] + 1)) : 0; });
+    const crit = new Set(); let cur = tail.indexOf(Math.max(...tasks.map((t, i) => (t[2].length ? -1 : tail[i]))));
+    while (cur >= 0) { crit.add(cur); let nx = -1; tasks.forEach((t, j) => { if (t[2].includes(cur) && tail[j] === tail[cur] - tasks[cur][1]) nx = j; }); cur = nx; }
+    return { tail, level, crit, L: Math.max(...tail), W: tasks.reduce((a, t) => a + t[1], 0) };
+  }
+  function schedule(tasks, n, mode, ov) {
+    const A = analyze(tasks), done = Array(tasks.length).fill(-1), start = Array(tasks.length).fill(-1), who = Array(tasks.length).fill(-1);
+    const free = Array(n).fill(0); let t = 0, left = tasks.length, guard = 0;
+    while (left && guard++ < 999) {
+      const ready = tasks.map((tk, i) => i).filter((i) => start[i] < 0 && tasks[i][2].every((d) => done[d] >= 0 && done[d] <= t));
+      if (mode === "crit") ready.sort((a, b) => A.tail[b] - A.tail[a]); // 임계 경로 우선
+      ready.forEach((i) => { const w = free.findIndex((f) => f <= t); if (w >= 0) { start[i] = t; who[i] = w; const d = tasks[i][1] + (n > 1 ? ov : 0); done[i] = t + d; free[w] = t + d; left--; } });
+      const evts = done.filter((d) => d > t).concat(free.filter((f) => f > t));
+      t = evts.length ? Math.min(...evts) : t + 1;
+    }
+    return { A, start, done, who, make: Math.max(...done) };
+  }
+  function run() {
+    const tasks = G[key], n = MA.val("dg-n"), ov = MA.val("dg-o");
+    T = { tasks, n, S: schedule(tasks, n, pri(), ov), base: schedule(tasks, 1, "crit", 0).make };
+    clock = 0; playing = true;
+    const S = T.S, busy = T.tasks.reduce((a, t) => a + t[1] + (n > 1 ? ov : 0), 0);
+    MA.set("dg-o1", S.make.toFixed(1), S.make <= S.A.L * 1.05 ? "good" : S.make > S.A.L * 1.6 ? "bad" : "warn");
+    MA.set("dg-o2", S.A.L.toFixed(1));
+    MA.set("dg-o3", (T.base / S.make).toFixed(2) + "×", T.base / S.make > 1.5 ? "good" : "");
+    MA.set("dg-o4", MA.pct(busy / (n * S.make)), busy / (n * S.make) > 0.7 ? "good" : busy / (n * S.make) < 0.4 ? "bad" : "warn");
+  }
+  function draw(c, w, h) {
+    if (!T) run();
+    const { tasks, S, n } = T, A = S.A;
+    const topH = h * 0.5, maxL = Math.max(...A.level);
+    const byL = {}; tasks.forEach((t, i) => (byL[A.level[i]] = byL[A.level[i]] || []).push(i));
+    const pos = tasks.map((t, i) => { const ids = byL[A.level[i]], k = ids.indexOf(i); return [24 + (A.level[i] / Math.max(1, maxL)) * (w - 100), 14 + ((k + 0.5) / ids.length) * (topH - 24)]; });
+    const bw = Math.min(88, (w - 60) / (maxL + 1) - 6), bh = Math.min(26, (topH - 24) / Math.max(...Object.values(byL).map((a) => a.length)) - 4);
+    tasks.forEach((t, i) => t[2].forEach((d) => {
+      const cr = A.crit.has(i) && A.crit.has(d);
+      MA.arrow(c, pos[d][0] + bw, pos[d][1], pos[i][0], pos[i][1], cr ? MA.col("guard") : MA.alpha(MA.col("axis"), 0.6), { w: cr ? 2.2 : 1.1, hs: 5 });
+    }));
+    tasks.forEach((t, i) => {
+      const [x, y] = pos[i];
+      const st = S.done[i] <= clock ? "shared" : S.start[i] <= clock ? "worker" : "plan";
+      const col = MA.rc(st);
+      c.fillStyle = MA.alpha(col, 0.2); c.strokeStyle = A.crit.has(i) ? MA.col("guard") : col; c.lineWidth = A.crit.has(i) ? 2.2 : 1.4;
+      MA.rrect(c, x, y - bh / 2, bw, bh, 6); c.fill(); c.stroke();
+      if (st === "worker") { const p = (clock - S.start[i]) / (S.done[i] - S.start[i]); c.fillStyle = MA.alpha(col, 0.45); MA.rrect(c, x, y - bh / 2, bw * MA.clamp(p, 0, 1), bh, 6); c.fill(); }
+      MA.text(c, t[0], x + bw / 2, y, { size: bw < 60 ? 9.5 : 11, weight: 700, align: "center" });
+    });
+    // 간트
+    const gy = topH + 18, gh = h - gy - 26, rowH = Math.min(26, gh / n), tmax = Math.max(S.make, A.L) * 1.04;
+    const X = (v) => 60 + (v / tmax) * (w - 74);
+    MA.text(c, "워커별 일정", 8, gy - 8, { size: 11, weight: 700, color: MA.col("text-dim") });
+    for (let k = 0; k < n; k++) {
+      const y = gy + k * rowH;
+      MA.text(c, "W" + (k + 1), 30, y + rowH / 2, { size: 11, mono: true, align: "center", color: MA.col("text-dim") });
+      c.fillStyle = MA.col("surface"); c.fillRect(X(0), y + 2, X(tmax) - X(0), rowH - 4);
+    }
+    tasks.forEach((t, i) => {
+      if (S.start[i] > clock) return;
+      const y = gy + S.who[i] * rowH, e = Math.min(clock, S.done[i]);
+      c.fillStyle = MA.alpha(A.crit.has(i) ? MA.col("guard") : MA.col("ctx"), 0.55);
+      MA.rrect(c, X(S.start[i]) + 1, y + 3, Math.max(1, X(e) - X(S.start[i]) - 2), rowH - 6, 4); c.fill();
+      if (X(e) - X(S.start[i]) > 34) MA.text(c, t[0], X(S.start[i]) + 5, y + rowH / 2, { size: 10, color: MA.col("text") });
+    });
+    MA.line(c, [[X(A.L), gy - 2], [X(A.L), gy + n * rowH + 2]], MA.col("guard"), 1.2, [4, 3]);
+    MA.text(c, "하한 " + A.L, X(A.L) + 3, gy + n * rowH + 10, { size: 10, mono: true, color: MA.col("guard") });
+    MA.line(c, [[X(clock), gy - 2], [X(clock), gy + n * rowH + 2]], MA.col("accent"), 1.6);
+    MA.text(c, "t = " + clock.toFixed(1), X(clock), gy - 8, { size: 10.5, mono: true, align: "center", color: MA.col("accent") });
+  }
+  const L = MA.loop(MA.el("dg-cv"), (dt) => {
+    if (!T || !playing) return;
+    clock += dt * Math.max(2.2, T.S.make / 7);
+    if (clock >= T.S.make) { clock = T.S.make; playing = false; }
+    cv.redraw();
+  });
+  MA.seg("dg-sel", (v) => { key = v; run(); });
+  MA.el("dg-play").addEventListener("click", () => { run(); });
+  MA.wire(["dg-n", "dg-o"], () => { run(); cv.redraw(); }, { "dg-n": (v) => v + "명" });
+  if (MA.reduced()) { run(); clock = T.S.make; cv.redraw(); } else L.start();
+})();
+
+/* ---------------- 2. 입도 U자 곡선 ---------------- */
+(function () {
+  const cv = MA.canvas("gr-cv", { aspect: 0.62, draw });
+  function f(k) {
+    const n = MA.val("gr-n"), W = MA.val("gr-w"), o = MA.val("gr-o"), c = MA.val("gr-c");
+    const m = 0.04;
+    const time = Math.ceil(k / n) * (W / k + o) + m * k;
+    const x = W / k; // 조각 하나가 창의 몇 배인가
+    const fit = 1 / Math.sqrt(1 + Math.pow(Math.max(0, x - 0.6), 3));
+    const q = 0.95 * fit * (1 - 0.6 * c * (1 - 1 / k)) * (1 - 0.004 * k);
+    return { time, q };
+  }
+  function draw(c, w, h) {
+    const K = 40, kk = MA.val("gr-k"), pts = [];
+    let bt = { k: 1, v: Infinity }, bq = { k: 1, v: -1 };
+    for (let k = 1; k <= K; k++) { const r = f(k); pts.push([k, r.time, r.q]); if (r.time < bt.v) bt = { k, v: r.time }; if (r.q > bq.v) bq = { k, v: r.q }; }
+    const tmax = Math.max(...pts.map((p) => p[1])) * 1.08;
+    const A = MA.axes(c, { box: { l: 50, t: 14, r: w - 46, b: h - 38 }, x: [1, K], y: [0, tmax], xt: [1, 10, 20, 30, 40], yt: [0, tmax / 2, tmax].map((v) => +v.toFixed(1)), xl: "조각 수 k", yl: "완료 시간", ylOff: 38 });
+    const Yq = (q) => A.box.b - q * (A.box.b - A.box.t);
+    // 오른쪽 축(품질)
+    c.fillStyle = MA.col("env"); c.font = "11px " + MA.monoFont(); c.textAlign = "left";
+    [0, 0.5, 1].forEach((q) => c.fillText(q.toFixed(1), A.box.r + 6, Yq(q) + 4));
+    MA.line(c, pts.map((p) => [A.X(p[0]), A.Y(p[1])]), MA.col("tool"), 2.6);
+    MA.line(c, pts.map((p) => [A.X(p[0]), Yq(p[2])]), MA.col("env"), 2.6);
+    c.fillStyle = MA.col("tool"); c.beginPath(); c.arc(A.X(bt.k), A.Y(bt.v), 5, 0, 7); c.fill();
+    c.fillStyle = MA.col("env"); c.beginPath(); c.arc(A.X(bq.k), Yq(bq.v), 5, 0, 7); c.fill();
+    MA.line(c, [[A.X(kk), A.box.t], [A.X(kk), A.box.b]], MA.col("accent"), 1.5, [4, 4]);
+    const r = f(kk);
+    MA.set("gr-o1", r.time.toFixed(2), r.time <= bt.v * 1.1 ? "good" : r.time > bt.v * 1.6 ? "bad" : "warn");
+    MA.set("gr-o2", r.q.toFixed(2), r.q >= bq.v * 0.95 ? "good" : r.q < bq.v * 0.7 ? "bad" : "warn");
+    MA.set("gr-o3", "k = " + bt.k);
+    MA.set("gr-o4", "k = " + bq.k);
+  }
+  MA.wire(["gr-k", "gr-n", "gr-w", "gr-o", "gr-c"], () => cv.redraw(), { "gr-c": (v) => MA.pct(v), "gr-w": (v) => v + "창", "gr-n": (v) => v + "명" });
+})();
+
+/* ---------------- 3. 위임 지시서 ---------------- */
+(function () {
+  const OPTS = [
+    ["goal", "목표와 이유", "목표: 국내 배터리 재활용 사업 진출 검토용. 2030년까지의 시장 기회와 진입 장벽을 판단할 근거가 필요하다.", 60],
+    ["fmt", "출력 형식", "출력: 항목 | 수치 | 출처 URL | 신뢰도(상/중/하) 형식의 표 10행 이내 + 3줄 요약.", 45],
+    ["scope", "범위와 경계", "범위: 당신은 {역할}만 맡는다. 다른 두 영역은 다른 워커가 맡으니 조사하지 않는다. 기간은 2022년 이후.", 55],
+    ["src", "도구 · 출처 안내", "출처: 정부·국제기구 보고서와 기업 공시를 우선한다. 보도자료 재가공 기사는 1차 출처를 찾아 확인한다.", 50],
+    ["done", "완료 기준", "완료: 표의 각 행에 출처가 있고, 서로 모순되는 수치가 있으면 둘 다 적고 표시하면 끝낸다.", 45],
+    ["budget", "예산", "예산: 검색 최대 10회, 문서 읽기 최대 8개. 한도에 닿으면 그때까지의 결과로 보고한다.", 35],
+  ];
+  const ROLES = [["정책 워커", "정책·규제"], ["기업 워커", "기업·투자 동향"], ["기술 워커", "재활용 기술·공정"]];
+  const sel = new Set();
+  MA.el("br-opts").innerHTML = OPTS.map(([k, lab, , tk]) => `<label class="check"><input type="checkbox" data-k="${k}"> ${lab} <small class="mono" style="color:var(--text-faint)">+${tk} tok</small></label>`).join("");
+  MA.$$("#br-opts input").forEach((i) => i.addEventListener("change", () => { i.checked ? sel.add(i.dataset.k) : sel.delete(i.dataset.k); render(); }));
+  function render() {
+    const lines = ["배터리 재활용 시장을 조사해 줘."].concat(OPTS.filter((o) => sel.has(o[0])).map((o) => o[2]));
+    MA.el("br-text").textContent = lines.join("\n");
+    const tk = 20 + OPTS.filter((o) => sel.has(o[0])).reduce((a, o) => a + o[3], 0);
+    MA.set("br-o1", tk + " tok");
+  }
+  function send() {
+    const has = (k) => sel.has(k);
+    let usable = 0, waste = 0, tokens = 0;
+    const out = ROLES.map(([name, area], i) => {
+      const items = [];
+      const dup = !has("scope");
+      const fmtOk = has("fmt");
+      let tok = 6000 + (has("budget") ? 18000 : 46000 + i * 9000);
+      if (dup) items.push([false, i === 0 ? "가장 많이 검색되는 '시장 규모' 기사부터 읽음" : "다른 워커와 같은 기사 3건을 다시 읽음 (중복)"]);
+      else items.push([true, `${area}에만 집중`]);
+      if (!has("goal")) items.push([false, "목적을 몰라 해외 시장 전반을 고르게 훑음"]);
+      else items.push([true, "진입 판단에 필요한 수치를 우선 수집"]);
+      if (!has("src")) items.push([false, i === 1 ? "출처 불명 블로그 수치를 그대로 인용" : "보도자료 재가공 기사 위주"]);
+      else items.push([true, "1차 출처로 수치 확인"]);
+      if (!has("done")) items.push([false, i === 2 ? "기술 갈래를 끝없이 넓혀 감 (언제 멈출지 모름)" : "표 3행만 채우고 일찍 종료"]);
+      if (!has("budget")) items.push([false, `도구 호출 ${18 + i * 7}회`]);
+      else items.push([true, "검색 9회 · 읽기 7개로 마감"]);
+      items.push(fmtOk ? [true, "약속한 표 형식으로 반환"] : [false, ["줄글 2쪽으로 반환", "글머리표 목록으로 반환", "JSON 비슷한 무언가로 반환"][i]]);
+      const good = items.filter((x) => x[0]).length, bad = items.length - good;
+      const ok = fmtOk && !dup && bad <= 1;
+      if (ok) usable++;
+      waste += bad;
+      tokens += tok;
+      return `<div class="wk" style="--k:${ok ? "var(--env)" : bad > 3 ? "var(--guard)" : "var(--tool)"}"><b>${name} ${ok ? "✓" : "✗"}</b><ul>${items.map(([g, s]) => `<li class="${g ? "ok" : "bad"}">${MA.esc(s)}</li>`).join("")}</ul></div>`;
+    });
+    MA.el("br-out").innerHTML = out.join("");
+    MA.set("br-o2", `${usable} / 3`, usable === 3 ? "good" : usable === 0 ? "bad" : "warn");
+    MA.set("br-o3", String(waste), waste === 0 ? "good" : waste > 6 ? "bad" : "warn");
+    MA.set("br-o4", MA.si(tokens) + " tok", tokens > 120000 ? "bad" : tokens < 80000 ? "good" : "warn");
+  }
+  MA.el("br-send").addEventListener("click", send);
+  MA.el("br-best").addEventListener("click", () => { MA.$$("#br-opts input").forEach((i) => { i.checked = true; sel.add(i.dataset.k); }); render(); send(); });
+  render();
+})();
+</script>
+</body>
+</html>

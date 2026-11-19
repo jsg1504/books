@@ -2,7 +2,7 @@
 
 그림과 실험으로 배우는 한국어 책을 주제별로 출간하는 프로젝트입니다. 첫 책은 AI 에이전트의 과제와 채점 방식을 다룹니다. 각 책은 고유한 주소, 목차, 본문과 시각 자료를 가지며 루트 서가에서 발견할 수 있습니다.
 
-**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/) · [코딩 에이전트 교과서](https://jsg1504.github.io/books/coding-agents/) · [에이전트 메모리 교과서](https://jsg1504.github.io/books/agent-memory/) · [에이전트 하네스 교과서](https://jsg1504.github.io/books/agent-harness/)
+**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/) · [코딩 에이전트 교과서](https://jsg1504.github.io/books/coding-agents/) · [에이전트 메모리 교과서](https://jsg1504.github.io/books/agent-memory/) · [에이전트 하네스 교과서](https://jsg1504.github.io/books/agent-harness/) · [멀티에이전트 시스템 설계 교과서](https://jsg1504.github.io/books/multi-agent/)
 
 ## 서가와 책
 
@@ -15,6 +15,7 @@
 | `books/coding-agents/` | 장별 HTML 페이지와 27개 실험으로 구성된 코딩 에이전트 교과서(LoopBook). 공통 도우미는 `js/common.js`, 장 목록은 같은 파일의 `CA.CHAPTERS` |
 | `books/agent-memory/` | 10개 장과 28개 실험으로 구성된 에이전트 메모리 교과서(RecallBook). LoopBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `AM.*`, 장 목록은 `AM.CHAPTERS`, 용어집은 `AM.GLOSSARY` |
 | `books/agent-harness/` | 10개 장과 28개 실험으로 구성된 에이전트 하네스 설계 교과서(HarnessBook). RecallBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `HB.*`, 장 목록은 `HB.CHAPTERS`, 용어집은 `HB.GLOSSARY` |
+| `books/multi-agent/` | 12개 장과 36개 실험으로 구성된 멀티에이전트 시스템 설계 교과서(ChorusBook). HarnessBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `MA.*`(그래프 노드·화살표·레이더 차트 도우미 포함), 장 목록은 `MA.CHAPTERS`, 용어집은 `MA.GLOSSARY` |
 | `templates/`, `shared/` | 서가와 기본 책의 공통 레이아웃·스타일 |
 | `tools/shelf.py` | 초안 생성과 정적 사이트 빌드 |
 

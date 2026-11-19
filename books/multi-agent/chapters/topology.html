@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>토폴로지: 누가 누구와 말하는가 · ChorusBook</title>
+<meta name="description" content="중앙집중, 계층, 메시, 파이프라인, 블랙보드 토폴로지를 애니메이션으로 비교하고, 채널 수·지름·병목 부하·장애 내성을 실험으로 잰다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #fl-cv { cursor: pointer; }
+  #tg-info h4 { margin: 0 0 6px; font-size: 16.5px; }
+  #tg-info p { margin: 0 0 8px; font-size: 14.5px; color: var(--text-dim); }
+  #tg-info dl { margin: 0; font-size: 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+  #tg-info dt { color: var(--text-faint); } #tg-info dd { margin: 0; }
+</style>
+</head>
+<body data-root="../" data-chapter="topology">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 02</div>
+    <h1>토폴로지: 누가 누구와 말하는가</h1>
+    <p class="lead">에이전트를 여럿 두기로 했다면 가장 먼저 정할 것은 <b>연결 구조</b>다. 모두가 한 리더에게만 보고할지, 관리자 아래 관리자를 둘지, 서로 자유롭게 말하게 할지, 줄지어 넘길지, 아니면 공용 칠판 하나를 같이 볼지. 이 선택이 메시지 수, 지연, 병목, 그리고 하나가 멈췄을 때 전체가 멈추는지를 정한다. 이 장에서는 다섯 가지 대표 토폴로지를 움직여 보며 각각의 숫자를 잰다.</p>
+    <ul class="objectives">
+      <li>중앙집중·계층·메시·파이프라인·블랙보드 토폴로지의 구조와 쓰임을 설명할 수 있다.</li>
+      <li>채널 수, 라운드당 메시지 수, 지름, 최대 노드 부하를 계산할 수 있다.</li>
+      <li>단일 장애점을 찾고, 무작위 장애에서 각 토폴로지가 얼마나 버티는지 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="five">
+    <h2>다섯 가지 대표 구조</h2>
+    <p>실제 시스템은 이것들을 섞어 쓰지만, 뼈대는 대부분 아래 다섯 가지 중 하나다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 800 210" role="img" aria-label="다섯 가지 토폴로지 그림">
+        <g transform="translate(80,90)"><g stroke="var(--tool)" stroke-width="1.6"><path d="M0 0L-44-34M0 0L44-34M0 0L-50 22M0 0L50 22M0 0L0 50"/></g><circle r="13" fill="var(--accent)"/><g class="c-ctx"><circle cx="-44" cy="-34" r="8"/><circle cx="44" cy="-34" r="8"/><circle cx="-50" cy="22" r="8"/><circle cx="50" cy="22" r="8"/><circle cx="0" cy="50" r="8"/></g><text y="92" text-anchor="middle" class="t-b">중앙집중</text><text y="108" text-anchor="middle" class="t-mono">star · supervisor</text></g>
+        <g transform="translate(240,90)"><g stroke="var(--tool)" stroke-width="1.6"><path d="M0-46L-34-6M0-46L34-6M-34-6L-52 36M-34-6L-16 36M34-6L16 36M34-6L52 36"/></g><circle cy="-46" r="11" fill="var(--accent)"/><circle cx="-34" cy="-6" r="9" fill="var(--accent)" opacity=".6"/><circle cx="34" cy="-6" r="9" fill="var(--accent)" opacity=".6"/><g class="c-ctx"><circle cx="-52" cy="36" r="7"/><circle cx="-16" cy="36" r="7"/><circle cx="16" cy="36" r="7"/><circle cx="52" cy="36" r="7"/></g><text y="92" text-anchor="middle" class="t-b">계층형</text><text y="108" text-anchor="middle" class="t-mono">tree · hierarchical</text></g>
+        <g transform="translate(400,90)"><g stroke="var(--tool)" stroke-width="1.3" opacity=".8"><path d="M0-44L42-14L26 36L-26 36L-42-14Z M0-44L26 36M0-44L-26 36M42-14L-42-14M42-14L-26 36M-42-14L26 36"/></g><g class="c-ctx"><circle cy="-44" r="8"/><circle cx="42" cy="-14" r="8"/><circle cx="26" cy="36" r="8"/><circle cx="-26" cy="36" r="8"/><circle cx="-42" cy="-14" r="8"/></g><text y="92" text-anchor="middle" class="t-b">메시</text><text y="108" text-anchor="middle" class="t-mono">peer-to-peer</text></g>
+        <g transform="translate(560,90)"><g stroke="var(--tool)" stroke-width="1.6"><path d="M-60 0H60"/></g><g class="c-ctx"><circle cx="-60" r="8"/><circle cx="-30" r="8"/><circle cx="0" r="8"/><circle cx="30" r="8"/></g><circle cx="60" r="9" class="c-env"/><path d="M-50 -16 H50" stroke="var(--text-faint)" stroke-dasharray="3 3"/><text y="92" text-anchor="middle" class="t-b">파이프라인</text><text y="108" text-anchor="middle" class="t-mono">chain · assembly line</text></g>
+        <g transform="translate(720,90)"><rect x="-34" y="-12" width="68" height="24" rx="5" class="soft-env"/><g stroke="var(--env)" stroke-width="1.4" stroke-dasharray="3 3"><path d="M-44-40L-20-12M44-40L20-12M-44 40L-20 12M44 40L20 12M0-48V-12"/></g><g class="c-ctx"><circle cx="-44" cy="-40" r="8"/><circle cx="44" cy="-40" r="8"/><circle cx="-44" cy="40" r="8"/><circle cx="44" cy="40" r="8"/><circle cy="-48" r="8"/></g><text y="92" text-anchor="middle" class="t-b">블랙보드</text><text y="108" text-anchor="middle" class="t-mono">shared board</text></g>
+      </svg>
+      <figcaption><b>그림 2-1.</b> 다섯 가지 토폴로지. 파란 노드는 관리 역할, 하늘색은 워커, 선은 직접 통신 채널이다. 블랙보드에서는 에이전트끼리 직접 말하지 않고 공용 작업 공간을 통해서만 소통한다.</figcaption>
+    </figure>
+    <table class="tbl">
+      <tr><th>구조</th><th>잘 맞는 일</th><th>조심할 것</th></tr>
+      <tr><td style="color:var(--accent);font-weight:700">중앙집중</td><td>리더가 계획을 쥐고 하위 작업을 나눠 주는 조사·분석. 현재 가장 흔한 구성.</td><td>리더가 모든 결과를 읽어야 해 병목이 되고, 리더가 멈추면 전부 멈춘다.</td></tr>
+      <tr><td style="color:var(--accent);font-weight:700">계층형</td><td>워커가 수십 개를 넘는 큰 일. 중간 관리자가 요약을 한 번 더 걸러 준다.</td><td>단계마다 요약 손실과 지연이 쌓인다(4장의 전언 게임).</td></tr>
+      <tr><td style="color:var(--ctx);font-weight:700">메시</td><td>소수 에이전트의 토론·협상(6장). 누구나 누구에게 물을 수 있다.</td><td>채널이 n(n−1)/2로 늘고, 대화가 끝나지 않거나 같은 말을 반복한다.</td></tr>
+      <tr><td style="color:var(--ctx);font-weight:700">파이프라인</td><td>단계가 분명한 처리: 수집 → 정리 → 분석 → 작성.</td><td>지연이 단계 수에 비례하고, 한 단계의 실수가 끝까지 흘러간다(8장).</td></tr>
+      <tr><td style="color:var(--env);font-weight:700">블랙보드</td><td>누가 다음에 나서야 할지 미리 모를 때. 에이전트가 칠판의 변화를 보고 스스로 일을 집는다(5장).</td><td>동시 쓰기 충돌과, 칠판이 커질 때 읽기 비용.</td></tr>
+    </table>
+  </section>
+
+  <section id="gallery">
+    <h2>한 라운드를 따라가 보기</h2>
+    <p>아래 애니메이션은 각 토폴로지에서 “작업을 나눠 주고 결과를 모으는” 한 라운드를 보여 준다. 점 하나가 메시지 하나다. 에이전트 수를 바꾸면서 메시지가 어디로 몰리는지 보자.</p>
+    <div class="sim" id="sim-gallery">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>토폴로지 갤러리 — 메시지가 흐르는 길</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="tg-sel" style="margin-bottom:10px"><button data-v="star" class="on">중앙집중</button><button data-v="tree">계층형</button><button data-v="mesh">메시</button><button data-v="pipe">파이프라인</button><button data-v="board">블랙보드</button></div>
+          <canvas id="tg-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트 수 n <output id="tg-n-out"></output></span><input type="range" id="tg-n" min="3" max="16" step="1" value="7"></label>
+          <div id="tg-info"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">직접 채널 수</span><span class="v" id="tg-o1">—</span></div>
+        <div class="stat"><span class="k">라운드당 메시지</span><span class="v" id="tg-o2">—</span></div>
+        <div class="stat"><span class="k">지름 (최대 홉)</span><span class="v" id="tg-o3">—</span></div>
+        <div class="stat"><span class="k">가장 바쁜 노드의 부하</span><span class="v" id="tg-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>메시</b>에서 n을 16으로 올리면 화면이 점으로 뒤덮인다. 모두가 모두에게 알리는 라운드 하나에 240개 메시지다. ② <b>중앙집중</b>은 메시지 수는 적지만 리더 한 명이 2(n−1)개를 처리한다. ③ <b>파이프라인</b>은 메시지가 가장 적은 대신 지름이 n−1이다. 첫 단계의 결과가 마지막 단계에 닿을 때까지 n−1번을 기다린다.</div>
+    </div>
+  </section>
+
+  <section id="numbers">
+    <h2>숫자로 비교하기</h2>
+    <p>토폴로지의 특성은 몇 개의 숫자로 요약된다. <b>채널 수</b>는 설계·디버깅해야 할 대화의 갈래, <b>지름</b>은 정보가 가장 멀리 가는 데 걸리는 홉 수(지연), <b>최대 부하</b>는 가장 바쁜 에이전트가 한 라운드에 읽고 써야 하는 메시지 수(병목)다. 에이전트의 컨텍스트는 유한하므로 최대 부하가 곧 컨텍스트 압박이 된다.</p>
+    <div class="formula"><div class="eq">메시 채널 = <span class="frac"><span><var>n</var>(<var>n</var> − 1)</span><span>2</span></span> &nbsp;&nbsp;·&nbsp;&nbsp; 중앙집중 리더 부하 = 2(<var>n</var> − 1) &nbsp;&nbsp;·&nbsp;&nbsp; 계층 지름 ≈ 2 log<sub><var>b</var></sub> <var>n</var></div>
+      <div class="where"><var>b</var>: 관리자 한 명이 거느리는 부하 수(분기 수). 계층형은 관리자 부하를 2<var>b</var> 정도로 묶는 대신 지름이 로그로 늘어난다.</div></div>
+    <div class="sim" id="sim-scale">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>규모가 커지면 — 토폴로지별 증가 곡선</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="sc-sel" style="margin-bottom:10px"><button data-v="ch" class="on">채널 수</button><button data-v="load">최대 노드 부하</button><button data-v="dia">지름</button></div>
+          <canvas id="sc-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>최대 에이전트 수 <output id="sc-n-out"></output></span><input type="range" id="sc-n" min="8" max="64" step="1" value="32"></label>
+          <label class="ctrl"><span>계층 분기 수 b <output id="sc-b-out"></output></span><input type="range" id="sc-b" min="2" max="8" step="1" value="4"></label>
+          <label class="ctrl"><span>메시지당 평균 토큰 <output id="sc-t-out"></output></span><input type="range" id="sc-t" min="200" max="5000" step="100" value="1500"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>중앙집중</span><span><i style="background:var(--state)"></i>계층형</span><span><i style="background:var(--guard)"></i>메시</span><span><i style="background:var(--ctx)"></i>파이프라인</span><span><i style="background:var(--env)"></i>블랙보드</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">n에서 리더가 읽는 토큰</span><span class="v" id="sc-o1">—</span></div>
+        <div class="stat"><span class="k">n에서 계층 관리자가 읽는 토큰</span><span class="v" id="sc-o2">—</span></div>
+        <div class="stat"><span class="k">n에서 메시 채널</span><span class="v" id="sc-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “최대 노드 부하”에서 n=64면 중앙집중 리더는 한 라운드에 126개 메시지를 주고받는다. 돌려받는 63개만 메시지당 1,500토큰이라 해도 리더 혼자 약 9만 5천 토큰을 읽는다. 메시지당 3,000토큰이면 19만 — 리더 창이 감당할 수 있을까? ② 분기 수 b를 2로 줄이면 관리자 부하는 작아지지만 지름이 커진다. b를 8로 키우면 반대다. ③ 블랙보드의 지름은 2로 고정이지만, 칠판 자체의 부하(모든 쓰기와 읽기)는 n에 비례한다.</div>
+    </div>
+  </section>
+
+  <section id="failure">
+    <h2>하나가 멈추면</h2>
+    <p>에이전트는 생각보다 자주 멈춘다. API 한도, 타임아웃, 컨텍스트 초과, 헛도는 루프. 토폴로지는 그 멈춤이 <b>국지적인 손실</b>로 끝날지 <b>전체 정지</b>로 번질지를 정한다. 그 하나가 멈추면 전체가 멈추는 노드를 <span class="term">단일 장애점</span><span class="en">single point of failure</span>이라 부른다.</p>
+    <div class="sim" id="sim-fail">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>장애 주입 — 노드를 눌러 멈춰 보기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="fl-sel" style="margin-bottom:10px"><button data-v="star" class="on">중앙집중</button><button data-v="tree">계층형</button><button data-v="mesh">메시</button><button data-v="pipe">파이프라인</button><button data-v="board">블랙보드</button></div>
+          <canvas id="fl-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트 수 n <output id="fl-n-out"></output></span><input type="range" id="fl-n" min="4" max="16" step="1" value="9"></label>
+          <label class="ctrl"><span>무작위 장애 확률 p (노드당) <output id="fl-p-out"></output></span><input type="range" id="fl-p" min="0" max="0.3" step="0.01" value="0.08"></label>
+          <div class="btns"><button class="btn" id="fl-clear">모두 복구</button></div>
+          <canvas id="fl-bar" style="border:1px solid var(--border);border-radius:8px;background:var(--canvas-bg)"></canvas>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">살아 있는 워커 중 결과를 전달할 수 있는 비율</span><span class="v" id="fl-o1">—</span></div>
+        <div class="stat"><span class="k">단일 장애점</span><span class="v" id="fl-o2">—</span></div>
+        <div class="stat"><span class="k">무작위 장애 시 평균 완료율</span><span class="v" id="fl-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>중앙집중</b>에서 가운데 리더를 눌러 보자. 워커가 모두 살아 있어도 결과를 받을 곳이 없다. ② <b>파이프라인</b>은 어느 칸이 멈추든 그 앞의 일이 모두 막힌다. 오른쪽 막대에서 p=0.1이면 9단계 파이프라인의 완료율은 0.9<sup>9</sup> ≈ 39%다. ③ <b>메시</b>는 가장 잘 버티지만 그 대가가 앞 실험의 채널 수다. 실무에서는 리더를 <b>다시 띄울 수 있게</b>(상태를 바깥에 저장) 만들어 단일 장애점의 위험을 줄인다(5장).</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>토폴로지는 누가 누구와 직접 말하는지를 정하고, 메시지 수·지연·병목·장애 내성을 함께 정한다.</li>
+      <li>메시의 채널은 n(n−1)/2로 늘고, 중앙집중 리더의 부하는 2(n−1)로 는다. 계층형은 부하를 묶는 대신 지름(지연과 요약 단계)을 늘린다.</li>
+      <li>파이프라인은 가장 단순하지만 지연이 단계 수에 비례하고 한 칸의 장애가 전체를 멈춘다.</li>
+      <li>중앙집중의 리더, 블랙보드의 칠판은 단일 장애점이다. 상태를 바깥에 두어 다시 띄울 수 있게 만든다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 에이전트 12개가 모두 서로 직접 말할 수 있는 메시에는 채널이 몇 개인가?</p><div class="opts">
+        <button class="opt">24</button>
+        <button class="opt" data-correct>66</button>
+        <button class="opt">144</button>
+      </div><div class="quiz-exp">12 × 11 / 2 = 66. 방향을 따지면(누가 먼저 말하나) 132개다.</div></div>
+      <div class="quiz-q"><p>2. 워커 40개를 쓰는 중앙집중 구조에서 리더의 컨텍스트가 넘친다. 가장 직접적인 구조 변경은?</p><div class="opts">
+        <button class="opt">메시로 바꾼다</button>
+        <button class="opt" data-correct>중간 관리자를 두는 계층형으로 바꿔 리더가 받는 요약 수를 줄인다</button>
+        <button class="opt">파이프라인으로 바꾼다</button>
+      </div><div class="quiz-exp">계층형은 관리자 부하를 분기 수 정도로 묶는다. 대가로 요약 단계와 지연이 하나 늘어난다.</div></div>
+      <div class="quiz-q"><p>3. 각 단계 실패 확률이 5%인 6단계 파이프라인이 끝까지 성공할 확률은?</p><div class="opts">
+        <button class="opt">95%</button>
+        <button class="opt" data-correct>약 74%</button>
+        <button class="opt">70%</button>
+      </div><div class="quiz-exp">0.95⁶ ≈ 0.735. 직렬 구조에서는 성공 확률이 곱해진다.</div></div>
+      <div class="quiz-q"><p>4. 블랙보드 구조의 지름이 2인 이유는?</p><div class="opts">
+        <button class="opt" data-correct>어떤 에이전트의 정보든 칠판을 한 번 거쳐 다른 에이전트에게 간다</button>
+        <button class="opt">에이전트가 두 명뿐이라서</button>
+        <button class="opt">칠판이 두 개라서</button>
+      </div><div class="quiz-exp">쓰기 한 번(에이전트 → 칠판), 읽기 한 번(칠판 → 에이전트). 대신 칠판의 부하와 동시 쓰기 문제가 생긴다(5장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 공통: 토폴로지 그래프 ---------------- */
+const TOPO = (function () {
+  /* 노드: {x,y,role,label}; edges: [a,b]; sink: 결과가 모여야 하는 노드 */
+  function build(kind, n, b = 3) {
+    const N = [], E = [];
+    const ring = (k, cx, cy, r, off = -Math.PI / 2) => { for (let i = 0; i < k; i++) { const a = off + (i / k) * Math.PI * 2; N.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, role: "worker" }); } };
+    if (kind === "star") {
+      N.push({ x: 0.5, y: 0.5, role: "lead", label: "리더" }); ring(n - 1, 0.5, 0.5, 0.38);
+      for (let i = 1; i < n; i++) E.push([0, i]);
+      return { N, E, sink: 0 };
+    }
+    if (kind === "tree") {
+      // BFS 트리, 분기 b
+      const depth = []; N.push({ role: "lead", label: "리더" }); depth.push(0);
+      for (let i = 1; i < n; i++) { const p = Math.floor((i - 1) / b); E.push([p, i]); depth.push(depth[p] + 1); N.push({ role: "worker" }); }
+      const D = Math.max(...depth);
+      for (let d = 0; d <= D; d++) {
+        const ids = depth.map((v, i) => (v === d ? i : -1)).filter((v) => v >= 0);
+        ids.forEach((id, k) => { N[id].x = (k + 0.5) / ids.length * 0.92 + 0.04; N[id].y = 0.1 + (D ? d / D : 0) * 0.8; });
+      }
+      // 자식이 있는 노드는 관리자
+      E.forEach(([p]) => { if (p !== 0) N[p].role = "mgr"; });
+      return { N, E, sink: 0, depth: D };
+    }
+    if (kind === "mesh") {
+      ring(n, 0.5, 0.5, 0.4);
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) E.push([i, j]);
+      return { N, E, sink: -1 };
+    }
+    if (kind === "pipe") {
+      const cols = Math.min(n, 8), rows = Math.ceil(n / cols);
+      for (let i = 0; i < n; i++) { const r = Math.floor(i / cols), c = r % 2 ? cols - 1 - (i % cols) : i % cols; N.push({ x: 0.07 + (c / Math.max(1, cols - 1)) * 0.86, y: rows === 1 ? 0.5 : 0.25 + (r / (rows - 1)) * 0.5, role: i === n - 1 ? "shared" : "worker" }); }
+      for (let i = 0; i < n - 1; i++) E.push([i, i + 1]);
+      return { N, E, sink: n - 1 };
+    }
+    // board
+    N.push({ x: 0.5, y: 0.5, role: "board", label: "칠판" }); ring(n, 0.5, 0.5, 0.39);
+    for (let i = 1; i <= n; i++) E.push([0, i]);
+    return { N, E, sink: 0 };
+  }
+  function adj(G, dead) {
+    const A = G.N.map(() => []);
+    G.E.forEach(([a, b]) => { if (!dead[a] && !dead[b]) { A[a].push(b); A[b].push(a); } });
+    return A;
+  }
+  function bfs(A, s) { const d = A.map(() => Infinity); if (s < 0) return d; d[s] = 0; const q = [s]; while (q.length) { const u = q.shift(); A[u].forEach((v) => { if (d[v] === Infinity) { d[v] = d[u] + 1; q.push(v); } }); } return d; }
+  /* 결과를 전달할 수 있는 워커 비율 (살아 있는 워커 기준과 전체 기준) */
+  function reach(kind, G, dead) {
+    const A = adj(G, dead);
+    const workers = G.N.map((nd, i) => i).filter((i) => G.N[i].role !== "lead" && G.N[i].role !== "board");
+    if (kind === "pipe") {
+      // 결과는 끝까지 흘러야 한다: i번째 칸의 기여는 i..끝이 모두 살아 있어야 전달된다
+      let ok = 0, alive = 0; const n = G.N.length;
+      for (let i = 0; i < n; i++) { if (dead[i]) continue; alive++; let fine = true; for (let j = i; j < n; j++) if (dead[j]) fine = false; if (fine) ok++; }
+      return { ok, alive, total: n };
+    }
+    let sink = G.sink;
+    if (kind === "mesh") { sink = workers.find((i) => !dead[i]); if (sink == null) return { ok: 0, alive: 0, total: workers.length }; }
+    if (dead[sink]) return { ok: 0, alive: workers.filter((i) => !dead[i]).length, total: workers.length };
+    const d = bfs(A, sink);
+    let ok = 0, alive = 0;
+    workers.forEach((i) => { if (!dead[i]) { alive++; if (d[i] < Infinity) ok++; } });
+    return { ok, alive, total: workers.length };
+  }
+  function metrics(kind, n, b = 3) {
+    if (kind === "star") return { ch: n - 1, msg: 2 * (n - 1), dia: Math.min(2, n - 1), load: 2 * (n - 1) };
+    if (kind === "tree") { const G = build("tree", n, b); const kids = G.N.map(() => 0); G.E.forEach(([p]) => kids[p]++); const load = Math.max(...kids.map((k, i) => 2 * k + (i ? 2 : 0))); let D = 0; const A = adj(G, {}); G.N.forEach((_, i) => { const d = bfs(A, i); D = Math.max(D, ...d.filter(isFinite)); }); return { ch: n - 1, msg: 2 * (n - 1), dia: D, load }; }
+    if (kind === "mesh") return { ch: (n * (n - 1)) / 2, msg: n * (n - 1), dia: 1, load: 2 * (n - 1) };
+    if (kind === "pipe") return { ch: n - 1, msg: n - 1, dia: n - 1, load: 2 };
+    return { ch: n, msg: 2 * n, dia: 2, load: 2 * n };
+  }
+  const COL = { lead: "lead", mgr: "lead", worker: "worker", shared: "shared", board: "shared" };
+  function drawGraph(c, w, h, G, o = {}) {
+    const P = (i) => [16 + G.N[i].x * (w - 32), 14 + G.N[i].y * (h - 28)];
+    G.E.forEach(([a, b]) => {
+      const [x1, y1] = P(a), [x2, y2] = P(b);
+      const dead = o.dead && (o.dead[a] || o.dead[b]);
+      c.strokeStyle = dead ? MA.alpha(MA.col("guard"), 0.25) : G.N[a].role === "board" || G.N[b].role === "board" ? MA.alpha(MA.col("env"), 0.4) : MA.alpha(MA.col("tool"), G.E.length > 60 ? 0.18 : 0.4);
+      c.lineWidth = 1.3; c.setLineDash(dead ? [3, 4] : G.N[a].role === "board" ? [4, 3] : []);
+      c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]);
+    });
+    G.N.forEach((nd, i) => {
+      const [x, y] = P(i);
+      const big = nd.role === "lead" || nd.role === "board";
+      const r = nd.role === "board" ? 0 : big ? 15 : nd.role === "mgr" ? 12 : 10;
+      const dead = o.dead && o.dead[i];
+      if (nd.role === "board") {
+        c.fillStyle = MA.alpha(MA.col(dead ? "guard" : "env"), 0.18); c.strokeStyle = MA.col(dead ? "guard" : "env"); c.lineWidth = 2;
+        MA.rrect(c, x - 30, y - 13, 60, 26, 6); c.fill(); c.stroke();
+        MA.text(c, dead ? "✕" : "칠판", x, y, { size: 11.5, weight: 700, align: "center", color: MA.col(dead ? "guard" : "env") });
+        return;
+      }
+      MA.node(c, x, y, r, dead ? "fail" : COL[nd.role], dead ? "✕" : nd.label || (nd.role === "mgr" ? "관리" : ""), { glow: o.glow ? o.glow[i] || 0 : 0, dash: dead ? [3, 3] : null, size: big ? 11 : 10 });
+    });
+    return P;
+  }
+  return { build, metrics, reach, drawGraph };
+})();
+
+/* ---------------- 1. 토폴로지 갤러리 ---------------- */
+(function () {
+  const INFO = {
+    star: { name: "중앙집중 (supervisor)", desc: "리더가 모든 워커에게 직접 일을 주고 직접 결과를 받는다.", pro: "단순하고 통제하기 쉽다. 리더가 전체 그림을 쥔다.", con: "리더가 병목이자 단일 장애점." },
+    tree: { name: "계층형", desc: "리더 → 중간 관리자 → 워커. 관리자는 부하의 결과를 요약해 위로 올린다.", pro: "리더 부하를 분기 수로 묶는다. 수십 개 워커로 확장.", con: "요약 단계마다 손실, 지연이 깊이만큼 늘어난다." },
+    mesh: { name: "메시 (peer-to-peer)", desc: "모든 에이전트가 서로 직접 메시지를 보낼 수 있다. 이 라운드는 모두가 모두에게 자기 결과를 알린다.", pro: "중심이 없어 잘 버티고, 누구나 바로 묻는다.", con: "메시지가 n²으로 늘고 대화가 수렴하지 않을 수 있다." },
+    pipe: { name: "파이프라인", desc: "앞 단계의 출력이 다음 단계의 입력이 된다. 마지막 칸이 결과를 낸다.", pro: "메시지 최소, 단계마다 전문화하기 쉽다.", con: "지연이 단계 수에 비례, 앞 실수가 뒤로 흐른다." },
+    board: { name: "블랙보드", desc: "에이전트는 서로 말하지 않고 칠판에 쓰고 칠판을 읽는다. 칠판이 바뀌면 관심 있는 에이전트가 깨어난다.", pro: "느슨한 결합. 누가 나설지 미리 정하지 않아도 된다.", con: "동시 쓰기 충돌, 칠판이 커질수록 읽기 비용." },
+  };
+  let kind = "star", G = null, steps = [], si = 0, t = 0, pause = 0, glow = {};
+  const cv = MA.canvas("tg-cv", { aspect: 0.62, draw });
+  function plan() {
+    const n = MA.val("tg-n");
+    G = TOPO.build(kind, n, 3);
+    const E = G.E;
+    if (kind === "star") steps = [E.map(([a, b]) => [a, b]), E.map(([a, b]) => [b, a])];
+    else if (kind === "tree") {
+      const depth = [0]; E.forEach(([p, c]) => (depth[c] = depth[p] + 1)); const D = Math.max(...depth);
+      steps = [];
+      for (let d = 1; d <= D; d++) steps.push(E.filter(([, c]) => depth[c] === d));
+      for (let d = D; d >= 1; d--) steps.push(E.filter(([, c]) => depth[c] === d).map(([p, c]) => [c, p]));
+    } else if (kind === "mesh") {
+      const all = []; for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (i !== j) all.push([i, j]);
+      steps = [all];
+    } else if (kind === "pipe") steps = E.map((e) => [e]);
+    else { steps = E.map(([a, b]) => [[b, a]]).reduce((acc, s, i) => { const k = Math.floor(i / 3); (acc[k] = acc[k] || []).push(s[0]); return acc; }, []); steps.push(E.map(([a, b]) => [a, b])); }
+    si = 0; t = 0; pause = 0.3; glow = {};
+    const I = INFO[kind];
+    MA.el("tg-info").innerHTML = `<h4>${I.name}</h4><p>${I.desc}</p><dl><dt>장점</dt><dd>${I.pro}</dd><dt>대가</dt><dd>${I.con}</dd></dl>`;
+    const m = TOPO.metrics(kind, n, 3);
+    MA.set("tg-o1", String(m.ch), m.ch > 40 ? "bad" : "");
+    MA.set("tg-o2", String(m.msg), m.msg > 60 ? "bad" : m.msg > 20 ? "warn" : "good");
+    MA.set("tg-o3", String(m.dia), m.dia > 4 ? "bad" : m.dia > 2 ? "warn" : "good");
+    MA.set("tg-o4", String(m.load), m.load > 16 ? "bad" : m.load > 8 ? "warn" : "good");
+  }
+  function draw(c, w, h) {
+    if (!G) plan();
+    const P = TOPO.drawGraph(c, w, h, G, { glow });
+    if (si < steps.length) {
+      const e = MA.ease(t);
+      const col = kind === "board" ? MA.col("env") : MA.col("tool");
+      steps[si].forEach(([a, b]) => {
+        const [x1, y1] = P(a), [x2, y2] = P(b);
+        c.fillStyle = col; c.beginPath(); c.arc(x1 + (x2 - x1) * e, y1 + (y2 - y1) * e, steps[si].length > 80 ? 2.6 : 4.5, 0, 7); c.fill();
+      });
+    }
+    MA.text(c, `라운드 진행 ${Math.min(si, steps.length)}/${steps.length}`, w - 10, h - 10, { size: 11, mono: true, align: "right", color: MA.col("text-faint") });
+  }
+  const L = MA.loop(MA.el("tg-cv"), (dt) => {
+    Object.keys(glow).forEach((k) => (glow[k] = Math.max(0, glow[k] - dt * 1.5)));
+    if (pause > 0) { pause -= dt; cv.redraw(); return; }
+    if (si >= steps.length) { plan(); cv.redraw(); return; }
+    t += dt * (kind === "pipe" ? 2.4 : 1.5);
+    if (t >= 1) { steps[si].forEach(([, b]) => (glow[b] = 1)); si++; t = 0; if (si >= steps.length) pause = 1.1; }
+    cv.redraw();
+  });
+  MA.seg("tg-sel", (v) => { kind = v; plan(); cv.redraw(); });
+  MA.wire(["tg-n"], () => { plan(); cv.redraw(); }, { "tg-n": (v) => v + "개" });
+  if (MA.reduced()) cv.redraw(); else L.start();
+})();
+
+/* ---------------- 2. 증가 곡선 ---------------- */
+(function () {
+  let mode = "ch";
+  const cv = MA.canvas("sc-cv", { aspect: 0.62, draw });
+  const KINDS = [["star", "accent"], ["tree", "state"], ["mesh", "guard"], ["pipe", "ctx"], ["board", "env"]];
+  function draw(c, w, h) {
+    const NM = MA.val("sc-n"), b = MA.val("sc-b"), T = MA.val("sc-t");
+    const series = KINDS.map(([k, col]) => ({ k, col, pts: [] }));
+    for (let n = 3; n <= NM; n++) series.forEach((s) => { const m = TOPO.metrics(s.k, n, b); s.pts.push([n, mode === "ch" ? m.ch : mode === "load" ? m.load : m.dia]); });
+    const ymax = Math.max(4, ...series.flatMap((s) => s.pts.map((p) => p[1])));
+    const logy = mode === "ch";
+    const A = MA.axes(c, { box: { l: 54, t: 12, r: w - 14, b: h - 38 }, x: [3, NM], y: [logy ? 1 : 0, ymax * (logy ? 1.5 : 1.08)], logy, xt: [3, Math.round(NM / 4), Math.round(NM / 2), Math.round((3 * NM) / 4), NM], yt: logy ? [1, 10, 100, 1000].filter((v) => v <= ymax * 1.5) : [0, Math.round(ymax / 2), Math.round(ymax)], yf: MA.si, xl: "에이전트 수 n", yl: mode === "ch" ? "채널 수 (로그)" : mode === "load" ? "최대 노드 부하 (메시지)" : "지름 (홉)", ylOff: 44 });
+    series.forEach((s) => MA.line(c, s.pts.map(([x, y]) => [A.X(x), A.Y(Math.max(logy ? 1 : 0, y))]), MA.col(s.col), s.k === "tree" ? 2.6 : 2.2, s.k === "board" ? [6, 4] : null));
+    const m = (k) => TOPO.metrics(k, NM, b);
+    MA.set("sc-o1", MA.si(m("star").load * 0.5 * T) + " tok", m("star").load * 0.5 * T > 200000 ? "bad" : m("star").load * 0.5 * T > 100000 ? "warn" : "good");
+    MA.set("sc-o2", MA.si(b * T) + " tok", "good");
+    MA.set("sc-o3", MA.fmt(m("mesh").ch), "bad");
+  }
+  MA.seg("sc-sel", (v) => { mode = v; cv.redraw(); });
+  MA.wire(["sc-n", "sc-b", "sc-t"], () => cv.redraw(), { "sc-n": (v) => v + "개", "sc-t": MA.si });
+})();
+
+/* ---------------- 3. 장애 주입 ---------------- */
+(function () {
+  let kind = "star", G = null, dead = {}, P = null;
+  const cv = MA.canvas("fl-cv", { aspect: 0.62, draw });
+  const bar = MA.canvas("fl-bar", { height: 150, draw: drawBar });
+  const KINDS = [["star", "중앙", "accent"], ["tree", "계층", "state"], ["mesh", "메시", "guard"], ["pipe", "파이프", "ctx"], ["board", "칠판", "env"]];
+  function rebuild() { G = TOPO.build(kind, MA.val("fl-n"), 3); dead = {}; }
+  function draw(c, w, h) {
+    if (!G) rebuild();
+    P = TOPO.drawGraph(c, w, h, G, { dead });
+    const r = TOPO.reach(kind, G, dead);
+    MA.set("fl-o1", r.alive ? MA.pct(r.ok / r.alive) : "—", r.alive && r.ok / r.alive > 0.95 ? "good" : r.ok / Math.max(1, r.alive) < 0.5 ? "bad" : "warn");
+    MA.set("fl-o2", kind === "star" ? "리더" : kind === "tree" ? "리더 · 관리자" : kind === "board" ? "칠판" : kind === "pipe" ? "모든 칸" : "없음", kind === "mesh" ? "good" : "bad");
+    MA.text(c, "노드를 눌러 멈추거나 되살리세요", 10, h - 10, { size: 11, color: MA.col("text-faint") });
+  }
+  function mc(k) {
+    const n = MA.val("fl-n"), p = MA.val("fl-p"), g = TOPO.build(k, n, 3), r = MA.rng(42 + n);
+    let s = 0; const T = 400;
+    for (let t = 0; t < T; t++) { const d = {}; g.N.forEach((_, i) => { if (r() < p) d[i] = true; }); if (k === "pipe") { s += Object.keys(d).length ? 0 : 1; continue; } const q = TOPO.reach(k, g, d); s += q.ok / q.total; }
+    return s / T;
+  }
+  function drawBar(c, w, h) {
+    MA.text(c, "무작위 장애 시 완료율", 8, 12, { size: 11.5, weight: 700, color: MA.col("text-dim") });
+    KINDS.forEach(([k, lab, col], i) => {
+      const v = mc(k), y = 30 + i * 23;
+      MA.text(c, lab, 8, y + 5, { size: 11.5, color: k === kind ? MA.col("text") : MA.col("text-dim"), weight: k === kind ? 700 : 400 });
+      MA.hbar(c, 52, y, w - 110, 10, v, MA.col(col), { label: MA.pct(v) });
+      if (k === kind) MA.set("fl-o3", MA.pct(v), v > 0.8 ? "good" : v < 0.5 ? "bad" : "warn");
+    });
+  }
+  cv.on("click", (x, y) => {
+    if (!P) return;
+    let best = -1, bd = 26;
+    G.N.forEach((_, i) => { const [px, py] = P(i), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = i; } });
+    if (best >= 0) { dead[best] = !dead[best]; cv.redraw(); }
+  });
+  MA.seg("fl-sel", (v) => { kind = v; rebuild(); cv.redraw(); bar.redraw(); });
+  MA.el("fl-clear").addEventListener("click", () => { dead = {}; cv.redraw(); });
+  MA.wire(["fl-n", "fl-p"], () => { rebuild(); cv.redraw(); bar.redraw(); }, { "fl-n": (v) => v + "개", "fl-p": (v) => MA.pct(v) });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공유 상태와 블랙보드 · ChorusBook</title>
+<meta name="description" content="블랙보드 아키텍처, 여러 에이전트가 같은 상태를 고칠 때의 경쟁 조건과 잠금, 대화 전체·요약·아티팩트 중 무엇을 공유할지를 애니메이션과 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #bb-log { height: 150px; }
+</style>
+</head>
+<body data-root="../" data-chapter="state">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 05</div>
+    <h1>공유 상태와 블랙보드</h1>
+    <p class="lead">메시지는 한 에이전트에서 다른 에이전트로 흐른다. 다른 길도 있다. 모두가 읽고 쓰는 <b>공유 공간</b>을 하나 두고, 에이전트들이 거기에 결과를 올리고 거기서 필요한 것을 가져가는 것이다. 파일 시스템, 데이터베이스, 작업 목록, 문서가 모두 공유 상태가 될 수 있다. 공유 상태는 전언 게임의 손실을 없애고 리더가 죽어도 일을 이어 가게 해 주지만, 여럿이 동시에 같은 것을 고칠 때 새로운 버그를 만든다.</p>
+    <ul class="objectives">
+      <li>블랙보드 아키텍처의 세 요소(칠판, 지식원, 제어)를 설명할 수 있다.</li>
+      <li>여러 에이전트가 같은 상태를 읽고-고치고-쓸 때 생기는 갱신 손실을 설명하고, 잠금과 낙관적 동시성 제어로 막을 수 있다.</li>
+      <li>대화 전체, 요약, 아티팩트 중 무엇을 공유할지 토큰과 일관성으로 따질 수 있다.</li>
+      <li>상태를 에이전트 바깥에 두어 장애에서 복구하는 설계를 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="blackboard">
+    <h2>블랙보드 아키텍처</h2>
+    <p><span class="term">블랙보드</span><span class="en">blackboard</span>는 1970년대 음성 인식 시스템 Hearsay-II에서 나온 오래된 구조다. 여러 전문가가 칠판 하나를 둘러싸고 서 있다고 상상하자. 누군가 칠판에 가설을 쓰면, 그것을 다룰 줄 아는 전문가가 나서서 근거를 덧붙이거나 반박한다. 아무도 다음에 누가 말할지 정하지 않는다. <b>칠판의 상태가 다음 행동을 부른다.</b></p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 230" role="img" aria-label="블랙보드 아키텍처: 칠판, 지식원, 제어기">
+        <defs><marker id="m5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--env)"/></marker></defs>
+        <rect x="200" y="60" width="380" height="110" rx="12" class="soft-env"/>
+        <text x="390" y="82" text-anchor="middle" class="t-b" style="fill:var(--env)">칠판 (공유 상태)</text>
+        <g class="t-mono"><rect x="216" y="94" width="80" height="62" rx="6" class="f-elev"/><text x="256" y="110" text-anchor="middle">질문</text>
+        <rect x="306" y="94" width="80" height="62" rx="6" class="f-elev"/><text x="346" y="110" text-anchor="middle">가설</text>
+        <rect x="396" y="94" width="80" height="62" rx="6" class="f-elev"/><text x="436" y="110" text-anchor="middle">근거</text>
+        <rect x="486" y="94" width="80" height="62" rx="6" class="f-elev"/><text x="526" y="110" text-anchor="middle">검증됨</text></g>
+        <rect x="226" y="118" width="60" height="10" rx="2" class="c-user" opacity=".6"/><rect x="316" y="118" width="60" height="10" rx="2" class="c-state" opacity=".6"/><rect x="316" y="132" width="50" height="10" rx="2" class="c-state" opacity=".6"/><rect x="406" y="118" width="60" height="10" rx="2" class="c-ctx" opacity=".6"/><rect x="496" y="118" width="60" height="10" rx="2" class="c-env" opacity=".7"/>
+        <g transform="translate(40,30)"><rect width="130" height="44" rx="10" class="soft-ctx"/><text x="65" y="20" text-anchor="middle" class="t-b">가설 생성기</text><text x="65" y="36" text-anchor="middle" class="t-mono">질문 → 가설</text></g>
+        <g transform="translate(40,150)"><rect width="130" height="44" rx="10" class="soft-ctx"/><text x="65" y="20" text-anchor="middle" class="t-b">근거 수집기</text><text x="65" y="36" text-anchor="middle" class="t-mono">가설 → 근거</text></g>
+        <g transform="translate(610,30)"><rect width="130" height="44" rx="10" class="f-acc2-soft"/><text x="65" y="20" text-anchor="middle" class="t-b">검증자</text><text x="65" y="36" text-anchor="middle" class="t-mono">가설+근거 → 판정</text></g>
+        <g transform="translate(610,150)"><rect width="130" height="44" rx="10" class="f-acc-soft"/><text x="65" y="20" text-anchor="middle" class="t-b">작성자</text><text x="65" y="36" text-anchor="middle" class="t-mono">검증됨 ≥ 3 → 답</text></g>
+        <path d="M170 52 L210 76" stroke="var(--env)" stroke-width="1.8" marker-end="url(#m5)"/><path d="M170 172 L210 150" stroke="var(--env)" stroke-width="1.8" marker-end="url(#m5)"/><path d="M610 52 L570 76" stroke="var(--env)" stroke-width="1.8" marker-end="url(#m5)"/><path d="M610 172 L570 150" stroke="var(--env)" stroke-width="1.8" marker-end="url(#m5)"/>
+        <rect x="320" y="190" width="140" height="30" rx="8" class="soft-state"/><text x="390" y="210" text-anchor="middle" class="t">제어기 · 누가 나설까</text>
+        <path d="M390 170 V188" stroke="var(--state)" stroke-width="1.6" stroke-dasharray="3 3"/>
+        <text x="390" y="40" text-anchor="middle" class="t-dim">에이전트끼리는 직접 말하지 않는다</text>
+      </svg>
+      <figcaption><b>그림 5-1.</b> 블랙보드의 세 요소. <b>칠판</b>은 모두가 보는 공유 상태, <b>지식원</b>(에이전트)은 칠판의 특정 항목에 반응해 새 항목을 쓰는 전문가, <b>제어기</b>는 여럿이 동시에 나서려 할 때 순서를 정한다. LLM 에이전트 시스템에서는 공유 문서, 작업 목록, 이슈 트래커가 칠판 역할을 한다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-board">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>블랙보드 돌려 보기 — 칠판이 다음 행동을 부른다</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <canvas id="bb-cv"></canvas>
+          <div class="pane" id="bb-log" style="margin-top:10px"></div>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>초기 가설 수 <output id="bb-h-out"></output></span><input type="range" id="bb-h" min="2" max="8" step="1" value="5"></label>
+          <label class="ctrl"><span>틀린 가설의 비율 <output id="bb-w-out"></output></span><input type="range" id="bb-w" min="0" max="0.8" step="0.05" value="0.4"></label>
+          <label class="check"><input type="checkbox" id="bb-v" checked> 검증자 에이전트 두기</label>
+          <div class="ctrl"><span>제어 방식</span><div class="seg" id="bb-ctl"><button data-v="fifo" class="on">먼저 온 순서</button><button data-v="pri">유망한 가설 우선</button></div></div>
+          <div class="btns"><button class="btn primary" id="bb-run">▶ 다시 실행</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">칠판 항목</span><span class="v" id="bb-o1">—</span></div>
+        <div class="stat"><span class="k">답에 들어간 틀린 가설</span><span class="v" id="bb-o2">—</span></div>
+        <div class="stat"><span class="k">답이 나오기까지 행동 수</span><span class="v" id="bb-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 검증자를 끄고 틀린 가설 비율을 0.6으로 올려 보자. 작성자는 검증 없이 근거만 붙은 가설을 그대로 답에 쓴다. ② 검증자를 켜면 행동 수는 늘지만 틀린 가설이 걸러진다. ③ 제어 방식을 <b>유망한 가설 우선</b>으로 바꾸면 근거가 많이 붙은 가설부터 처리해 답이 더 빨리 나온다. 블랙보드에서도 “누가 먼저 나설까”는 설계 대상이다.</div>
+    </div>
+  </section>
+
+  <section id="race">
+    <h2>동시에 고치면 생기는 일</h2>
+    <p>공유 상태의 대가는 동시성이다. 두 에이전트가 같은 작업 목록 파일을 고친다고 하자. 둘 다 파일을 읽고, 각자 몇 초에서 수십 초 동안 생각한 뒤(모델 호출), 고친 내용을 통째로 쓴다. 나중에 쓴 쪽이 먼저 쓴 쪽의 변경을 덮어쓴다. 이것이 <span class="term">갱신 손실</span><span class="en">lost update</span>이고, 원인은 <span class="term">경쟁 조건</span><span class="en">race condition</span>이다. LLM 에이전트는 읽기와 쓰기 사이가 길어서 이 문제가 일반 프로그램보다 훨씬 자주 일어난다.</p>
+    <div class="sim" id="sim-race">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>경쟁 조건 — 읽고, 생각하고, 쓰는 사이에</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="rc-mode" style="margin-bottom:10px"><button data-v="none" class="on">보호 없음</button><button data-v="lock">잠금 (비관적)</button><button data-v="occ">버전 확인 (낙관적)</button></div>
+          <canvas id="rc-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>동시에 고치는 에이전트 <output id="rc-n-out"></output></span><input type="range" id="rc-n" min="2" max="6" step="1" value="3"></label>
+          <label class="ctrl"><span>에이전트당 수정 횟수 <output id="rc-k-out"></output></span><input type="range" id="rc-k" min="1" max="5" step="1" value="3"></label>
+          <label class="ctrl"><span>생각 시간 (읽기→쓰기, 초) <output id="rc-t-out"></output></span><input type="range" id="rc-t" min="1" max="30" step="1" value="12"></label>
+          <label class="ctrl"><span>무작위 시드 <output id="rc-s-out"></output></span><input type="range" id="rc-s" min="1" max="20" step="1" value="3"></label>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>읽기 → 생각</span><span><i style="background:var(--env)"></i>쓰기 성공</span><span><i style="background:var(--guard)"></i>덮어씀 · 거절</span><span><i style="background:var(--state)"></i>잠금 대기</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">사라진 변경</span><span class="v" id="rc-o1">—</span></div>
+        <div class="stat"><span class="k">다시 읽고 시도</span><span class="v" id="rc-o2">—</span></div>
+        <div class="stat"><span class="k">잠금 대기 합계</span><span class="v" id="rc-o3">—</span></div>
+        <div class="stat"><span class="k">모두 끝난 시각</span><span class="v" id="rc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <b>보호 없음</b>에서 생각 시간을 3초에서 30초로 올려 보자. 사라지는 변경이 두세 개에서 대부분으로 늘어난다. 실행 기록에는 모두 “저장 완료”로 남는다는 것이 더 무섭다. ② <b>잠금</b>은 손실이 없지만, 한 에이전트가 생각하는 동안 나머지가 기다려(보라) 전체 시간이 크게 늘어난다. ③ <b>버전 확인</b>은 쓰기 직전에 “내가 읽은 뒤 바뀌었나?”만 본다. 바뀌었으면 거절하고 다시 읽게 한다. 생각 시간이 짧아 충돌이 드물면 기다림 없이 끝나지만, 생각 시간이 길어 충돌이 잦으면 거절과 재시도가 쌓여 잠금보다도 느려진다. ④ 그래서 더 근본적인 해법은 <b>같은 것을 고치지 않게 나누는 것</b>이다(파일·항목 단위 소유권, 3장의 범위).</div>
+    </div>
+    <div class="code"><div class="bar"><span>낙관적 동시성 제어로 쓰는 도구</span><span>pseudo</span></div><pre><span class="k">def</span> <span class="f">update_todo</span>(path, new_text, <span class="n">read_version</span>):
+    cur = store.get(path)
+    <span class="k">if</span> cur.version != read_version:
+        <span class="k">return</span> <span class="s">"충돌: 읽은 뒤 다른 에이전트가 고쳤습니다 (v{read}→v{cur}). 다시 읽고 병합하세요."</span>
+    store.put(path, new_text, version=cur.version + <span class="n">1</span>)
+    <span class="k">return</span> <span class="s">"저장됨 v{cur.version + 1}"</span></pre></div>
+  </section>
+
+  <section id="what">
+    <h2>무엇을 공유할까</h2>
+    <p>에이전트들이 서로의 무엇을 볼 수 있게 할지는 스펙트럼이다. 한쪽 끝은 <b>모든 에이전트가 전체 대화 기록을 공유</b>하는 것이다. 서로의 결정을 다 알기 때문에 어긋나지 않지만, 창이 빨리 차고 하위 에이전트를 쓰는 이유(격리)가 사라진다. 다른 끝은 <b>최종 요약만 공유</b>하는 것이다. 가볍지만 서로 모르는 결정이 충돌한다. 그 사이에 <b>결정 기록과 아티팩트</b>를 공유하는 방법이 있다. 대화 전체 대신 “지금까지 정한 것”과 “만든 것”만 칠판에 남긴다.</p>
+    <div class="sim" id="sim-share">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>공유 전략 비교 — 토큰, 일관성, 격리</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sh-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트 수 <output id="sh-n-out"></output></span><input type="range" id="sh-n" min="2" max="10" step="1" value="4"></label>
+          <label class="ctrl"><span>에이전트당 작업 기록 (토큰) <output id="sh-l-out"></output></span><input type="range" id="sh-l" min="5000" max="80000" step="1000" value="30000"></label>
+          <label class="ctrl"><span>에이전트당 내리는 결정 수 <output id="sh-d-out"></output></span><input type="range" id="sh-d" min="1" max="20" step="1" value="6"></label>
+          <label class="ctrl"><span>결정 사이 결합도 <output id="sh-c-out"></output></span><input type="range" id="sh-c" min="0" max="1" step="0.05" value="0.5"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전체 공유 · 에이전트 창</span><span class="v" id="sh-o1">—</span></div>
+        <div class="stat"><span class="k">결정 기록 공유 · 에이전트 창</span><span class="v" id="sh-o2">—</span></div>
+        <div class="stat"><span class="k">요약만 · 충돌 기대 수</span><span class="v" id="sh-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 에이전트 10개, 기록 8만이면 <b>전체 공유</b>는 에이전트마다 80만 토큰을 봐야 한다. 불가능하다. ② 결합도를 0.9로 올리면 <b>요약만</b> 공유하는 쪽의 충돌이 급증한다. 결정을 공유하지 않으면 얽힌 일은 어긋난다(1장의 경고). ③ <b>결정 기록</b>은 결정 하나에 수십 토큰이면 된다. “API 응답은 snake_case, 날짜는 ISO 8601, 오류는 {code,message}”. 대부분의 상황에서 가장 좋은 절충이다.</div>
+    </div>
+  </section>
+
+  <section id="outside">
+    <h2>상태는 에이전트 바깥에</h2>
+    <p>2장에서 리더는 단일 장애점이었다. 리더의 계획과 진행 상황이 리더의 컨텍스트 안에만 있으면, 리더가 멈추는 순간 모두 사라진다. 계획, 위임 기록, 각 워커의 상태, 만들어진 아티팩트를 <b>바깥 저장소</b>에 두면 새 리더가 그것을 읽고 이어 갈 수 있다. 장시간 돌아가는 시스템에서는 리더의 컨텍스트가 넘쳐 새로 시작해야 할 때도 같은 원리로 이어 간다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 170" role="img" aria-label="상태를 바깥 저장소에 두면 리더를 다시 띄울 수 있다">
+        <defs><marker id="m5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--env)"/></marker></defs>
+        <g transform="translate(40,40)"><circle cx="40" cy="40" r="34" class="soft-guard" stroke-width="2" stroke-dasharray="5 4"/><text x="40" y="38" text-anchor="middle" class="t-b" style="fill:var(--guard)">리더 v1</text><text x="40" y="56" text-anchor="middle" class="t-mono">창 초과 ✕</text></g>
+        <g transform="translate(300,20)"><rect width="190" height="120" rx="12" class="soft-env"/><text x="95" y="24" text-anchor="middle" class="t-b" style="fill:var(--env)">바깥 저장소</text>
+          <g class="t-mono"><text x="16" y="50">plan.md</text><text x="110" y="50" style="fill:var(--text-faint)">단계 3/5</text><text x="16" y="70">tasks.json</text><text x="110" y="70" style="fill:var(--text-faint)">위임 7 · 완료 5</text><text x="16" y="90">decisions.md</text><text x="110" y="90" style="fill:var(--text-faint)">결정 12</text><text x="16" y="110">artifacts/</text><text x="110" y="110" style="fill:var(--text-faint)">표 · 초안</text></g></g>
+        <g transform="translate(620,40)"><circle cx="40" cy="40" r="34" class="f-acc-soft" stroke-width="2"/><text x="40" y="38" text-anchor="middle" class="t-b" style="fill:var(--accent)">리더 v2</text><text x="40" y="56" text-anchor="middle" class="t-mono">이어서 시작</text></g>
+        <path d="M118 70 H296" stroke="var(--env)" stroke-width="2" marker-end="url(#m5b)"/><text x="206" y="62" text-anchor="middle" class="t-mono">계속 기록</text>
+        <path d="M494 80 H616" stroke="var(--env)" stroke-width="2" marker-end="url(#m5b)" class="flow"/><text x="556" y="72" text-anchor="middle" class="t-mono">읽고 재개</text>
+      </svg>
+      <figcaption><b>그림 5-2.</b> 리더가 계획과 진행 상황을 계속 바깥에 기록하면, 리더의 창이 넘치거나 프로세스가 죽어도 새 리더가 같은 자리에서 이어 간다. 워커도 마찬가지다. 에이전트는 바꿔 끼울 수 있는 부품이 되고, 상태가 시스템의 기억이 된다.</figcaption>
+    </figure>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>블랙보드는 칠판(공유 상태), 지식원(에이전트), 제어기로 이뤄진다. 칠판의 변화가 다음 행동을 부르므로 누가 나설지 미리 정하지 않아도 된다.</li>
+      <li>읽고-생각하고-쓰는 사이가 긴 LLM 에이전트는 경쟁 조건에 특히 약하다. 잠금은 안전하지만 느리고, 버전 확인은 충돌이 드물 때 빠르다. 가장 좋은 것은 소유권을 나눠 충돌 자체를 없애는 것이다.</li>
+      <li>대화 전체 공유는 창을 터뜨리고, 요약만 공유하면 결정이 어긋난다. 결정 기록과 아티팩트를 공유하는 것이 대개 최선이다.</li>
+      <li>계획과 진행 상황을 에이전트 바깥에 두면 리더를 다시 띄워 이어 갈 수 있다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 블랙보드 구조에서 “다음에 어떤 에이전트가 일할지”를 정하는 것은?</p><div class="opts">
+        <button class="opt">리더 에이전트의 계획</button>
+        <button class="opt" data-correct>칠판에 올라온 항목과 제어기의 우선순위</button>
+        <button class="opt">에이전트 이름의 알파벳 순서</button>
+      </div><div class="quiz-exp">에이전트는 자신이 다룰 수 있는 항목이 칠판에 나타나면 나선다. 여럿이 나서려 하면 제어기가 고른다.</div></div>
+      <div class="quiz-q"><p>2. 두 에이전트가 같은 문서를 각자 읽고 30초 뒤 통째로 저장했다. 둘 다 “저장 완료”를 받았는데 한쪽 변경이 없다. 원인은?</p><div class="opts">
+        <button class="opt">저장소 장애</button>
+        <button class="opt" data-correct>갱신 손실: 나중에 쓴 쪽이 먼저 쓴 쪽을 덮어썼다</button>
+        <button class="opt">모델 환각</button>
+      </div><div class="quiz-exp">둘 다 같은 옛 버전을 읽고 고쳤기 때문이다. 버전 확인을 넣으면 두 번째 쓰기가 거절되고 다시 읽게 된다.</div></div>
+      <div class="quiz-q"><p>3. 충돌이 드물고 생각 시간이 긴 에이전트들에게 가장 알맞은 동시성 제어는?</p><div class="opts">
+        <button class="opt">파일 전체를 잠그고 생각하는 동안 쥐고 있기</button>
+        <button class="opt" data-correct>쓰기 직전에 버전을 확인하는 낙관적 방식</button>
+        <button class="opt">아무것도 하지 않기</button>
+      </div><div class="quiz-exp">잠금은 생각 시간 내내 다른 에이전트를 세운다. 충돌이 드물면 낙관적 방식이 거의 기다림 없이 손실을 막는다.</div></div>
+      <div class="quiz-q"><p>4. 프런트엔드와 백엔드 워커가 API 이름 규칙을 서로 다르게 정해 합칠 수 없었다. 무엇을 공유했어야 하나?</p><div class="opts">
+        <button class="opt">서로의 대화 기록 전체</button>
+        <button class="opt" data-correct>정해진 결정 사항(이름 규칙, 형식)의 기록</button>
+        <button class="opt">최종 결과 요약</button>
+      </div><div class="quiz-exp">결정 기록은 짧고, 결정이 어긋나는 것을 막는다. 대화 전체는 너무 크고, 최종 요약은 너무 늦다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 블랙보드 ---------------- */
+(function () {
+  let S = null, acc = 0;
+  const cv = MA.canvas("bb-cv", { aspect: 0.5, draw });
+  const ctl = MA.seg("bb-ctl", () => reset());
+  const COLS = ["질문", "가설", "근거", "검증됨", "답"];
+  const KS = [["gen", "가설 생성기", "worker"], ["ev", "근거 수집기", "worker"], ["ver", "검증자", "judge"], ["wr", "작성자", "lead"]];
+  function reset() {
+    const H = MA.val("bb-h"), W = MA.val("bb-w"), r = MA.rng(5 + H);
+    S = { items: [{ col: 0, id: 0, label: "Q" }], acts: 0, log: [], hyp: [], done: false, active: null, H, wrongIn: 0, wantVer: MA.el("bb-v").checked };
+    for (let i = 0; i < H; i++) S.hyp.push({ id: i, wrong: r() < W, ev: 0, state: "new", promise: r() });
+    MA.el("bb-log").innerHTML = "";
+    log("plan", "칠판: 질문 Q 게시");
+  }
+  function log(k, s) {
+    S.log.push(s);
+    const cls = { plan: "k-state", worker: "k-ctx", judge: "k-acc2", lead: "k-acc", fail: "k-guard" }[k] || "";
+    MA.el("bb-log").insertAdjacentHTML("beforeend", `<div class="ln new ${cls}">#${S.acts} ${MA.esc(s)}</div>`);
+    MA.el("bb-log").scrollTop = 1e6;
+  }
+  function step() {
+    if (S.done) return;
+    // 나설 수 있는 지식원과 대상을 모은다
+    const cand = [];
+    const gen = S.hyp.find((h) => h.state === "new");
+    if (gen) cand.push(["gen", gen]);
+    S.hyp.filter((h) => h.state === "posted" && h.ev < 2).forEach((h) => cand.push(["ev", h]));
+    if (S.wantVer) S.hyp.filter((h) => h.state === "posted" && h.ev >= 2).forEach((h) => cand.push(["ver", h]));
+    const ready = S.hyp.filter((h) => h.state === "ok" || (!S.wantVer && h.state === "posted" && h.ev >= 2));
+    if (ready.length >= 3 || (!cand.length && ready.length)) cand.push(["wr", null]);
+    if (!cand.length) { S.done = true; log("fail", "더 나설 에이전트가 없음 · 답을 만들지 못함"); return; }
+    let pick = cand[0];
+    if (ctl() === "pri") { // 유망(근거 많고 promise 높은 것) 우선, 작성 가능하면 작성
+      const w = cand.find((c) => c[0] === "wr"); if (w) pick = w;
+      else pick = cand.slice().sort((a, b) => ((b[1] ? b[1].ev + b[1].promise : 9) - (a[1] ? a[1].ev + a[1].promise : 9)))[0];
+    }
+    S.acts++;
+    const [k, h] = pick;
+    S.active = k;
+    if (k === "gen") { h.state = "posted"; S.items.push({ col: 1, id: h.id, label: "H" + (h.id + 1), wrong: h.wrong }); log("worker", `가설 생성기: H${h.id + 1} 게시`); }
+    else if (k === "ev") { h.ev++; S.items.push({ col: 2, id: h.id, label: "E" + (h.id + 1), wrong: h.wrong }); log("worker", `근거 수집기: H${h.id + 1}에 근거 ${h.ev}건${h.wrong ? " (약함)" : ""}`); }
+    else if (k === "ver") { if (h.wrong) { h.state = "rejected"; log("fail", `검증자: H${h.id + 1} 반려 — 근거가 가설을 뒷받침하지 않음`); } else { h.state = "ok"; S.items.push({ col: 3, id: h.id, label: "H" + (h.id + 1) + "✓" }); log("judge", `검증자: H${h.id + 1} 통과`); } }
+    else { const used = ready.slice(0, 3); S.wrongIn = used.filter((x) => x.wrong).length; S.items.push({ col: 4, id: 99, label: "답" }); used.forEach((x) => (x.state = "used")); S.done = true; log("lead", `작성자: ${used.map((x) => "H" + (x.id + 1)).join(", ")}로 답 작성${S.wrongIn ? ` — 틀린 가설 ${S.wrongIn}개 포함` : ""}`); }
+  }
+  function draw(c, w, h) {
+    if (!S) reset();
+    const cw = (w - 20) / COLS.length, top = 48;
+    c.fillStyle = MA.alpha(MA.col("env"), 0.06); MA.rrect(c, 6, top - 22, w - 12, h - top + 16, 10); c.fill();
+    c.strokeStyle = MA.alpha(MA.col("env"), 0.5); c.stroke();
+    COLS.forEach((name, i) => {
+      MA.text(c, name, 10 + i * cw + cw / 2, top - 8, { size: 11.5, weight: 700, align: "center", color: MA.col("env") });
+      if (i) { c.strokeStyle = MA.alpha(MA.col("env"), 0.2); c.beginPath(); c.moveTo(10 + i * cw, top); c.lineTo(10 + i * cw, h - 10); c.stroke(); }
+      const its = S.items.filter((x) => x.col === i);
+      its.forEach((it, k) => {
+        const x = 16 + i * cw, y = top + 4 + k * 18, ww = cw - 12;
+        if (y > h - 24) return;
+        const hy = S.hyp[it.id];
+        const rej = hy && hy.state === "rejected" && i < 3;
+        c.fillStyle = MA.alpha(rej ? MA.col("guard") : i === 4 ? MA.col("accent") : i === 3 ? MA.col("env") : i === 0 ? MA.col("user") : i === 1 ? MA.col("state") : MA.col("ctx"), 0.3);
+        MA.rrect(c, x, y, ww, 14, 3); c.fill();
+        MA.text(c, it.label + (rej ? " ✕" : ""), x + 5, y + 7, { size: 10.5, mono: true, color: rej ? MA.col("guard") : MA.col("text") });
+      });
+    });
+    // 지식원 줄
+    KS.forEach(([k, name, role], i) => {
+      if (k === "ver" && !S.wantVer) return;
+      const x = 14 + i * ((w - 28) / 4) + 40;
+      MA.node(c, x, 14, 8, role, null, { glow: S.active === k ? 1 : 0 });
+      MA.text(c, name, x + 13, 14, { size: 11, weight: S.active === k ? 700 : 400, color: S.active === k ? MA.col("text") : MA.col("text-dim") });
+    });
+    MA.set("bb-o1", String(S.items.length));
+    MA.set("bb-o2", S.done ? String(S.wrongIn) : "—", S.done ? (S.wrongIn ? "bad" : "good") : "");
+    MA.set("bb-o3", String(S.acts));
+  }
+  const L = MA.loop(MA.el("bb-cv"), (dt) => {
+    if (!S || S.done) return;
+    acc += dt; if (acc < 0.6) return; acc = 0;
+    step(); cv.redraw();
+  });
+  MA.el("bb-run").addEventListener("click", () => { reset(); cv.redraw(); });
+  MA.el("bb-v").addEventListener("change", () => { reset(); cv.redraw(); });
+  MA.wire(["bb-h", "bb-w"], () => { reset(); cv.redraw(); }, { "bb-w": (v) => MA.pct(v), "bb-h": (v) => v + "개" });
+  if (MA.reduced()) { while (!S.done) step(); cv.redraw(); } else L.start();
+})();
+
+/* ---------------- 2. 경쟁 조건 ---------------- */
+(function () {
+  let mode = "none";
+  const cv = MA.canvas("rc-cv", { aspect: 0.6, draw });
+  function simulate() {
+    const n = MA.val("rc-n"), K = MA.val("rc-k"), T = MA.val("rc-t"), r = MA.rng(MA.val("rc-s") * 97);
+    // 이벤트 기반: 각 에이전트는 시작 지연 후 read → think → write 를 K번
+    const ag = Array.from({ length: n }, (_, i) => ({ i, t: r() * 20, left: K, spans: [], readV: 0, wait: 0, retries: 0 }));
+    let ver = 0, lock = null, applied = 0, guard = 0;
+    const lostSet = new Set();
+    const lockQ = [];
+    const pending = []; // {a, readAt, readV, writeAt}
+    // 단순 시뮬레이션: 시간 순으로 각 에이전트의 다음 행동 처리
+    while (guard++ < 2000) {
+      const cand = ag.filter((a) => a.left > 0 && !a.busy).sort((x, y) => x.t - y.t)[0];
+      const p = pending.sort((x, y) => x.writeAt - y.writeAt)[0];
+      const nextRead = cand ? cand.t : Infinity, nextWrite = p ? p.writeAt : Infinity;
+      if (nextRead === Infinity && nextWrite === Infinity) break;
+      if (nextRead <= nextWrite) {
+        const a = cand;
+        if (mode === "lock" && lock !== null) { const free = Math.max(...pending.map((q) => q.writeAt)); a.wait += free - a.t; a.spans.push({ s: a.t, e: free, k: "wait" }); a.t = free + 0.01; continue; }
+        if (mode === "lock") lock = a.i;
+        const think = T * (0.6 + r() * 0.8);
+        a.busy = true;
+        pending.push({ a, readAt: a.t, readV: ver, writeAt: a.t + think, base: applied });
+        a.spans.push({ s: a.t, e: a.t + think, k: "think" });
+      } else {
+        pending.splice(pending.indexOf(p), 1);
+        const a = p.a;
+        a.busy = false;
+        if (mode === "occ" && p.readV !== ver) {
+          a.spans.push({ s: p.writeAt, e: p.writeAt + 0.6, k: "reject" });
+          a.retries++; a.t = p.writeAt + 0.6; continue; // 다시 읽는다 (left 유지)
+        }
+        const clobber = mode === "none" && p.readV !== ver;
+        if (clobber) for (let v = p.readV + 1; v <= ver; v++) lostSet.add(v); // 읽은 뒤 들어온 변경들을 덮어씀
+        ver++; applied++;
+        a.spans.push({ s: p.writeAt, e: p.writeAt + 0.6, k: clobber ? "clobber" : "write" });
+        a.left--; a.t = p.writeAt + 0.6 + 6 + r() * 18; // 다른 일을 하다가 다음 수정
+        if (mode === "lock") lock = null;
+      }
+    }
+    const end = Math.max(...ag.flatMap((a) => a.spans.map((s) => s.e)));
+    return { ag, lost: lostSet.size, retries: ag.reduce((x, a) => x + a.retries, 0), wait: ag.reduce((x, a) => x + a.wait, 0), end, total: n * K };
+  }
+  function draw(c, w, h) {
+    const R = simulate(), n = R.ag.length;
+    const l = 40, rgt = w - 12, top = 14, rowH = Math.min(40, (h - 50) / n);
+    const X = (t) => l + (t / (R.end * 1.02)) * (rgt - l);
+    R.ag.forEach((a, i) => {
+      const y = top + i * rowH;
+      MA.text(c, "A" + (i + 1), 18, y + rowH / 2, { size: 11, mono: true, align: "center", color: MA.col("text-dim") });
+      c.fillStyle = MA.col("surface"); c.fillRect(l, y + 4, rgt - l, rowH - 8);
+      a.spans.forEach((s) => {
+        const col = s.k === "think" ? "ctx" : s.k === "write" ? "env" : s.k === "wait" ? "state" : "guard";
+        c.fillStyle = MA.alpha(MA.col(col), s.k === "think" ? 0.35 : 0.85);
+        const x1 = X(s.s), x2 = Math.max(X(s.e), x1 + (s.k === "think" || s.k === "wait" ? 1 : 4));
+        MA.rrect(c, x1, y + 6, x2 - x1, rowH - 12, 3); c.fill();
+        if (s.k === "think") { c.fillStyle = MA.col("ctx"); c.fillRect(x1, y + 6, 2.5, rowH - 12); }
+      });
+    });
+    const ax = top + n * rowH + 6;
+    MA.line(c, [[l, ax], [rgt, ax]], MA.col("axis"), 1);
+    for (let t = 0; t <= R.end; t += Math.max(5, Math.round(R.end / 6 / 5) * 5)) { MA.text(c, t + "s", X(t), ax + 10, { size: 10, mono: true, align: "center", color: MA.col("text-faint") }); }
+    MA.set("rc-o1", `${R.lost} / ${R.total}`, R.lost ? "bad" : "good");
+    MA.set("rc-o2", R.retries + "회", R.retries ? "warn" : "good");
+    MA.set("rc-o3", Math.round(R.wait) + "s", R.wait > R.end * 0.5 ? "bad" : R.wait ? "warn" : "good");
+    MA.set("rc-o4", Math.round(R.end) + "s");
+  }
+  MA.seg("rc-mode", (v) => { mode = v; cv.redraw(); });
+  MA.wire(["rc-n", "rc-k", "rc-t", "rc-s"], () => cv.redraw(), { "rc-t": (v) => v + "s", "rc-n": (v) => v + "개", "rc-k": (v) => v + "회" });
+})();
+
+/* ---------------- 3. 공유 전략 ---------------- */
+(function () {
+  const cv = MA.canvas("sh-cv", { aspect: 0.62, draw });
+  function calc() {
+    const n = MA.val("sh-n"), Lg = MA.val("sh-l"), d = MA.val("sh-d"), c = MA.val("sh-c");
+    const own = Lg, decTok = 60, sumTok = 1500;
+    const pairs = (n * (n - 1)) / 2;
+    const S = [
+      { name: "대화 전체 공유", win: own * n, conflict: 0, iso: 0, col: "guard" },
+      { name: "결정 기록 + 아티팩트", win: own + (n - 1) * d * decTok + 2000, conflict: pairs * d * c * 0.04, iso: 0.85, col: "env" },
+      { name: "최종 요약만", win: own + (n - 1) * sumTok, conflict: pairs * d * c * 0.35, iso: 1, col: "tool" },
+    ];
+    return { S, n };
+  }
+  function draw(c, w, h) {
+    const { S } = calc();
+    const W = 200000;
+    const groups = [["에이전트 하나가 보는 창", (s) => s.win, (v) => MA.si(v), Math.max(W * 1.2, ...S.map((s) => s.win))], ["결정 충돌 기대 수", (s) => s.conflict, (v) => v.toFixed(1), Math.max(3, ...S.map((s) => s.conflict))], ["격리 (탐색 잡음 차단)", (s) => s.iso, (v) => MA.pct(v), 1]];
+    const gh = (h - 10) / groups.length;
+    groups.forEach(([title, get, fmt, max], gi) => {
+      const y0 = 6 + gi * gh;
+      MA.text(c, title, 10, y0 + 10, { size: 12, weight: 700, color: MA.col("text-dim") });
+      S.forEach((s, i) => {
+        const y = y0 + 24 + i * ((gh - 30) / 3), bh = Math.min(16, (gh - 30) / 3 - 5);
+        MA.text(c, s.name, 10, y + bh / 2, { size: 11, color: MA.col("text") });
+        const bx = 150, bw = w - bx - 70;
+        MA.hbar(c, bx, y, bw, bh, get(s) / max, MA.col(s.col), { label: fmt(get(s)) });
+        if (gi === 0) { const wx = bx + bw * (W / max); MA.line(c, [[wx, y - 2], [wx, y + bh + 2]], MA.col("text"), 1.4, [3, 2]); }
+      });
+      if (gi === 0) MA.text(c, "┆ 200K 창", 150 + (w - 220) * (W / max) + 4, y0 + 10, { size: 10, mono: true, color: MA.col("text-faint") });
+    });
+    MA.set("sh-o1", MA.si(S[0].win), S[0].win > W ? "bad" : "warn");
+    MA.set("sh-o2", MA.si(S[1].win), S[1].win > W ? "bad" : "good");
+    MA.set("sh-o3", S[2].conflict.toFixed(1), S[2].conflict > 2 ? "bad" : S[2].conflict > 0.5 ? "warn" : "good");
+  }
+  MA.wire(["sh-n", "sh-l", "sh-d", "sh-c"], () => cv.redraw(), { "sh-l": MA.si, "sh-c": (v) => MA.pct(v), "sh-n": (v) => v + "개", "sh-d": (v) => v + "개" });
+})();
+</script>
+</body>
+</html>

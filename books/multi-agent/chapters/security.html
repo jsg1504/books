@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>신뢰 경계와 보안 · ChorusBook</title>
+<meta name="description" content="에이전트 사이로 번지는 프롬프트 주입, 한 에이전트에 모이지 않아도 시스템 수준에서 완성되는 치명적 삼중주, 격리 에이전트 패턴과 사람 승인의 배치를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #tf-cv { cursor: pointer; }
+  .capbox { display: grid; gap: 6px; }
+  .capbox .row { display: flex; align-items: center; gap: 6px; font-size: 13px; flex-wrap: wrap; }
+  .capbox .row b { min-width: 52px; }
+  .capbox button { border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 1px 9px; font-family: var(--mono); font-size: 11.5px; cursor: pointer; color: var(--text-faint); }
+  .capbox button.on { border-color: var(--k); color: var(--k); background: color-mix(in srgb, var(--k) 12%, transparent); font-weight: 700; }
+</style>
+</head>
+<body data-root="../" data-chapter="security">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 10</div>
+    <h1>신뢰 경계와 보안</h1>
+    <p class="lead">에이전트가 여럿이면 공격 표면도 여럿이다. 웹 문서 하나에 숨은 지시문은 그것을 읽은 리서처를 속이고, 리서처의 요약에 섞여 리더에게 가고, 리더의 지시서에 섞여 메일을 보낼 수 있는 에이전트에게 간다. 에이전트 사이의 메시지는 <b>신뢰의 경계를 넘는 통로</b>다. 이 장에서는 주입이 에이전트 사이로 번지는 모습을 보고, 각 에이전트에는 문제가 없는데 시스템 전체로는 위험이 완성되는 경우를 찾고, 그것을 끊는 구조를 설계한다.</p>
+    <ul class="objectives">
+      <li>프롬프트 주입이 메시지를 따라 다른 에이전트로 번지는 경로를 설명할 수 있다.</li>
+      <li>치명적 삼중주를 에이전트 단위와 시스템 경로 단위로 점검할 수 있다.</li>
+      <li>격리 에이전트(이중 LLM) 패턴과 구조화된 출력으로 오염 전파를 끊을 수 있다.</li>
+      <li>사람 승인을 어디에 둘지 위험 감소와 승인 피로로 따질 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="spread">
+    <h2>주입은 메시지를 타고 번진다</h2>
+    <p><span class="term">프롬프트 주입</span><span class="en">prompt injection</span>은 모델이 읽는 데이터 안에 지시문을 숨겨 원래 지시를 덮어쓰게 하는 공격이다. 단일 에이전트에서는 “웹 문서를 읽은 에이전트가 속는다”로 끝난다. 멀티에이전트에서는 속은 에이전트가 <b>다른 에이전트에게 보내는 메시지</b>가 다음 공격 매체가 된다. 받는 쪽은 그 메시지를 동료가 보낸 믿을 만한 지시로 읽기 쉽다. 신뢰할 수 없는 입력이 신뢰된 채널로 <b>세탁</b>되는 것이다.</p>
+    <div class="sim" id="sim-infect">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>오염 전파 — 웹 문서 한 장에서 메일 발송까지</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="if-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>읽은 에이전트가 속을 확률 <output id="if-a-out"></output></span><input type="range" id="if-a" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="ctrl"><span>메시지로 옮겨 갈 확률 β <output id="if-b-out"></output></span><input type="range" id="if-b" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="check"><input type="checkbox" id="if-q"> 격리 리더 (웹은 도구 없는 에이전트만 읽음)</label>
+          <label class="check"><input type="checkbox" id="if-s"> 구조화된 메시지만 허용 (자유 문장 제거)</label>
+          <label class="check"><input type="checkbox" id="if-h"> 외부 전송 전 사람 승인</label>
+          <div class="btns"><button class="btn primary" id="if-run">▶ 한 번 실행</button></div>
+          <div class="legend"><span><i style="background:var(--guard)"></i>오염됨</span><span><i style="background:var(--env)"></i>깨끗함</span><span><i style="background:var(--tool)"></i>외부 입력</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">이번 실행</span><span class="v" id="if-o1">—</span></div>
+        <div class="stat"><span class="k">유출 확률 (2,000회)</span><span class="v" id="if-o2">—</span></div>
+        <div class="stat"><span class="k">평균 오염 에이전트 수</span><span class="v" id="if-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 방어 없이 여러 번 실행해 보자. 리서처 → 리더 → 메일 담당으로 오염이 번지고, 고객 DB를 읽은 분석가의 결과가 함께 나간다. ② <b>격리 리더</b>를 켜면 웹 문서는 도구가 전혀 없는 읽기 전용 에이전트만 본다. 그 에이전트는 속아도 할 수 있는 일이 없다. ③ <b>구조화된 메시지</b>는 β를 크게 낮춘다. 정해진 필드(숫자, 날짜, 열거형)에는 “이전 지시를 무시하고…”가 들어갈 자리가 적다. ④ 방어는 한 겹이 아니라 여러 겹이다. 셋을 모두 켜야 유출 확률이 거의 0이 된다.</div>
+    </div>
+  </section>
+
+  <section id="trifecta">
+    <h2>치명적 삼중주는 시스템 수준에서 완성된다</h2>
+    <p>Simon Willison은 2025년 에이전트 보안의 핵심 위험을 <span class="term">치명적 삼중주</span><span class="en">lethal trifecta</span>로 정리했다. <b>비공개 데이터에 접근</b>하고, <b>신뢰할 수 없는 입력을 읽고</b>, <b>외부로 통신</b>할 수 있는 에이전트는 주입 한 번으로 데이터를 유출할 수 있다. 7장에서는 이 셋이 한 에이전트에 모이지 않게 도구를 나눴다. 그런데 멀티에이전트에서는 셋이 <b>서로 다른 에이전트에 흩어져 있어도</b> 메시지 경로로 이어지면 같은 위험이 생긴다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 200" role="img" aria-label="치명적 삼중주와 시스템 수준 경로">
+        <g transform="translate(150,100)" fill-opacity=".16" stroke-width="2">
+          <circle cx="-38" cy="-18" r="58" fill="var(--tool)" stroke="var(--tool)"/>
+          <circle cx="38" cy="-18" r="58" fill="var(--state)" stroke="var(--state)"/>
+          <circle cx="0" cy="40" r="58" fill="var(--guard)" stroke="var(--guard)"/>
+          <text x="-70" y="-40" text-anchor="middle" class="t-b" style="fill:var(--tool)">신뢰 못 할 입력</text>
+          <text x="72" y="-40" text-anchor="middle" class="t-b" style="fill:var(--state)">비공개 데이터</text>
+          <text x="0" y="84" text-anchor="middle" class="t-b" style="fill:var(--guard)">외부 통신</text>
+          <text x="0" y="4" text-anchor="middle" class="t-b" style="fill:var(--guard)">유출</text>
+        </g>
+        <g transform="translate(360,40)">
+          <text x="0" y="0" class="t-b">에이전트마다는 안전해 보여도</text>
+          <g transform="translate(0,30)"><rect width="100" height="44" rx="10" class="soft-tool"/><text x="50" y="20" text-anchor="middle" class="t-b">리서처</text><text x="50" y="36" text-anchor="middle" class="t-mono">웹 읽기</text></g>
+          <g transform="translate(140,30)"><rect width="100" height="44" rx="10" class="soft-state"/><text x="50" y="20" text-anchor="middle" class="t-b">분석가</text><text x="50" y="36" text-anchor="middle" class="t-mono">고객 DB</text></g>
+          <g transform="translate(280,30)"><rect width="100" height="44" rx="10" class="soft-guard"/><text x="50" y="20" text-anchor="middle" class="t-b">발송 담당</text><text x="50" y="36" text-anchor="middle" class="t-mono">이메일</text></g>
+          <path d="M100 52 H136 M240 52 H276" stroke="var(--guard)" stroke-width="2.4" class="flow"/>
+          <text x="190" y="110" text-anchor="middle" class="t-acc" style="fill:var(--guard)">메시지 경로가 셋을 잇는다 → 시스템 전체가 삼중주</text>
+          <text x="190" y="132" text-anchor="middle" class="t-dim">오염된 요청 → DB 조회 결과 → 외부 메일</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 10-1.</b> 왼쪽: 세 능력이 한곳에 모이면 유출이 가능하다. 오른쪽: 각 에이전트는 셋 중 하나만 갖지만, 리서처의 오염된 출력이 분석가의 지시가 되고, 분석가의 결과가 발송 담당의 본문이 되면 시스템 전체가 삼중주를 이룬다. 점검은 에이전트 단위가 아니라 <b>경로 단위</b>로 한다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-trifecta">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>경로 점검기 — 능력과 연결을 바꿔 보기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="tf-cv"></canvas><p style="margin:6px 0 0;font-size:13px;color:var(--text-faint)">두 에이전트 사이의 선을 눌러 메시지 연결을 켜고 끄세요.</p></div>
+        <div class="sim-controls">
+          <div class="capbox" id="tf-caps"></div>
+          <label class="check"><input type="checkbox" id="tf-clean"> 경계마다 구조화 검사 (오염이 넘어가지 않음)</label>
+          <div class="btns"><button class="btn" id="tf-reset">기본 구성</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">한 에이전트에 모인 삼중주</span><span class="v" id="tf-o1">—</span></div>
+        <div class="stat"><span class="k">시스템 경로 삼중주</span><span class="v" id="tf-o2">—</span></div>
+        <div class="stat"><span class="k">위험 경로</span><span class="v" id="tf-o3" style="font-size:14px">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본 구성에서 에이전트마다는 능력이 하나씩뿐인데 빨간 경로가 생긴다. ② 선을 하나씩 끊어 보며 경로가 사라지는 지점을 찾아보자. 리더 → 분석가만 끊어서는 부족하다. 분석가의 결과(보라)가 리더를 거쳐 발송 쪽으로 흐르고, 리더는 이미 리서처에게서 오염(빨강)을 받았기 때문이다. 기준은 <b>오염과 비공개 데이터가 같은 에이전트에서 만나 외부로 나갈 수 있는가</b>다. 분석가 → 리더나 리서처 → 리더를 끊으면 경로가 사라진다. 실무에서는 리서처의 결과를 별도의 격리 경로로 받는 식으로 설계한다. ③ 연결을 그대로 두고 <b>구조화 검사</b>를 켜도 경로가 끊긴다. 오염된 자유 문장이 경계를 넘지 못하기 때문이다(이 실험은 검사가 완벽하다고 가정한다. 실제로는 7장의 비평가처럼 놓침이 있다).</div>
+    </div>
+  </section>
+
+  <section id="quarantine">
+    <h2>격리 에이전트 패턴</h2>
+    <p>오염 전파를 구조적으로 끊는 대표적인 방법은 Willison이 2023년에 제안한 <b>이중 LLM</b> 패턴이다. 도구를 쓰는 <b>특권 에이전트</b>는 신뢰할 수 없는 텍스트를 <b>절대 직접 보지 않는다</b>. 신뢰할 수 없는 텍스트는 도구가 전혀 없는 <span class="term">격리 에이전트</span><span class="en">quarantined agent</span>가 읽고, 결과를 변수(예: <code>$summary1</code>)나 정해진 형식의 값으로만 돌려준다. 특권 에이전트는 그 변수를 내용을 보지 않은 채 다음 도구에 넘긴다. 2025년 Google DeepMind의 CaMeL은 이 생각을 확장해, 특권 쪽이 만든 계획을 코드로 실행하며 각 값이 어디서 왔는지(출처)를 추적하고 정책으로 흐름을 막는다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 210" role="img" aria-label="이중 LLM 패턴: 특권 에이전트와 격리 에이전트">
+        <defs><marker id="m10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+        <g transform="translate(30,40)"><circle cx="30" cy="50" r="24" class="soft-user" stroke-width="2"/><text x="30" y="54" text-anchor="middle" class="t">사용자</text></g>
+        <g transform="translate(150,30)"><rect width="200" height="120" rx="14" class="f-acc-soft"/><text x="100" y="26" text-anchor="middle" class="t-b" style="fill:var(--accent)">특권 에이전트</text><text x="100" y="48" text-anchor="middle" class="t-dim">도구 사용 · 계획</text><text x="100" y="72" text-anchor="middle" class="t-mono">send_email(to, $summary1)</text><text x="100" y="96" text-anchor="middle" class="t-mono" style="fill:var(--guard)">외부 텍스트는 보지 않음</text></g>
+        <g transform="translate(450,30)"><rect width="200" height="120" rx="14" class="soft-guard" stroke-dasharray="6 4"/><text x="100" y="26" text-anchor="middle" class="t-b" style="fill:var(--guard)">격리 에이전트</text><text x="100" y="48" text-anchor="middle" class="t-dim">도구 없음 · 읽기만</text><text x="100" y="72" text-anchor="middle" class="t-mono">요약 → $summary1</text><text x="100" y="96" text-anchor="middle" class="t-mono">분류 → enum</text></g>
+        <g transform="translate(690,50)"><rect width="70" height="80" rx="8" class="soft-tool"/><text x="35" y="36" text-anchor="middle" class="t">웹 · 메일</text><text x="35" y="54" text-anchor="middle" class="t-mono">외부</text></g>
+        <path d="M84 90 H146" stroke="var(--accent)" stroke-width="2" marker-end="url(#m10)"/>
+        <path d="M350 70 H446" stroke="var(--accent)" stroke-width="2" marker-end="url(#m10)"/><text x="398" y="62" text-anchor="middle" class="t-mono">"이것 요약해"</text>
+        <path d="M446 110 H354" stroke="var(--env)" stroke-width="2" marker-end="url(#m10)"/><text x="398" y="128" text-anchor="middle" class="t-mono" style="fill:var(--env)">$summary1 (참조)</text>
+        <path d="M688 90 H654" stroke="var(--tool)" stroke-width="2" marker-end="url(#m10)"/>
+        <text x="400" y="190" text-anchor="middle" class="t-dim">격리 에이전트가 속아도 그 결과는 값일 뿐, 특권 에이전트의 지시가 되지 않는다</text>
+      </svg>
+      <figcaption><b>그림 10-2.</b> 이중 LLM 패턴. 격리 에이전트는 무엇을 읽든 행동할 수단이 없고, 특권 에이전트는 오염될 수 있는 텍스트를 읽지 않는다. 대가는 유연성이다. 특권 에이전트가 문서 내용을 보고 판단해야 하는 일은 이 구조로 하기 어렵다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="human">
+    <h2>사람 승인은 어디에</h2>
+    <p>되돌릴 수 없는 행동(외부 전송, 결제, 삭제, 배포) 앞에 사람의 승인을 두는 것은 마지막 방어선이다. 하지만 승인 요청이 너무 잦으면 사람은 읽지 않고 누른다. 이것이 <b>승인 피로</b>다. 모든 행동을 묻는 것보다, 위험한 행동을 골라 묻는 편이 실제로 더 많은 사고를 막는 경우가 많다.</p>
+    <div class="sim" id="sim-hitl">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>승인 배치 — 많이 묻는다고 안전할까</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="hl-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="ctrl"><span>승인 정책</span><div class="seg" id="hl-pol"><button data-v="none">묻지 않음</button><button data-v="risky" class="on">위험한 것만</button><button data-v="all">모두</button></div></div>
+          <label class="ctrl"><span>시간당 에이전트 행동 수 <output id="hl-n-out"></output></span><input type="range" id="hl-n" min="5" max="300" step="5" value="60"></label>
+          <label class="ctrl"><span>그중 실제로 위험한 비율 <output id="hl-p-out"></output></span><input type="range" id="hl-p" min="0.001" max="0.05" step="0.001" value="0.01"></label>
+          <label class="ctrl"><span>위험 분류기의 재현율 <output id="hl-r-out"></output></span><input type="range" id="hl-r" min="0.5" max="1" step="0.01" value="0.9"></label>
+          <label class="ctrl"><span>사람 주의력 반감 (시간당 요청 수) <output id="hl-f-out"></output></span><input type="range" id="hl-f" min="5" max="120" step="5" value="30"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">시간당 승인 요청</span><span class="v" id="hl-o1">—</span></div>
+        <div class="stat"><span class="k">사람이 위험을 알아챌 확률</span><span class="v" id="hl-o2">—</span></div>
+        <div class="stat"><span class="k">하루(8시간) 사고 기대값</span><span class="v" id="hl-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 행동이 시간당 60개일 때 <b>모두</b>를 고르면 사람이 시간당 60번 승인한다. 주의력이 떨어져 위험한 요청도 넘긴다. <b>위험한 것만</b>은 요청이 적어 사람이 제대로 본다. ② 분류기 재현율을 0.6으로 낮추면 놓친 위험이 승인 없이 지나간다. 이때는 분류기를 개선하거나 샌드박스로 피해 반경을 줄인다. ③ 행동이 시간당 300개인 시스템에서 “모두 묻기”는 사실상 승인이 없는 것과 같다. 사람 승인은 <b>드물고 의미 있을 때만</b> 방어선이다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>에이전트 사이 메시지는 신뢰 경계를 넘는 통로다. 외부 입력에서 생긴 오염은 동료의 메시지로 세탁되어 번진다.</li>
+      <li>치명적 삼중주는 한 에이전트가 아니라 메시지 경로로도 완성된다. 점검은 경로 단위로 한다.</li>
+      <li>격리 에이전트는 외부 텍스트를 읽되 행동할 수단이 없고, 특권 에이전트는 외부 텍스트를 보지 않는다. 구조화된 값만 경계를 넘긴다.</li>
+      <li>사람 승인은 드물고 의미 있을 때만 작동한다. 위험한 행동을 골라 묻고, 나머지는 샌드박스와 권한 분리로 막는다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 웹을 읽는 리서처에게는 도구가 웹 검색뿐이다. 그런데도 유출 위험이 있는 경우는?</p><div class="opts">
+        <button class="opt">리서처가 검색을 너무 많이 할 때</button>
+        <button class="opt" data-correct>리서처의 자유 문장 출력이 DB와 메일 도구를 가진 에이전트의 지시로 그대로 들어갈 때</button>
+        <button class="opt">리서처가 작은 모델일 때</button>
+      </div><div class="quiz-exp">시스템 수준 삼중주다. 리서처가 속으면 그 출력이 다른 에이전트를 움직인다.</div></div>
+      <div class="quiz-q"><p>2. 이중 LLM 패턴에서 특권 에이전트가 하지 않는 것은?</p><div class="opts">
+        <button class="opt">도구 호출</button>
+        <button class="opt" data-correct>신뢰할 수 없는 외부 텍스트를 직접 읽기</button>
+        <button class="opt">사용자 요청 해석</button>
+      </div><div class="quiz-exp">외부 텍스트는 격리 에이전트만 읽고, 특권 쪽은 그 결과를 참조(변수)로만 다룬다.</div></div>
+      <div class="quiz-q"><p>3. 에이전트 사이 메시지를 구조화하면 주입 전파가 줄어드는 이유는?</p><div class="opts">
+        <button class="opt">JSON은 모델이 읽지 못해서</button>
+        <button class="opt" data-correct>숫자·날짜·열거형 같은 필드에는 지시문이 들어갈 자리가 적어서</button>
+        <button class="opt">메시지가 짧아져서</button>
+      </div><div class="quiz-exp">자유 문장 필드가 줄수록 오염이 실릴 공간이 준다. 남은 자유 문장 필드는 여전히 위험하다.</div></div>
+      <div class="quiz-q"><p>4. 시간당 200번 행동하는 에이전트의 모든 행동에 사람 승인을 요구하면?</p><div class="opts">
+        <button class="opt">가장 안전하다</button>
+        <button class="opt" data-correct>승인 피로로 사람이 내용을 보지 않게 되어 실제 방어력이 떨어진다</button>
+        <button class="opt">에이전트가 더 똑똑해진다</button>
+      </div><div class="quiz-exp">드물고 의미 있는 승인만 방어선이다. 나머지는 구조(권한 분리, 샌드박스)로 막는다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 오염 전파 ---------------- */
+(function () {
+  // 노드: 0 웹문서, 1 리서처(웹), 2 리더, 3 분석가(DB), 4 작성자, 5 발송(메일), 6 격리 리더
+  const N = [
+    { x: 0.08, y: 0.5, label: "웹 문서", role: "msg" },
+    { x: 0.28, y: 0.3, label: "리서처", role: "worker" },
+    { x: 0.5, y: 0.5, label: "리더", role: "lead" },
+    { x: 0.5, y: 0.14, label: "분석가·DB", role: "plan" },
+    { x: 0.72, y: 0.8, label: "작성자", role: "worker" },
+    { x: 0.9, y: 0.5, label: "발송·메일", role: "fail" },
+    { x: 0.28, y: 0.72, label: "격리 읽기", role: "worker" },
+  ];
+  const cv = MA.canvas("if-cv", { aspect: 0.6, draw });
+  let last = null, anim = 0;
+  function edges(q) { return q ? [[0, 6], [6, 2], [2, 3], [3, 2], [2, 4], [4, 5], [2, 5]] : [[0, 1], [1, 2], [2, 3], [3, 2], [2, 4], [4, 5], [2, 5]]; }
+  function once(r) {
+    const a = MA.val("if-a"), b0 = MA.val("if-b"), q = MA.el("if-q").checked, s = MA.el("if-s").checked, hm = MA.el("if-h").checked;
+    const b = s ? b0 * 0.2 : b0;
+    const inf = {}, order = [];
+    const reader = q ? 6 : 1;
+    if (r() < a) { inf[reader] = 1; order.push([0, reader]); }
+    // 격리 읽기는 도구가 없고 출력이 값으로만 나가므로 거의 전파하지 않는다
+    const E = edges(q);
+    for (let round = 0; round < 3; round++) E.forEach(([u, v]) => { if (u === 0) return; if (inf[u] && !inf[v]) { const pb = u === 6 ? b * 0.1 : b; if (r() < pb) { inf[v] = 1; order.push([u, v]); } } });
+    // 유출: 발송 담당이 오염되고, 사람 승인을 통과
+    let leak = !!inf[5];
+    if (leak && hm) leak = r() < 0.15; // 드문 승인은 대개 걸러낸다
+    return { inf, order, leak, count: Object.keys(inf).filter((k) => k !== "0").length };
+  }
+  let stats = null;
+  function mc() {
+    const r = MA.rng(13); let L = 0, C = 0; const T = 2000;
+    for (let t = 0; t < T; t++) { const o = once(r); if (o.leak) L++; C += o.count; }
+    stats = { leak: L / T, avg: C / T };
+    MA.set("if-o2", MA.pct(stats.leak, 1), stats.leak < 0.02 ? "good" : stats.leak > 0.15 ? "bad" : "warn");
+    MA.set("if-o3", stats.avg.toFixed(2));
+  }
+  function draw(c, w, h) {
+    const q = MA.el("if-q").checked;
+    const P = (i) => [N[i].x * w, 20 + N[i].y * (h - 40)];
+    edges(q).forEach(([u, v]) => { if (u === 3 && v === 2) return; const [x1, y1] = P(u), [x2, y2] = P(v); MA.arrow(c, x1, y1, x2, y2, MA.alpha(MA.col("tool"), 0.45), { r1: 20, r2: 22, w: 1.4 }); });
+    const shown = last ? last.order.slice(0, Math.floor(anim)) : [];
+    const inf = {}; shown.forEach(([, v]) => (inf[v] = 1));
+    shown.forEach(([u, v]) => { const [x1, y1] = P(u), [x2, y2] = P(v); MA.arrow(c, x1, y1, x2, y2, MA.col("guard"), { r1: 20, r2: 22, w: 2.6 }); });
+    N.forEach((n, i) => {
+      if (i === 6 && !q) return; if (i === 1 && q) { const [x, y] = P(i); MA.node(c, x, y, 18, "worker", n.label, { below: true, dim: true }); return; }
+      const [x, y] = P(i);
+      if (i === 0) { c.fillStyle = MA.alpha(MA.col("tool"), 0.2); c.strokeStyle = MA.col("tool"); c.lineWidth = 2; MA.rrect(c, x - 26, y - 18, 52, 36, 6); c.fill(); c.stroke(); MA.text(c, "웹 문서", x, y - 4, { size: 11, weight: 700, align: "center" }); MA.text(c, "⚠ 숨은 지시", x, y + 9, { size: 9.5, align: "center", color: MA.col("guard") }); return; }
+      MA.node(c, x, y, 18, inf[i] ? "fail" : "shared", null, { glow: inf[i] ? 1 : 0, dash: i === 6 ? [4, 3] : null });
+      MA.text(c, n.label, x, y + 30, { size: 11, weight: 700, align: "center", color: MA.col("text-dim") });
+      if (i === 6) MA.text(c, "도구 없음", x, y, { size: 9.5, align: "center", color: MA.col("text-faint") });
+    });
+    if (MA.el("if-h").checked) { const [x, y] = P(5); MA.text(c, "👤 승인", x, y - 30, { size: 11, align: "center", color: MA.col("user"), weight: 700 }); }
+  }
+  const L = MA.loop(MA.el("if-cv"), (dt) => { if (last && anim < last.order.length + 1) { anim += dt * 1.6; cv.redraw(); } });
+  function run() {
+    last = once(MA.rng(Math.floor(Math.random() * 1e9))); anim = MA.reduced() ? 99 : 0;
+    MA.set("if-o1", last.leak ? "유출 발생" : last.count ? `오염 ${last.count}곳 · 유출 없음` : "속지 않음", last.leak ? "bad" : last.count ? "warn" : "good");
+    cv.redraw();
+  }
+  ["if-q", "if-s", "if-h"].forEach((id) => MA.el(id).addEventListener("change", () => { mc(); run(); }));
+  MA.el("if-run").addEventListener("click", run);
+  MA.wire(["if-a", "if-b"], () => { mc(); cv.redraw(); }, { "if-a": (v) => MA.pct(v), "if-b": (v) => MA.pct(v) });
+  L.start(); run();
+})();
+
+/* ---------------- 2. 경로 점검기 ---------------- */
+(function () {
+  const AG = ["리서처", "리더", "분석가", "작성자", "발송"];
+  const POS = [[0.12, 0.3], [0.42, 0.18], [0.72, 0.3], [0.42, 0.78], [0.86, 0.78]];
+  const CAPS = [["U", "외부 입력", "--tool"], ["P", "비공개", "--state"], ["X", "외부 전송", "--guard"]];
+  const DEF = { caps: [["U"], [], ["P"], [], ["X"]], edges: [[0, 1], [1, 2], [2, 1], [1, 3], [3, 4]] };
+  let caps, E;
+  const ALL = []; for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) if (i !== j) ALL.push([i, j]);
+  const cv = MA.canvas("tf-cv", { aspect: 0.62, draw });
+  function reset() { caps = DEF.caps.map((c) => new Set(c)); E = new Set(DEF.edges.map((e) => e.join(">"))); render(); }
+  /* 두 가지 도달성: 오염(외부 입력에서 시작)과 비공개 데이터(P에서 시작). 둘 다 닿고 X가 있는 곳이 유출 지점 */
+  function reach(startK, propagate) {
+    const par = AG.map(() => undefined), q = [];
+    AG.forEach((_, i) => { if (caps[i].has(startK)) { par[i] = -1; q.push(i); } });
+    while (q.length && propagate) { const i = q.shift(); E.forEach((e) => { const [a, b] = e.split(">").map(Number); if (a === i && par[b] === undefined) { par[b] = a; q.push(b); } }); }
+    return par;
+  }
+  const trace = (par, i) => { const p = []; while (i !== -1 && i !== undefined && p.length < 8) { p.unshift(i); i = par[i]; } return p; };
+  function analyze() {
+    const clean = MA.el("tf-clean").checked;
+    const single = AG.map((_, i) => ["U", "P", "X"].every((k) => caps[i].has(k)));
+    const tP = reach("U", !clean), pP = reach("P", true);
+    const taint = AG.map((_, i) => tP[i] !== undefined), priv = AG.map((_, i) => pP[i] !== undefined);
+    const leaks = AG.map((_, i) => taint[i] && priv[i] && caps[i].has("X"));
+    const li = leaks.findIndex(Boolean);
+    let path = null, ppath = null;
+    if (li >= 0) { path = trace(tP, li); ppath = trace(pP, li); }
+    return { single, taint, priv, leaks, path, ppath };
+  }
+  function render() {
+    MA.el("tf-caps").innerHTML = AG.map((n, i) => `<div class="row"><b>${n}</b>${CAPS.map(([k, lab, col]) => `<button data-i="${i}" data-k="${k}" class="${caps[i].has(k) ? "on" : ""}" style="--k:var(${col})">${lab}</button>`).join("")}</div>`).join("");
+    MA.$$("#tf-caps button").forEach((b) => b.addEventListener("click", () => { const s = caps[+b.dataset.i]; s.has(b.dataset.k) ? s.delete(b.dataset.k) : s.add(b.dataset.k); render(); }));
+    cv.redraw();
+  }
+  let P = null;
+  function draw(c, w, h) {
+    if (!caps) return;
+    const R = analyze();
+    P = (i) => [POS[i][0] * w, POS[i][1] * h];
+    const onPath = new Set(), onPriv = new Set();
+    if (R.path) for (let k = 0; k < R.path.length - 1; k++) onPath.add(R.path[k] + ">" + R.path[k + 1]);
+    if (R.ppath) for (let k = 0; k < R.ppath.length - 1; k++) onPriv.add(R.ppath[k] + ">" + R.ppath[k + 1]);
+    ALL.forEach(([a, b]) => {
+      if (a > b && !E.has(a + ">" + b) && !E.has(b + ">" + a)) return;
+      const on = E.has(a + ">" + b), [x1, y1] = P(a), [x2, y2] = P(b);
+      const off = a < b ? 5 : -5, dx = y2 - y1, dy = x1 - x2, L = Math.hypot(dx, dy) || 1;
+      const ox = (dx / L) * off, oy = (dy / L) * off;
+      if (on) MA.arrow(c, x1 + ox, y1 + oy, x2 + ox, y2 + oy, onPath.has(a + ">" + b) ? MA.col("guard") : onPriv.has(a + ">" + b) ? MA.col("state") : R.taint[a] && !MA.el("tf-clean").checked ? MA.alpha(MA.col("tool"), 0.8) : MA.alpha(MA.col("axis"), 0.6), { r1: 24, r2: 26, w: onPath.has(a + ">" + b) || onPriv.has(a + ">" + b) ? 3 : 1.6 });
+      else if (a < b) { c.strokeStyle = MA.alpha(MA.col("border"), 0.8); c.setLineDash([2, 5]); c.lineWidth = 1; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]); }
+    });
+    AG.forEach((n, i) => {
+      const [x, y] = P(i);
+      MA.node(c, x, y, 22, R.leaks[i] ? "fail" : R.taint[i] && !MA.el("tf-clean").checked ? "msg" : "shared", n, { glow: R.leaks[i] ? 1 : 0, size: 11 });
+      MA.text(c, [...caps[i]].join(" ") || "—", x, y + 34, { size: 11, mono: true, align: "center", color: MA.col("text-dim") });
+    });
+    const singles = R.single.filter(Boolean).length;
+    MA.set("tf-o1", singles ? singles + "곳" : "없음", singles ? "bad" : "good");
+    MA.set("tf-o2", R.leaks.some(Boolean) ? "있음" : "없음", R.leaks.some(Boolean) ? "bad" : "good");
+    MA.set("tf-o3", R.path ? "오염 " + R.path.map((i) => AG[i]).join("→") + " · 데이터 " + R.ppath.map((i) => AG[i]).join("→") : "—");
+  }
+  cv.on("click", (x, y) => {
+    if (!P) return;
+    // 가장 가까운 선분 (양방향 중 하나씩 토글: a→b 없으면 켜고, 있으면 b→a 토글 순환)
+    let best = null, bd = 14;
+    for (let a = 0; a < 5; a++) for (let b = a + 1; b < 5; b++) {
+      const [x1, y1] = P(a), [x2, y2] = P(b), t = MA.clamp(((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / ((x2 - x1) ** 2 + (y2 - y1) ** 2), 0.15, 0.85);
+      const d = Math.hypot(x - (x1 + t * (x2 - x1)), y - (y1 + t * (y2 - y1)));
+      if (d < bd) { bd = d; best = [a, b]; }
+    }
+    if (!best) return;
+    const [a, b] = best, f = a + ">" + b, r = b + ">" + a;
+    // 순환: 없음 → a→b → a→b + b→a → b→a → 없음
+    if (!E.has(f) && !E.has(r)) E.add(f);
+    else if (E.has(f) && !E.has(r)) E.add(r);
+    else if (E.has(f) && E.has(r)) E.delete(f);
+    else E.delete(r);
+    cv.redraw();
+  });
+  MA.el("tf-clean").addEventListener("change", () => cv.redraw());
+  MA.el("tf-reset").addEventListener("click", reset);
+  reset();
+})();
+
+/* ---------------- 3. 승인 배치 ---------------- */
+(function () {
+  const pol = MA.seg("hl-pol", () => cv.redraw());
+  const cv = MA.canvas("hl-cv", { aspect: 0.62, draw });
+  function calc(policy, n) {
+    const p = MA.val("hl-p"), rc = MA.val("hl-r"), f = MA.val("hl-f");
+    const risky = n * p;
+    const fpr = 0.05; // 분류기가 안전한 것을 위험하다고 하는 비율
+    const asks = policy === "none" ? 0 : policy === "all" ? n : risky * rc + (n - risky) * fpr;
+    const attn = 0.95 * Math.pow(0.5, asks / f); // 요청이 많을수록 주의력이 반감
+    let miss;
+    if (policy === "none") miss = risky;
+    else if (policy === "all") miss = risky * (1 - attn);
+    else miss = risky * (1 - rc) + risky * rc * (1 - attn);
+    return { asks, attn, incidents: miss * 8 };
+  }
+  function draw(c, w, h) {
+    const n = MA.val("hl-n"), cur = pol();
+    const A = MA.axes(c, { box: { l: 52, t: 14, r: w - 12, b: h - 38 }, x: [5, 300], y: [0, Math.max(0.5, calc("none", 300).incidents) * 1.05], xt: [5, 100, 200, 300], yt: [0, calc("none", 300).incidents / 2, calc("none", 300).incidents].map((v) => +v.toFixed(1)), xl: "시간당 행동 수", yl: "하루 사고 기대값", ylOff: 40 });
+    [["none", "guard"], ["all", "tool"], ["risky", "env"]].forEach(([k, col]) => {
+      const pts = []; for (let x = 5; x <= 300; x += 5) pts.push([A.X(x), A.Y(calc(k, x).incidents)]);
+      MA.line(c, pts, MA.col(col), k === cur ? 3 : 1.6, k === cur ? null : [5, 4]);
+      const last = calc(k, 300); MA.text(c, { none: "묻지 않음", all: "모두", risky: "위험한 것만" }[k], A.X(296), A.Y(last.incidents) - 8, { size: 11, align: "right", weight: 700, color: MA.col(col) });
+    });
+    MA.line(c, [[A.X(n), A.box.t], [A.X(n), A.box.b]], MA.col("accent"), 1.4, [4, 4]);
+    const r = calc(cur, n);
+    MA.set("hl-o1", r.asks.toFixed(1) + "회", r.asks > 40 ? "bad" : r.asks > 15 ? "warn" : "good");
+    MA.set("hl-o2", cur === "none" ? "—" : MA.pct(r.attn), r.attn > 0.7 ? "good" : r.attn < 0.3 ? "bad" : "warn");
+    MA.set("hl-o3", r.incidents.toFixed(2), r.incidents < 0.2 ? "good" : r.incidents > 1 ? "bad" : "warn");
+  }
+  MA.wire(["hl-n", "hl-p", "hl-r", "hl-f"], () => cv.redraw(), { "hl-p": (v) => MA.pct(v, 1), "hl-r": (v) => MA.pct(v), "hl-n": (v) => v + "개", "hl-f": (v) => v + "회" });
+})();
+</script>
+</body>
+</html>

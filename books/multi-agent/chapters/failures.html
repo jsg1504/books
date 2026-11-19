@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실패 모드와 연쇄 오류 · ChorusBook</title>
+<meta name="description" content="MAST 실패 분류(명세, 에이전트 간 불일치, 검증), 파이프라인에서 번지는 연쇄 오류와 검증 관문, 에이전트 사이의 핑퐁 루프를 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #cs-cv { cursor: pointer; }
+  .trace { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; min-height: 120px; }
+  .trace .who { font-weight: 700; }
+  .mast { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .mast > div { border: 1px solid var(--border); border-top: 4px solid var(--k); border-radius: 10px; background: var(--bg-elev); padding: 12px 14px; }
+  .mast h4 { margin: 0 0 6px; font-size: 15px; color: var(--k); }
+  .mast ol { margin: 0; padding-left: 1.2em; font-size: 13.5px; color: var(--text-dim); }
+  .mast li { margin: 2px 0; }
+</style>
+</head>
+<body data-root="../" data-chapter="failures">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 08</div>
+    <h1>실패 모드와 연쇄 오류</h1>
+    <p class="lead">멀티에이전트 시스템은 단일 에이전트가 하는 모든 실수를 그대로 하고, 거기에 <b>에이전트 사이에서만 생기는 실수</b>를 더한다. 서로 다른 것을 일이라고 믿고, 중요한 정보를 전하지 않고, 상대의 말을 무시하고, 아무도 검증하지 않은 채 “완료”라고 말한다. 그리고 한 에이전트의 작은 실수는 다음 에이전트의 전제가 되어 커진다. 이 장에서는 실패를 분류하는 법, 연쇄를 끊는 법, 에이전트들이 서로 일을 떠넘기며 도는 루프를 잡는 법을 다룬다.</p>
+    <ul class="objectives">
+      <li>MAST 분류의 세 범주(명세 문제, 에이전트 간 불일치, 검증 실패)로 실패 기록을 분류할 수 있다.</li>
+      <li>연쇄 오류가 파이프라인에서 커지는 방식을 설명하고 검증 관문의 위치를 고를 수 있다.</li>
+      <li>핑퐁 루프를 감지하고 멈추는 장치(홉 상한, 반복 감지)를 설계할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="mast">
+    <h2>멀티에이전트 실패의 분류</h2>
+    <p>2025년 Cemri 등은 여러 오픈소스 멀티에이전트 프레임워크의 실행 기록을 사람이 직접 읽고 분류해 <span class="term">MAST</span><span class="en">Multi-Agent System failure Taxonomy</span>를 제안했다. 실패는 세 범주, 열네 가지 모드로 나뉜다. 중요한 발견은 실패의 상당수가 모델의 지능 부족이 아니라 <b>시스템 설계와 조직 구조</b>에서 온다는 점이다. 사람 조직이 똑똑한 개인을 모아도 실패하는 것과 비슷하다.</p>
+    <div class="mast">
+      <div style="--k:var(--state)"><h4>① 명세 · 시스템 설계 문제</h4><ol><li>작업 명세를 따르지 않음</li><li>역할 명세를 따르지 않음</li><li>같은 단계 반복</li><li>대화 기록 손실</li><li>종료 조건을 모름</li></ol></div>
+      <div style="--k:var(--tool)"><h4>② 에이전트 간 불일치</h4><ol><li>대화가 처음으로 되돌아감</li><li>모호한데 묻지 않음</li><li>작업이 다른 길로 샘</li><li>정보를 전하지 않음</li><li>다른 에이전트의 입력을 무시</li><li>생각과 행동이 어긋남</li></ol></div>
+      <div style="--k:var(--guard)"><h4>③ 작업 검증 실패</h4><ol><li>너무 일찍 끝냄</li><li>검증이 없거나 불완전함</li><li>검증이 틀림</li></ol></div>
+    </div>
+    <p style="margin-top:16px">세 범주는 각각 다른 처방을 가리킨다. ①은 지시서·역할·종료 조건을 더 분명히 쓰는 일(3장, 7장), ②는 통신 프로토콜과 공유 상태를 다듬는 일(4장, 5장), ③은 모델 바깥의 검증을 넣는 일(6장, 이 장의 검증 관문)이다.</p>
+    <div class="sim" id="sim-classify">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>실패 기록 분류하기 — 이 실행은 왜 망가졌나</h3></div>
+      <div class="sim-body">
+        <div class="trace" id="cl-trace"></div>
+        <div class="bins">
+          <button data-v="spec" style="--k:var(--state)">① 명세 · 설계</button>
+          <button data-v="mis" style="--k:var(--tool)">② 에이전트 간 불일치</button>
+          <button data-v="ver" style="--k:var(--guard)">③ 검증 실패</button>
+        </div>
+        <div class="verdict" id="cl-fb">기록을 읽고 범주를 골라 보세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="cl-o1">0 / 9</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="cl-o2">0</span></div>
+      </div>
+      <div class="sim-note">실제 기록에는 여러 실패가 겹치는 경우가 많다. 여기서는 <b>가장 먼저 고쳐야 할 원인</b>을 고른다고 생각하자.</div>
+    </div>
+  </section>
+
+  <section id="cascade">
+    <h2>연쇄 오류와 검증 관문</h2>
+    <p>파이프라인이나 계층 구조에서 앞 에이전트의 출력은 뒤 에이전트의 <b>전제</b>가 된다. 앞에서 잘못 뽑은 수치 하나는 분석가에게 사실이 되고, 작성자에게는 결론의 근거가 된다. 뒤 에이전트는 대개 앞의 결과를 의심하지 않는다. 이것이 <span class="term">연쇄 오류</span><span class="en">cascading error</span>다. 단계마다 오류율이 작아도 단계가 많으면 최종 결과가 틀릴 확률은 빠르게 커진다. 이를 끊는 것이 단계 사이의 <span class="term">검증 관문</span><span class="en">verification gate</span>이다. 관문은 비용이 드니 어디에 둘지가 문제다.</p>
+    <div class="formula"><div class="eq"><var>P</var>(최종 결과에 오류) = 1 − <span style="font-size:1.3em">Π</span><sub><var>i</var></sub> (1 − <var>e</var><sub><var>i</var></sub>) &nbsp;&nbsp;→&nbsp;&nbsp; 관문 뒤에는 1 − (1 − <var>e</var>)<sup>…</sup>가 <var>v</var>만큼 걸러진 채 다시 시작</div>
+      <div class="where"><var>e</var><sub><var>i</var></sub>: 단계 <var>i</var>가 새로 만드는 오류 확률, <var>v</var>: 관문이 오류를 잡는 비율. 잡힌 오류는 되돌려 재작업하므로 시간이 든다.</div></div>
+    <div class="sim" id="sim-cascade">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>연쇄 오류 — 관문을 어디에 둘까</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cs-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>단계 수 <output id="cs-k-out"></output></span><input type="range" id="cs-k" min="3" max="8" step="1" value="6"></label>
+          <label class="ctrl"><span>단계당 오류율 e <output id="cs-e-out"></output></span><input type="range" id="cs-e" min="0" max="0.25" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>관문 검출률 v <output id="cs-v-out"></output></span><input type="range" id="cs-v" min="0" max="1" step="0.05" value="0.8"></label>
+          <label class="ctrl"><span>관문 비용 (단계 대비) <output id="cs-c-out"></output></span><input type="range" id="cs-c" min="0" max="1" step="0.05" value="0.3"></label>
+          <div class="btns"><button class="btn" id="cs-none">관문 모두 빼기</button><button class="btn" id="cs-all">모든 사이에</button><button class="btn" id="cs-end">마지막에만</button></div>
+          <p style="margin:0;font-size:13px;color:var(--text-faint)">단계 사이의 ◇를 눌러 관문을 켜고 끄세요.</p>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">최종 오류율</span><span class="v" id="cs-o1">—</span></div>
+        <div class="stat"><span class="k">관문 없을 때</span><span class="v" id="cs-o2">—</span></div>
+        <div class="stat"><span class="k">평균 비용 (단계 단위)</span><span class="v" id="cs-o3">—</span></div>
+        <div class="stat"><span class="k">재작업 비율</span><span class="v" id="cs-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 관문을 모두 빼면 6단계, 오류율 8%에서 최종 오류율은 1 − 0.92⁶ ≈ 39%다. ② <b>마지막에만</b> 관문을 두면 오류를 잡긴 하지만 처음부터 다시 해야 해 비용이 크다. ③ 관문 두세 개를 <b>중간에</b> 고르게 두면 비용을 조금만 더 쓰고 오류율을 크게 낮춘다. 오류가 싸게 고쳐질 수 있는 곳, 즉 일찍 잡을수록 좋다. ④ 검출률 v가 낮은 관문(같은 모델의 자기 검토)은 아무리 많이 둬도 효과가 작다.</div>
+    </div>
+  </section>
+
+  <section id="pingpong">
+    <h2>에이전트 사이의 핑퐁 루프</h2>
+    <p>단일 에이전트의 헛도는 루프는 한 컨텍스트 안에서 같은 행동을 반복하는 것이다. 멀티에이전트에서는 더 교묘한 루프가 생긴다. A가 “이건 B 담당”이라며 넘기고, B가 “정보가 부족하다”며 A에게 되넘기고, A는 같은 정보로 다시 B에게 넘긴다. 각자의 컨텍스트에서는 매번 합리적인 판단이라 어느 한쪽도 자신이 루프에 빠졌다는 것을 모른다. 이런 <span class="term">핑퐁 루프</span><span class="en">ping-pong loop</span>는 <b>시스템 수준</b>에서만 보인다.</p>
+    <div class="sim" id="sim-ping">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>핑퐁 루프 — 일이 오가다 멈추지 않을 때</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="pp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>받은 쪽이 되넘길 확률 q <output id="pp-q-out"></output></span><input type="range" id="pp-q" min="0" max="0.95" step="0.01" value="0.6"></label>
+          <label class="ctrl"><span>홉 상한 (0 = 없음) <output id="pp-h-out"></output></span><input type="range" id="pp-h" min="0" max="20" step="1" value="0"></label>
+          <label class="check"><input type="checkbox" id="pp-d"> 같은 내용 반복 감지 (내용 해시)</label>
+          <label class="check"><input type="checkbox" id="pp-e"> 감지되면 리더/사람에게 올림</label>
+          <label class="ctrl"><span>홉당 토큰 <output id="pp-t-out"></output></span><input type="range" id="pp-t" min="500" max="10000" step="500" value="3000"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">평균 홉 수</span><span class="v" id="pp-o1">—</span></div>
+        <div class="stat"><span class="k">20홉 넘게 도는 비율</span><span class="v" id="pp-o2">—</span></div>
+        <div class="stat"><span class="k">해결된 비율</span><span class="v" id="pp-o3">—</span></div>
+        <div class="stat"><span class="k">작업당 평균 토큰</span><span class="v" id="pp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① q=0.6, 상한 없음이면 평균 홉은 짧아 보여도 꼬리가 길다. 오른쪽 히스토그램의 끝이 비용을 좌우한다. ② q를 0.9로 올리면 대부분 끝나지 않는다. 각자 “내 일이 아니다”라고 판단하는 역할 경계가 모호하다는 뜻이다(①번 범주). ③ <b>반복 감지</b>를 켜면 같은 내용이 두 번째로 오갈 때 멈춘다. <b>리더에게 올림</b>까지 켜야 멈춘 일이 해결로 이어진다. 멈추기만 하면 실패로 끝난다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>멀티에이전트 실패는 명세·설계 문제, 에이전트 간 불일치, 검증 실패의 세 범주로 나눌 수 있다. 상당수는 모델이 아니라 구조의 문제다.</li>
+      <li>앞 단계의 오류는 뒤 단계의 전제가 되어 번진다. 단계가 많을수록 최종 오류율은 1 − Π(1 − e)로 커진다.</li>
+      <li>검증 관문은 일찍, 검출률 높게(모델 바깥 검사) 둔다. 마지막에 하나만 두면 재작업 비용이 크다.</li>
+      <li>핑퐁 루프는 시스템 수준에서만 보인다. 홉 상한, 반복 감지, 그리고 감지됐을 때 올릴 곳이 함께 있어야 한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 검증 에이전트가 “코드가 올바르게 보입니다”라며 통과시켰는데 테스트를 실행해 보지 않았다. 어느 범주인가?</p><div class="opts">
+        <button class="opt">명세 문제</button>
+        <button class="opt">에이전트 간 불일치</button>
+        <button class="opt" data-correct>검증 실패(검증이 없거나 불완전함)</button>
+      </div><div class="quiz-exp">읽어 보는 것만으로는 검증이 아니다. 실행 결과 같은 바깥 근거를 요구한다.</div></div>
+      <div class="quiz-q"><p>2. 단계당 오류율 10%인 5단계 파이프라인의 최종 오류율은?</p><div class="opts">
+        <button class="opt">10%</button>
+        <button class="opt" data-correct>약 41%</button>
+        <button class="opt">50%</button>
+      </div><div class="quiz-exp">1 − 0.9⁵ ≈ 0.41. 오류가 서로 상쇄되지 않는다고 가정한 값이다.</div></div>
+      <div class="quiz-q"><p>3. 검증 관문을 마지막 단계 뒤에만 두는 것의 단점은?</p><div class="opts">
+        <button class="opt">오류를 하나도 잡지 못한다</button>
+        <button class="opt" data-correct>오류를 잡아도 앞 단계부터 모두 다시 해야 해 재작업 비용이 크다</button>
+        <button class="opt">관문이 너무 많아진다</button>
+      </div><div class="quiz-exp">일찍 잡을수록 되돌아갈 거리가 짧다. 소프트웨어 결함 비용과 같은 원리다.</div></div>
+      <div class="quiz-q"><p>4. 두 에이전트가 같은 요청을 서로에게 되넘기고 있다. 홉 상한만 걸어 두면 생기는 문제는?</p><div class="opts">
+        <button class="opt">루프가 더 길어진다</button>
+        <button class="opt" data-correct>루프는 멈추지만 일은 실패로 끝난다. 리더나 사람에게 올리는 경로가 필요하다</button>
+        <button class="opt">토큰이 더 든다</button>
+      </div><div class="quiz-exp">멈춤과 해결은 다르다. 감지 → 멈춤 → 올림이 한 묶음이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 실패 분류 게임 ---------------- */
+(function () {
+  const C = [
+    ["lead → coder: \"결제 모듈에 환불 기능 추가\"\ncoder: 결제 모듈에 환불 기능과 함께 <b>쿠폰 시스템</b>도 만들었습니다. 쓸모 있을 것 같아서요.\nreviewer: 쿠폰 코드 검토 중… (40분)", "spec", "작업 명세를 따르지 않음. 지시서에 범위와 ‘하지 말 것’이 없었다(3장)."],
+    ["researcher: 출처 A에서 2024년 시장 규모 <b>12조</b>를 찾았습니다. 단, 이 값은 2022년 추정치입니다.\nlead → writer: 2024년 시장 규모 12조\nwriter: 2024년 시장 규모는 12조로…", "mis", "정보를 전하지 않음. 리더가 ‘2022년 추정치’라는 단서를 빼고 전달했다(4장의 전언 게임)."],
+    ["tester: 테스트 12개 중 3개 실패. 원인 분석이 필요합니다.\nlead: 대부분 통과했으니 완료로 보고합니다. ✅", "ver", "너무 일찍 끝냄. 통과 기준이 ‘대부분’이 아니라 ‘전부’여야 했다."],
+    ["planner: 1) 스키마 설계 2) API 3) UI\ncoder: 스키마 설계를 시작합니다.\ncoder: 스키마 설계를 시작합니다.\ncoder: 스키마 설계를 시작합니다.", "spec", "같은 단계 반복. 진행 상황을 기록할 곳과 단계 완료 조건이 없었다(5장, 2장)."],
+    ["critic: user_id 대신 account_id를 써야 기존 테이블과 맞습니다.\ncoder: 확인했습니다. (다음 커밋에서도 user_id 사용)", "mis", "다른 에이전트의 입력을 무시. 혹은 생각과 행동이 어긋남. 비평의 반영 여부를 확인하는 장치가 없었다."],
+    ["user: \"회의록 정리해 줘\"\nlead → summarizer: 회의록 정리\nsummarizer: (회의록 3개 중 무엇인지, 어떤 형식인지 묻지 않고 가장 최근 것을 줄글로 요약)", "mis", "모호한데 묻지 않음. 질문 메시지(type=question)를 보낼 통로와 규칙이 있어야 한다(4장)."],
+    ["verifier: 계산 결과 1,240을 다시 계산해 보니 1,240이 맞습니다. 통과.\n(실제 정답은 1,420. 두 에이전트 모두 같은 자릿수 실수)", "ver", "검증이 틀림. 같은 방법으로 다시 계산하면 같은 실수를 한다. 다른 방법이나 도구로 검증해야 한다(6장의 오류 상관)."],
+    ["(턴 38) analyst: 앞의 내용을 기억하지 못해 처음부터 데이터를 다시 불러오겠습니다.\n(이미 턴 5에서 불러와 분석까지 끝난 상태)", "spec", "대화 기록 손실. 컨텍스트 압축 뒤 핵심 결과가 바깥 저장소에 없었다(5장)."],
+    ["lead → A: 경쟁사 가격 조사\nA → lead: 완료. (시장 점유율 분석과 SWOT까지 작성, 가격 정보는 2개 회사만)\nlead: 받은 내용으로 보고서 작성", "mis", "작업이 다른 길로 샘. 그리고 리더가 받은 결과를 원래 요청과 대조하지 않았다(검증 실패와 겹침)."],
+  ];
+  let i = 0, score = 0, lock = false;
+  const NAME = { spec: "① 명세 · 설계", mis: "② 에이전트 간 불일치", ver: "③ 검증 실패" };
+  function show() {
+    if (i >= C.length) { MA.el("cl-trace").innerHTML = `완료: ${score} / ${C.length}. 아무 버튼이나 누르면 다시 시작합니다.`; return; }
+    MA.el("cl-trace").innerHTML = `<span style="color:var(--text-faint)">기록 ${i + 1} / ${C.length}</span>\n` + C[i][0];
+  }
+  MA.$$("#sim-classify .bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= C.length) { i = 0; score = 0; MA.set("cl-o2", "0"); show(); MA.el("cl-fb").textContent = "다시 시작합니다."; return; }
+    if (lock) return;
+    const ok = b.dataset.v === C[i][1]; if (ok) score++;
+    const fb = MA.el("cl-fb"); fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + NAME[C[i][1]]}</b> — ${MA.esc(C[i][2])}`;
+    i++; lock = true;
+    MA.set("cl-o1", `${i} / ${C.length}`); MA.set("cl-o2", String(score), score === i ? "good" : "");
+    setTimeout(() => { lock = false; show(); }, 1500);
+  }));
+  show();
+})();
+
+/* ---------------- 2. 연쇄 오류 ---------------- */
+(function () {
+  let gates = new Set([2, 4]), dots = [], acc = 0, P = null;
+  const cv = MA.canvas("cs-cv", { aspect: 0.55, draw });
+  let memo = { key: "", val: null };
+  function model() {
+    const key = ["cs-k", "cs-e", "cs-v", "cs-c"].map(MA.val).join() + [...gates].sort().join();
+    if (memo.key === key) return memo.val;
+    memo = { key, val: model0() };
+    return memo.val;
+  }
+  function model0() {
+    const k = MA.val("cs-k"), e = MA.val("cs-e"), v = MA.val("cs-v"), gc = MA.val("cs-c");
+    // 몬테카를로: 작업 하나가 단계들을 지나간다. 관문은 단계 i 뒤(1..k-1)와 끝(k).
+    const r = MA.rng(23), T = 3000;
+    let bad = 0, cost = 0, rework = 0;
+    for (let t = 0; t < T; t++) {
+      let i = 0, err = false, last = 0, c = 0, rw = false, guard = 0;
+      while (i < k && guard++ < 200) {
+        c += 1; if (r() < e) err = true; i++;
+        if (gates.has(i)) { c += gc; if (err && r() < v) { rw = true; i = last; err = false; continue; } last = i; }
+      }
+      if (err) bad++; cost += c; if (rw) rework++;
+    }
+    const noGate = 1 - Math.pow(1 - e, k);
+    return { bad: bad / T, cost: cost / T, rework: rework / T, noGate, k };
+  }
+  function draw(c, w, h) {
+    const k = MA.val("cs-k"), M = model();
+    const y = h * 0.4, x0 = 40, x1 = w - 40, step = (x1 - x0) / (k - 1);
+    P = { y, x: (i) => x0 + i * step, step };
+    for (let i = 0; i < k - 1; i++) { c.strokeStyle = MA.col("border"); c.lineWidth = 2; c.beginPath(); c.moveTo(P.x(i), y); c.lineTo(P.x(i + 1), y); c.stroke(); }
+    for (let i = 0; i < k; i++) MA.node(c, P.x(i), y, 15, i === k - 1 ? "shared" : "worker", "S" + (i + 1), { size: 10.5 });
+    for (let i = 1; i <= k; i++) {
+      const gx = i < k ? P.x(i - 1) + step / 2 : P.x(k - 1) + 30, on = gates.has(i);
+      c.save(); c.translate(gx, y); c.rotate(Math.PI / 4);
+      c.fillStyle = on ? MA.alpha(MA.col("accent-2"), 0.35) : MA.col("bg-elev"); c.strokeStyle = on ? MA.col("accent-2") : MA.col("text-faint"); c.lineWidth = 1.8;
+      c.setLineDash(on ? [] : [3, 3]); c.fillRect(-8, -8, 16, 16); c.strokeRect(-8, -8, 16, 16); c.restore();
+    }
+    // 점(작업) 흐름
+    dots.forEach((d) => {
+      const x = P.x(0) + d.pos * step, yy = y + 46 + d.lane * 10;
+      c.fillStyle = MA.col(d.err ? "guard" : "env"); c.beginPath(); c.arc(x, yy, 3.6, 0, 7); c.fill();
+      if (d.back) { c.strokeStyle = MA.alpha(MA.col("accent-2"), 0.5); c.beginPath(); c.arc(x, yy, 6, 0, 7); c.stroke(); }
+    });
+    MA.text(c, "◇ = 검증 관문 (눌러서 켜기/끄기)", 10, 16, { size: 11, color: MA.col("text-faint") });
+    MA.set("cs-o1", MA.pct(M.bad, 1), M.bad < 0.08 ? "good" : M.bad > 0.25 ? "bad" : "warn");
+    MA.set("cs-o2", MA.pct(M.noGate, 1));
+    MA.set("cs-o3", M.cost.toFixed(2), M.cost > M.k * 1.6 ? "bad" : M.cost > M.k * 1.25 ? "warn" : "good");
+    MA.set("cs-o4", MA.pct(M.rework));
+  }
+  const r = MA.rng(5);
+  const L = MA.loop(MA.el("cs-cv"), (dt) => {
+    const k = MA.val("cs-k"), e = MA.val("cs-e"), v = MA.val("cs-v");
+    acc += dt;
+    if (acc > 0.5 && dots.length < 14) { acc = 0; dots.push({ pos: 0, err: false, lane: Math.floor(r() * 5), next: 1, last: 0 }); }
+    dots.forEach((d) => {
+      d.pos += dt * 1.3 * (d.back ? -2.5 : 1);
+      if (d.back && d.pos <= d.last) { d.pos = d.last; d.back = false; d.next = Math.floor(d.last) + 1; }
+      if (!d.back && d.pos >= d.next - 0.5 && !d.mark) { d.mark = true; if (r() < e) d.err = true; }
+      if (!d.back && d.pos >= d.next - 0.0) { // 관문 지점(단계 사이 중간: next-0.5)이 아니라 단계 도착
+        d.mark = false;
+        if (gates.has(d.next) && d.err && r() < v) { d.back = true; d.err = false; }
+        else { if (gates.has(d.next)) d.last = d.next; d.next++; }
+      }
+    });
+    dots = dots.filter((d) => d.pos < k - 1 + 0.9);
+    cv.redraw();
+  });
+  cv.on("click", (x, y) => {
+    if (!P) return; const k = MA.val("cs-k");
+    for (let i = 1; i <= k; i++) { const gx = i < k ? P.x(i - 1) + P.step / 2 : P.x(k - 1) + 30; if (Math.hypot(gx - x, P.y - y) < 16) { gates.has(i) ? gates.delete(i) : gates.add(i); cv.redraw(); return; } }
+  });
+  MA.el("cs-none").addEventListener("click", () => { gates = new Set(); cv.redraw(); });
+  MA.el("cs-all").addEventListener("click", () => { gates = new Set(Array.from({ length: MA.val("cs-k") }, (_, i) => i + 1)); cv.redraw(); });
+  MA.el("cs-end").addEventListener("click", () => { gates = new Set([MA.val("cs-k")]); cv.redraw(); });
+  MA.wire(["cs-k", "cs-e", "cs-v", "cs-c"], () => { const k = MA.val("cs-k"); gates = new Set([...gates].filter((g) => g <= k)); dots = []; cv.redraw(); }, { "cs-e": (v) => MA.pct(v), "cs-v": (v) => MA.pct(v), "cs-c": (v) => MA.pct(v), "cs-k": (v) => v + "단계" });
+  if (MA.reduced()) cv.redraw(); else L.start();
+})();
+
+/* ---------------- 3. 핑퐁 루프 ---------------- */
+(function () {
+  let ball = { from: 0, t: 0, hops: 0, state: "run", seq: 0 }, acc = 0;
+  const cv = MA.canvas("pp-cv", { aspect: 0.62, draw });
+  const NODES = [[0.2, 0.3, "A · 접수"], [0.8, 0.3, "B · 기술"], [0.5, 0.12, "리더"]];
+  let memo = { key: "", val: null };
+  function stats() {
+    const key = ["pp-q", "pp-h", "pp-t"].map(MA.val).join() + MA.el("pp-d").checked + MA.el("pp-e").checked;
+    if (memo.key !== key) memo = { key, val: stats0() };
+    return memo.val;
+  }
+  function stats0() {
+    const q = MA.val("pp-q"), H = MA.val("pp-h"), det = MA.el("pp-d").checked, esc = MA.el("pp-e").checked, tk = MA.val("pp-t");
+    const r = MA.rng(31), T = 4000, hist = Array(22).fill(0);
+    let hopsSum = 0, long = 0, solved = 0;
+    for (let t = 0; t < T; t++) {
+      let h = 1, res = "";
+      // 되넘김 이유는 같은 내용이 반복되는 경우가 많다고 가정: 두 번째 왕복부터 '같은 내용' 확률 0.8
+      let repeat = false;
+      while (true) {
+        if (r() >= q) { res = "solved"; break; }
+        h++;
+        if (h >= 3 && r() < 0.8) repeat = true;
+        if (det && repeat) { res = esc ? (r() < 0.85 ? "solved" : "fail") : "fail"; if (esc) h++; break; }
+        if (H && h >= H) { res = esc ? (r() < 0.85 ? "solved" : "fail") : "fail"; if (esc) h++; break; }
+        if (h > 200) { res = "fail"; break; }
+      }
+      hopsSum += h; if (h > 20) long++; if (res === "solved") solved++;
+      hist[Math.min(21, h)]++;
+    }
+    return { avg: hopsSum / T, long: long / T, solved: solved / T, tok: (hopsSum / T) * tk, hist: hist.map((v) => v / T) };
+  }
+  function draw(c, w, h) {
+    const S = stats();
+    const gw = w * 0.5, gh = h * 0.62;
+    const P = (i) => [NODES[i][0] * gw, 30 + NODES[i][1] * gh * 1.6];
+    [[0, 1], [0, 2], [1, 2]].forEach(([a, b]) => { const [x1, y1] = P(a), [x2, y2] = P(b); c.strokeStyle = MA.col("border"); c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); });
+    NODES.forEach((n, i) => { const [x, y] = P(i); MA.node(c, x, y, 18, i === 2 ? "lead" : "worker", null, { glow: ball.state === "esc" && i === 2 ? 1 : 0 }); MA.text(c, n[2], x, y + 30, { size: 11, weight: 700, align: "center", color: MA.col("text-dim") }); });
+    // 공
+    const to = ball.state === "esc" ? 2 : 1 - ball.from;
+    const [x1, y1] = P(ball.from), [x2, y2] = P(to), e = MA.ease(ball.t);
+    const col = ball.state === "done" ? "env" : ball.state === "fail" ? "guard" : ball.state === "esc" ? "lead" : "msg";
+    c.fillStyle = MA.rc(col); c.beginPath(); c.arc(x1 + (x2 - x1) * e, y1 + (y2 - y1) * e - Math.sin(e * Math.PI) * 30, 7, 0, 7); c.fill();
+    MA.text(c, `홉 ${ball.hops}` + (ball.state === "done" ? " · 해결" : ball.state === "fail" ? " · 멈춤(실패)" : ball.state === "esc" ? " · 리더에게 올림" : ""), gw / 2, h - 16, { size: 12, weight: 700, align: "center", color: MA.rc(col) });
+    // 히스토그램
+    const A = MA.axes(c, { box: { l: gw + 30, t: 16, r: w - 10, b: h - 34 }, x: [1, 22], y: [0, Math.max(0.05, ...S.hist) * 1.1], xt: [1, 5, 10, 15, 20], yt: [0, Math.max(...S.hist)].map((v) => +v.toFixed(2)), yf: (v) => MA.pct(v), xl: "홉 수 (21 = 21 이상)" });
+    const bw = (A.X(2) - A.X(1)) * 0.8;
+    S.hist.forEach((v, k) => { if (k < 1) return; c.fillStyle = MA.alpha(MA.col(k > 20 ? "guard" : "tool"), 0.75); c.fillRect(A.X(k) - bw / 2, A.Y(v), bw, A.Y(0) - A.Y(v)); });
+    MA.set("pp-o1", S.avg.toFixed(1), S.avg > 6 ? "bad" : S.avg > 3 ? "warn" : "good");
+    MA.set("pp-o2", MA.pct(S.long, 1), S.long > 0.05 ? "bad" : S.long > 0 ? "warn" : "good");
+    MA.set("pp-o3", MA.pct(S.solved), S.solved > 0.9 ? "good" : S.solved < 0.6 ? "bad" : "warn");
+    MA.set("pp-o4", MA.si(S.tok) + " tok");
+  }
+  const r = MA.rng(77);
+  const L = MA.loop(MA.el("pp-cv"), (dt) => {
+    if (ball.state === "run" || ball.state === "esc") { ball.t += dt * 1.8; }
+    if (ball.t >= 1) {
+      ball.t = 0;
+      if (ball.state === "esc") { ball.state = "done"; ball.from = 2; }
+      else {
+        ball.hops++; ball.from = 1 - ball.from;
+        const q = MA.val("pp-q"), H = MA.val("pp-h"), det = MA.el("pp-d").checked, esc = MA.el("pp-e").checked;
+        if (ball.hops >= 3 && r() < 0.8) ball.seq++;
+        if (r() >= q) ball.state = "done";
+        else if ((det && ball.seq > 0) || (H && ball.hops >= H)) ball.state = esc ? "esc" : "fail";
+      }
+    }
+    if (ball.state === "done" || ball.state === "fail") { acc += dt; if (acc > 1.6) { acc = 0; ball = { from: 0, t: 0, hops: 0, state: "run", seq: 0 }; } }
+    cv.redraw();
+  });
+  ["pp-d", "pp-e"].forEach((id) => MA.el(id).addEventListener("change", () => cv.redraw()));
+  MA.wire(["pp-q", "pp-h", "pp-t"], () => cv.redraw(), { "pp-q": (v) => MA.pct(v), "pp-h": (v) => (v ? v + "홉" : "없음"), "pp-t": MA.si });
+  if (MA.reduced()) cv.redraw(); else L.start();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>통신과 메시지 프로토콜 · ChorusBook</title>
+<meta name="description" content="전달될수록 사라지는 정보(전언 게임), 요약 전달과 참조 전달, 핸드오프와 도구로서의 에이전트, 구조화 메시지와 스키마 검사를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #ms-in { min-height: 250px; }
+  #ms-res { display: grid; gap: 6px; }
+  #ho-chat { min-height: 260px; max-height: 300px; }
+  .bub.t { align-self: center; background: var(--surface); border: 1px dashed var(--border); font-family: var(--mono); font-size: 12px; color: var(--text-dim); max-width: 92%; }
+  .bub .who { display: block; font-size: 11px; font-weight: 700; margin-bottom: 2px; }
+</style>
+</head>
+<body data-root="../" data-chapter="comms">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 04</div>
+    <h1>통신과 메시지 프로토콜</h1>
+    <p class="lead">에이전트끼리는 텔레파시가 없다. 한 에이전트가 아는 것이 다른 에이전트에게 가는 길은 <b>메시지</b>뿐이고, 메시지는 대개 요약이다. 요약은 전달될 때마다 세부를 잃고, 가끔은 없던 것을 만들어 낸다. 이 장에서는 정보가 여러 에이전트를 거치며 줄어드는 모습을 직접 보고, 그것을 막는 두 가지 방법(원문을 참조로 넘기기, 메시지에 구조를 주기)과 주도권을 넘기는 두 가지 방식(핸드오프, 도구로서의 에이전트)을 비교한다.</p>
+    <ul class="objectives">
+      <li>요약 전달의 정보 손실이 단계 수에 따라 지수적으로 커지는 이유를 설명할 수 있다.</li>
+      <li>참조 전달(아티팩트)로 손실과 토큰을 함께 줄이는 방법을 설명할 수 있다.</li>
+      <li>핸드오프와 도구로서의 에이전트를 구분하고 상황에 맞게 고를 수 있다.</li>
+      <li>에이전트 사이 메시지에 필요한 필드를 설계하고 스키마로 검사할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="telephone">
+    <h2>전달될수록 사라지는 정보</h2>
+    <p>어린 시절 해 본 전언 게임(귓속말 이어 전하기)을 떠올려 보자. 한 사람을 거칠 때마다 조금씩 빠지고 조금씩 바뀐다. 에이전트도 같다. 워커가 리더에게, 리더가 다른 워커에게, 관리자가 다시 위로 요약을 넘길 때마다 원래 정보의 일부만 남는다. 각 단계의 보존율이 <var>r</var>이면 <var>k</var>단계 뒤에는 <var>r</var><sup><var>k</var></sup>만 남는다. 90%씩 보존해도 다섯 단계면 59%다.</p>
+    <div class="formula"><div class="eq">남는 사실 = <var>F</var> · <var>r</var><sup><var>k</var></sup> &nbsp;&nbsp;·&nbsp;&nbsp; 섞여 든 오류 ≈ <var>F</var> · <var>e</var> · (1 + <var>r</var> + <var>r</var><sup>2</sup> + … + <var>r</var><sup><var>k</var>−1</sup>)</div>
+      <div class="where"><var>F</var>: 처음 사실 수, <var>r</var>: 한 단계의 보존율, <var>e</var>: 한 단계에서 새로 생기는 왜곡(잘못 옮긴 수치, 뒤바뀐 주어)의 비율. 왜곡은 생긴 뒤에도 다음 단계로 같이 전달된다.</div></div>
+    <div class="sim" id="sim-tele">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>전언 게임 — 요약 전달과 참조 전달</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="te-mode" style="margin-bottom:10px"><button data-v="sum" class="on">요약을 넘긴다</button><button data-v="ref">원문은 저장하고 참조를 넘긴다</button></div>
+          <canvas id="te-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>전달 단계 수 k <output id="te-k-out"></output></span><input type="range" id="te-k" min="1" max="8" step="1" value="5"></label>
+          <label class="ctrl"><span>단계당 보존율 r <output id="te-r-out"></output></span><input type="range" id="te-r" min="0.5" max="1" step="0.01" value="0.88"></label>
+          <label class="ctrl"><span>단계당 왜곡 e <output id="te-e-out"></output></span><input type="range" id="te-e" min="0" max="0.15" step="0.01" value="0.04"></label>
+          <label class="ctrl"><span>원문 크기 (토큰) <output id="te-s-out"></output></span><input type="range" id="te-s" min="2000" max="60000" step="1000" value="20000"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>원래 사실</span><span><i style="background:var(--guard)"></i>왜곡</span><span><i style="background:var(--surface-2)"></i>사라짐</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">마지막에 남은 사실</span><span class="v" id="te-o1">—</span></div>
+        <div class="stat"><span class="k">섞인 왜곡</span><span class="v" id="te-o2">—</span></div>
+        <div class="stat"><span class="k">전달에 쓴 토큰</span><span class="v" id="te-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 요약 모드에서 k를 8로 올리면 처음 40개 사실 중 절반 이상이 사라지고 빨간 왜곡이 쌓인다. ② <b>참조 전달</b>로 바꾸면 각 단계는 짧은 요약과 함께 <code>artifact://report-17</code> 같은 위치만 넘기고, 원문이 필요한 마지막 에이전트만 원문을 직접 읽는다. 사실은 그대로 남고, 중간 단계의 토큰도 준다. ③ 원문 크기를 2,000으로 줄이면 참조 전달의 이득이 작아진다. 짧은 결과는 그냥 넘기는 편이 낫다.</div>
+    </div>
+    <div class="callout"><b class="h">원문은 파일로, 메시지는 짧게</b>Anthropic의 리서치 시스템 사례는 하위 에이전트가 결과를 리더를 거쳐 전달하는 대신 <b>외부 저장소에 직접 쓰고 가벼운 참조만 넘기게</b> 해 전달 과정의 손실과 토큰을 줄였다고 설명한다. 코드, 표, 보고서처럼 형태가 있는 결과물일수록 효과가 크다. 5장에서 이 공유 저장소를 블랙보드로 일반화한다.</div>
+  </section>
+
+  <section id="handoff">
+    <h2>핸드오프와 도구로서의 에이전트</h2>
+    <p>한 에이전트가 다른 에이전트를 끌어들이는 방식은 크게 둘이다. <span class="term">핸드오프</span><span class="en">handoff</span>는 대화의 주도권 자체를 넘긴다. 넘겨받은 에이전트가 사용자와 직접 이어서 말하고, 넘긴 쪽은 빠진다. <span class="term">도구로서의 에이전트</span><span class="en">agent as tool</span>는 다른 에이전트를 함수처럼 부르고 결과만 돌려받는다. 주도권은 부른 쪽에 남는다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 200" role="img" aria-label="핸드오프와 도구로서의 에이전트 비교">
+        <defs><marker id="m4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--tool)"/></marker></defs>
+        <text x="190" y="20" text-anchor="middle" class="t-b">핸드오프 — 주도권이 옮겨 간다</text>
+        <circle cx="50" cy="100" r="22" class="soft-user" stroke-width="2"/><text x="50" y="104" text-anchor="middle" class="t">사용자</text>
+        <circle cx="180" cy="60" r="26" class="f-acc-soft" stroke-width="2"/><text x="180" y="64" text-anchor="middle" class="t">접수</text>
+        <circle cx="300" cy="120" r="26" class="soft-ctx" stroke-width="2"/><text x="300" y="124" text-anchor="middle" class="t">환불</text>
+        <path d="M72 92 L154 66" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <path d="M204 72 L276 108" stroke="var(--tool)" stroke-width="2.2" marker-end="url(#m4)"/><text x="250" y="80" class="t-mono" style="fill:var(--tool)">transfer</text>
+        <path d="M72 106 C 150 150, 220 150, 274 128" stroke="var(--accent)" stroke-width="2.4" fill="none" class="flow"/><text x="150" y="168" class="t-acc">이후 대화는 환불 ↔ 사용자</text>
+        <text x="590" y="20" text-anchor="middle" class="t-b">도구로서의 에이전트 — 결과만 돌아온다</text>
+        <circle cx="450" cy="100" r="22" class="soft-user" stroke-width="2"/><text x="450" y="104" text-anchor="middle" class="t">사용자</text>
+        <circle cx="580" cy="100" r="26" class="f-acc-soft" stroke-width="2"/><text x="580" y="104" text-anchor="middle" class="t">접수</text>
+        <circle cx="710" cy="60" r="24" class="soft-ctx" stroke-width="2"/><text x="710" y="64" text-anchor="middle" class="t">환불</text>
+        <circle cx="710" cy="146" r="24" class="soft-ctx" stroke-width="2"/><text x="710" y="150" text-anchor="middle" class="t">배송</text>
+        <path d="M472 100 H552" stroke="var(--accent)" stroke-width="2.4" class="flow"/>
+        <path d="M604 90 L686 66" stroke="var(--tool)" stroke-width="2" marker-end="url(#m4)"/><path d="M688 72 L606 96" stroke="var(--env)" stroke-width="2" stroke-dasharray="3 3"/>
+        <path d="M604 110 L686 140" stroke="var(--tool)" stroke-width="2" marker-end="url(#m4)"/>
+        <text x="580" y="160" text-anchor="middle" class="t-acc">사용자와는 접수만 말한다</text>
+      </svg>
+      <figcaption><b>그림 4-1.</b> 왼쪽: 접수 에이전트가 환불 전문 에이전트에게 대화를 넘기면, 그 뒤로는 환불 에이전트가 사용자와 직접 말한다. 오른쪽: 접수 에이전트가 환불·배송 에이전트를 도구처럼 부르고 결과를 받아 자기 말로 답한다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-handoff">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>핸드오프 대 도구 호출 — 같은 문의, 다른 대화</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="ho-mode" style="margin-bottom:10px"><button data-v="hand" class="on">핸드오프</button><button data-v="tool">도구로서의 에이전트</button></div>
+          <div class="chat" id="ho-chat"></div>
+        </div>
+        <div class="sim-controls">
+          <canvas id="ho-cv"></canvas>
+          <div class="btns"><button class="btn primary" id="ho-next">다음 단계 ▶</button><button class="btn" id="ho-reset">처음부터</button></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">지금 사용자와 말하는 에이전트</span><span class="v" id="ho-o1">—</span></div>
+        <div class="stat"><span class="k">넘겨진 맥락</span><span class="v" id="ho-o2">—</span></div>
+        <div class="stat"><span class="k">사용자가 같은 말을 다시 한 횟수</span><span class="v" id="ho-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 핸드오프에서 환불 에이전트가 주문 번호를 다시 묻는 장면을 보자. 넘길 때 대화 기록을 함께 넘기지 않으면 사용자가 같은 말을 반복한다. ② 도구 모드에서는 사용자가 한 번만 말하지만, 접수 에이전트가 모든 전문 지식을 중계해야 하므로 길어지는 상담에서는 접수의 컨텍스트가 커진다. ③ 규칙: 전문 에이전트가 <b>사용자와 오래 대화해야 하면 핸드오프</b>, <b>짧은 답만 받아 오면 도구 호출</b>. 어느 쪽이든 넘길 때 무엇을 함께 넘길지 정한다.</div>
+    </div>
+  </section>
+
+  <section id="schema">
+    <h2>메시지에 구조를 주기</h2>
+    <p>사람끼리의 대화처럼 자유로운 문장으로 메시지를 주고받으면 쓰기는 쉽지만 받는 쪽이 오해하기 쉽다. “결과는 대체로 긍정적”이 성공인지 실패인지, “나중에 보내겠다”가 작업 완료인지 질문인지. 에이전트 사이 메시지에 <b>정해진 필드</b>를 두고 하네스가 스키마로 검사하면, 이런 모호함을 받는 순간 잡아내 되돌려 보낼 수 있다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 210" role="img" aria-label="에이전트 메시지의 구조">
+        <rect x="20" y="20" width="360" height="176" rx="12" class="soft-tool"/>
+        <text x="36" y="44" class="t-b">에이전트 메시지 (봉투 + 본문)</text>
+        <g class="t-mono">
+          <text x="40" y="70">task_id</text><text x="160" y="70" style="fill:var(--text)">"mkt-07"</text><text x="260" y="70" style="fill:var(--text-faint)">어느 일의 메시지인가</text>
+          <text x="40" y="92">from → to</text><text x="160" y="92" style="fill:var(--text)">policy → lead</text>
+          <text x="40" y="114">type</text><text x="160" y="114" style="fill:var(--accent)">result</text><text x="260" y="114" style="fill:var(--text-faint)">요청·결과·질문·오류</text>
+          <text x="40" y="136">status</text><text x="160" y="136" style="fill:var(--env)">complete</text><text x="260" y="136" style="fill:var(--text-faint)">완료·부분·실패</text>
+          <text x="40" y="158">summary</text><text x="160" y="158" style="fill:var(--text)">"보조금 3종 확인 …"</text>
+          <text x="40" y="180">artifacts</text><text x="160" y="180" style="fill:var(--ctx)">["artifact://pol-table"]</text>
+        </g>
+        <g transform="translate(430,24)">
+          <text x="0" y="16" class="t-b">어디서 쓰이나</text>
+          <rect x="0" y="30" width="320" height="60" rx="10" class="f-acc-soft"/>
+          <text x="14" y="54" class="t-b" style="fill:var(--accent)">MCP</text><text x="70" y="54" class="t">에이전트 ↔ 도구 · 데이터</text>
+          <text x="14" y="76" class="t-dim">도구 목록과 호출 결과를 표준 형식으로</text>
+          <rect x="0" y="102" width="320" height="72" rx="10" class="soft-ctx"/>
+          <text x="14" y="126" class="t-b" style="fill:var(--ctx)">A2A</text><text x="70" y="126" class="t">에이전트 ↔ 에이전트</text>
+          <text x="14" y="148" class="t-dim">능력을 공개하는 에이전트 카드, 상태가 있는</text>
+          <text x="14" y="164" class="t-dim">작업 단위(진행 중·입력 필요·완료 …)</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 4-2.</b> 에이전트 메시지의 최소 구조. 같은 시스템 안이라면 하네스가 정한 스키마면 충분하고, 회사나 프레임워크가 다른 에이전트끼리라면 A2A 같은 개방형 규약이 그 역할을 한다. MCP가 에이전트와 도구 사이를, A2A가 에이전트와 에이전트 사이를 맡는다고 생각하면 쉽다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-msg">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>메시지 검사기 — 받는 순간 잡아내기</h3></div>
+      <div class="sim-body">
+        <div class="btns" id="ms-pre"><button class="btn" data-i="0">정상 결과</button><button class="btn" data-i="1">모호한 자유 텍스트</button><button class="btn" data-i="2">type 오타</button><button class="btn" data-i="3">부분 완료인데 complete</button><button class="btn" data-i="4">아티팩트 없는 긴 본문</button></div>
+        <div class="two">
+          <textarea id="ms-in" spellcheck="false" aria-label="검사할 메시지"></textarea>
+          <div><div id="ms-res"></div></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">판정</span><span class="v" id="ms-o1">—</span></div>
+        <div class="stat"><span class="k">오류</span><span class="v" id="ms-o2">—</span></div>
+        <div class="stat"><span class="k">경고</span><span class="v" id="ms-o3">—</span></div>
+        <div class="stat"><span class="k">메시지 크기</span><span class="v" id="ms-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 예시를 하나씩 눌러 보자. 검사기는 오류를 <b>보낸 에이전트가 고칠 수 있는 문장</b>으로 돌려준다(“type은 request·result·question·error 중 하나여야 합니다. 받은 값: 'resul'”). ② 직접 고쳐서 초록색 판정을 받아 보자. ③ status가 partial이면 무엇이 빠졌는지 적은 <code>missing</code> 필드를 요구한다. 리더가 그것을 보고 재위임할 수 있게.</div>
+    </div>
+    <p>구조화의 효과는 메시지가 많을수록 커진다. 메시지 하나를 잘못 읽을 확률이 작아도, 한 작업에서 수십 개 메시지가 오가면 그중 하나는 거의 반드시 잘못 읽힌다.</p>
+    <div class="sim" id="sim-struct">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>자유 텍스트 대 구조화 메시지 — 메시지가 쌓이면</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="st-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>작업당 메시지 수 <output id="st-m-out"></output></span><input type="range" id="st-m" min="1" max="120" step="1" value="40"></label>
+          <label class="ctrl"><span>자유 텍스트 오독률 <output id="st-p-out"></output></span><input type="range" id="st-p" min="0" max="0.1" step="0.002" value="0.03"></label>
+          <label class="ctrl"><span>스키마 검사가 잡는 비율 <output id="st-c-out"></output></span><input type="range" id="st-c" min="0" max="1" step="0.05" value="0.85"></label>
+          <label class="ctrl"><span>되돌려 보내 고칠 수 있는 비율 <output id="st-f-out"></output></span><input type="range" id="st-f" min="0" max="1" step="0.05" value="0.9"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>자유 텍스트</span><span><i style="background:var(--env)"></i>구조화 + 검사</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">오독 없이 끝날 확률 · 자유</span><span class="v" id="st-o1">—</span></div>
+        <div class="stat"><span class="k">오독 없이 끝날 확률 · 구조화</span><span class="v" id="st-o2">—</span></div>
+        <div class="stat"><span class="k">메시지 하나의 실효 오독률 · 구조화</span><span class="v" id="st-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 오독률 3%, 메시지 40개면 자유 텍스트로는 끝까지 오독 없이 갈 확률이 30%가 안 된다. ② 검사율을 0으로 내리면 두 곡선이 겹친다. 구조를 정해도 검사하지 않으면 소용이 없다. ③ 되돌려 고치는 비율이 높을수록 구조화 곡선이 평평해진다. 오류 메시지를 <b>고칠 수 있게</b> 쓰는 것이 핵심이다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>요약을 거칠 때마다 정보는 보존율만큼 줄고 왜곡은 쌓인다. k단계 뒤에는 r<sup>k</sup>만 남는다.</li>
+      <li>형태가 있는 결과물은 공유 저장소에 쓰고 참조만 넘긴다. 손실과 중간 토큰을 함께 줄인다.</li>
+      <li>핸드오프는 주도권을 넘기고, 도구로서의 에이전트는 결과만 받는다. 넘길 때 무엇을 함께 넘길지 정한다.</li>
+      <li>메시지에 task_id, type, status, summary, artifacts 같은 필드를 두고 받는 순간 검사한다. 오류는 보낸 쪽이 고칠 수 있게 돌려준다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 단계당 보존율이 0.8인 요약을 세 번 거치면 원래 사실의 몇 %가 남는가?</p><div class="opts">
+        <button class="opt">80%</button>
+        <button class="opt">60%</button>
+        <button class="opt" data-correct>약 51%</button>
+      </div><div class="quiz-exp">0.8³ = 0.512. 계층이 깊을수록 요약 단계가 늘어난다(2장의 계층형).</div></div>
+      <div class="quiz-q"><p>2. 워커가 4만 토큰짜리 분석 표를 만들었다. 리더와 다음 워커 모두 이 표의 일부가 필요하다. 가장 좋은 전달 방식은?</p><div class="opts">
+        <button class="opt">표 전체를 메시지 본문에 붙인다</button>
+        <button class="opt">두 줄로 요약해서 넘긴다</button>
+        <button class="opt" data-correct>표를 공유 저장소에 쓰고, 요약과 위치(참조)를 넘긴다</button>
+      </div><div class="quiz-exp">필요한 쪽만 필요한 부분을 읽게 한다. 전체를 붙이면 토큰이, 요약만 넘기면 정보가 사라진다.</div></div>
+      <div class="quiz-q"><p>3. 보험 청구 상담처럼 전문 에이전트가 사용자와 여러 번 주고받아야 한다. 알맞은 방식은?</p><div class="opts">
+        <button class="opt" data-correct>대화 기록과 함께 핸드오프</button>
+        <button class="opt">접수 에이전트가 매번 도구로 호출</button>
+        <button class="opt">두 에이전트가 동시에 답한다</button>
+      </div><div class="quiz-exp">긴 상호작용은 전문 에이전트가 직접 맡는 편이 낫다. 기록을 넘기지 않으면 사용자가 같은 말을 반복한다.</div></div>
+      <div class="quiz-q"><p>4. 스키마 검사를 도입했는데 오류가 줄지 않았다. 가장 먼저 확인할 것은?</p><div class="opts">
+        <button class="opt">메시지 길이</button>
+        <button class="opt" data-correct>검사 실패를 보낸 에이전트에게 고칠 수 있는 오류 메시지로 되돌려 주는지</button>
+        <button class="opt">모델의 온도 설정</button>
+      </div><div class="quiz-exp">잡기만 하고 고칠 방법을 알려 주지 않으면 같은 실수가 반복된다. 검사 → 되돌림 → 수정이 한 묶음이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 전언 게임 ---------------- */
+(function () {
+  const F = 40;
+  let mode = "sum", anim = 0;
+  const cv = MA.canvas("te-cv", { aspect: 0.62, draw });
+  function sim() {
+    const k = MA.val("te-k"), r = MA.val("te-r"), e = MA.val("te-e"), S = MA.val("te-s");
+    const rnd = MA.rng(9);
+    const hops = [];
+    // 사실마다 생존 여부를 결정적으로 뽑아 시각화
+    let alive = Array.from({ length: F }, () => 1), wrong = [];
+    hops.push({ alive: alive.slice(), wrong: [] });
+    let tokens = 0, size = S;
+    for (let i = 1; i <= k; i++) {
+      if (mode === "sum") {
+        alive = alive.map((a) => (a && rnd() < r ? 1 : 0));
+        wrong = wrong.filter(() => rnd() < r);
+        const nw = Math.round(alive.reduce((x, y) => x + y, 0) * e + rnd() * 0.6);
+        for (let j = 0; j < nw; j++) wrong.push(1);
+        size = Math.max(600, size * 0.35);
+        tokens += size;
+      } else {
+        tokens += 400; // 요약 + 참조
+        if (i === k) tokens += S; // 마지막만 원문을 읽는다
+      }
+      hops.push({ alive: alive.slice(), wrong: wrong.slice() });
+    }
+    return { hops, tokens, k };
+  }
+  function draw(c, w, h) {
+    const R = sim(), k = R.k, cols = k + 1, cw = (w - 20) / cols;
+    const show = Math.min(cols, Math.floor(anim) + 1);
+    for (let i = 0; i < show; i++) {
+      const x = 10 + i * cw, H = R.hops[i];
+      const role = i === 0 ? "worker" : i === k ? "lead" : "worker";
+      MA.node(c, x + cw / 2, 26, 13, role, i === 0 ? "원" : String(i), { size: 10 });
+      if (i < show - 1 || anim >= cols) MA.arrow(c, x + cw / 2 + 14, 26, x + cw * 1.5 - 14, 26, MA.col("tool"), { hs: 5, w: 1.4 });
+      if (mode === "ref" && i > 0) MA.text(c, "ref", x + cw / 2, 50, { size: 10, mono: true, align: "center", color: MA.col("ctx") });
+      // 사실 격자
+      const gx = x + 6, gy = 62, cell = Math.min(10, (cw - 12) / 5), per = 5;
+      H.alive.forEach((a, j) => {
+        const cx = gx + (j % per) * cell + cell / 2, cy = gy + Math.floor(j / per) * cell + cell / 2;
+        c.fillStyle = a ? MA.col("env") : MA.col("surface-2");
+        c.beginPath(); c.arc(cx, cy, cell * 0.36, 0, 7); c.fill();
+      });
+      H.wrong.forEach((_, j) => {
+        const jj = F + j, cx = gx + (jj % per) * cell + cell / 2, cy = gy + Math.floor(jj / per) * cell + cell / 2;
+        if (cy > h - 16) return;
+        c.fillStyle = MA.col("guard"); c.beginPath(); c.arc(cx, cy, cell * 0.36, 0, 7); c.fill();
+      });
+    }
+    if (mode === "ref") {
+      c.strokeStyle = MA.col("ctx"); c.setLineDash([4, 4]); c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(10 + cw / 2, h - 10); c.lineTo(10 + (k + 0.5) * cw, h - 10); c.stroke(); c.setLineDash([]);
+      MA.text(c, "artifact://report-17 (원문은 저장소에)", w / 2, h - 20, { size: 10.5, mono: true, align: "center", color: MA.col("ctx") });
+    }
+    const last = R.hops[k], kept = last.alive.reduce((a, b) => a + b, 0), wr = last.wrong.length;
+    MA.set("te-o1", `${kept} / ${F}`, kept / F > 0.85 ? "good" : kept / F < 0.55 ? "bad" : "warn");
+    MA.set("te-o2", String(wr), wr === 0 ? "good" : wr > 4 ? "bad" : "warn");
+    MA.set("te-o3", MA.si(R.tokens) + " tok");
+  }
+  const L = MA.loop(MA.el("te-cv"), (dt) => { const cols = MA.val("te-k") + 1; if (anim < cols) { anim += dt * 2.2; cv.redraw(); } });
+  const replay = () => { anim = MA.reduced() ? 99 : 0; cv.redraw(); };
+  MA.seg("te-mode", (v) => { mode = v; replay(); });
+  MA.wire(["te-k", "te-r", "te-e", "te-s"], replay, { "te-r": (v) => MA.pct(v), "te-e": (v) => MA.pct(v), "te-s": MA.si, "te-k": (v) => v + "단계" });
+  L.start();
+})();
+
+/* ---------------- 2. 핸드오프 대 도구 ---------------- */
+(function () {
+  const SCRIPTS = {
+    hand: [
+      { who: "u", text: "지난주 주문(#A-2291)한 이어폰이 불량이라 환불받고 싶어요.", active: "접수", ctx: "—", edge: ["U", "T"] },
+      { who: "a", name: "접수", text: "환불 문의시군요. 환불 담당에게 연결해 드릴게요.", active: "접수", ctx: "—", edge: ["T", "U"] },
+      { who: "t", text: "transfer_to_refund()  · 대화 기록 넘기지 않음", active: "환불", ctx: "없음", edge: ["T", "R"] },
+      { who: "a", name: "환불", text: "안녕하세요, 환불 담당입니다. 주문 번호와 사유를 알려 주시겠어요?", active: "환불", ctx: "없음", edge: ["R", "U"], repeat: 0 },
+      { who: "u", text: "…방금 말했는데요. #A-2291, 불량이요.", active: "환불", ctx: "없음", edge: ["U", "R"], repeat: 1 },
+      { who: "a", name: "환불", text: "확인했습니다. 회수 택배를 내일 보내 드리고 도착하면 바로 환불됩니다.", active: "환불", ctx: "없음", edge: ["R", "U"], repeat: 1 },
+      { who: "t", text: "개선: transfer_to_refund(history=전체, summary=\"#A-2291, 불량\")", active: "환불", ctx: "기록 + 요약", edge: ["T", "R"], repeat: 1 },
+    ],
+    tool: [
+      { who: "u", text: "지난주 주문(#A-2291)한 이어폰이 불량이라 환불받고 싶어요.", active: "접수", ctx: "—", edge: ["U", "T"] },
+      { who: "t", text: "call refund_agent({order:\"A-2291\", reason:\"불량\"})", active: "접수", ctx: "필요한 인자만", edge: ["T", "R"] },
+      { who: "t", text: "← {eligible:true, pickup:\"내일\", refund:\"도착 즉시\"}", active: "접수", ctx: "필요한 인자만", edge: ["R", "T"] },
+      { who: "a", name: "접수", text: "환불 가능합니다. 회수 택배를 내일 보내 드리고, 도착하면 바로 환불됩니다.", active: "접수", ctx: "필요한 인자만", edge: ["T", "U"] },
+      { who: "u", text: "그럼 같이 주문한 케이스도 배송이 아직인데요?", active: "접수", ctx: "필요한 인자만", edge: ["U", "T"] },
+      { who: "t", text: "call shipping_agent({order:\"A-2291\", item:\"케이스\"}) → {status:\"출고 지연\", eta:\"금요일\"}", active: "접수", ctx: "필요한 인자만", edge: ["T", "S"] },
+      { who: "a", name: "접수", text: "케이스는 출고가 지연되어 금요일 도착 예정입니다.", active: "접수", ctx: "필요한 인자만", edge: ["T", "U"] },
+    ],
+  };
+  let mode = "hand", i = 0;
+  const cv = MA.canvas("ho-cv", { height: 200, draw });
+  const POS = { U: [0.14, 0.5, "human", "사용자"], T: [0.5, 0.2, "lead", "접수"], R: [0.84, 0.35, "worker", "환불"], S: [0.84, 0.8, "worker", "배송"] };
+  function draw(c, w, h) {
+    const s = SCRIPTS[mode][Math.max(0, i - 1)];
+    const active = s ? s.active : "접수";
+    const P = (k) => [POS[k][0] * w, POS[k][1] * h];
+    [["U", "T"], ["T", "R"], ["T", "S"], ["U", "R"]].forEach(([a, b]) => { if (mode === "tool" && a === "U" && b === "R") return; const [x1, y1] = P(a), [x2, y2] = P(b); c.strokeStyle = MA.col("border"); c.lineWidth = 1.2; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); });
+    if (s) { const [x1, y1] = P(s.edge[0]), [x2, y2] = P(s.edge[1]); MA.arrow(c, x1, y1, x2, y2, MA.col("tool"), { r1: 22, r2: 22, w: 2.6 }); }
+    Object.entries(POS).forEach(([k, [, , role, lab]]) => { const [x, y] = P(k); MA.node(c, x, y, 20, role, lab, { glow: lab === active ? 1 : 0, size: 11 }); });
+  }
+  function render() {
+    const S = SCRIPTS[mode];
+    MA.el("ho-chat").innerHTML = S.slice(0, i).map((s, k) => s.who === "u" ? `<div class="bub u ${k === i - 1 ? "new" : ""}">${MA.esc(s.text)}</div>` : s.who === "t" ? `<div class="bub t ${k === i - 1 ? "new" : ""}">${MA.esc(s.text)}</div>` : `<div class="bub a ${k === i - 1 ? "new" : ""}"><span class="who" style="color:${s.name === "환불" ? "var(--ctx)" : "var(--accent)"}">${s.name}</span>${MA.esc(s.text)}</div>`).join("") || `<div class="bub t">“다음 단계”를 눌러 대화를 진행하세요</div>`;
+    const ch = MA.el("ho-chat"); ch.scrollTop = ch.scrollHeight;
+    const s = S[Math.max(0, i - 1)];
+    MA.set("ho-o1", i ? s.active : "—");
+    MA.set("ho-o2", i ? s.ctx : "—", i && s.ctx === "없음" ? "bad" : "");
+    const rep = i ? S.slice(0, i).reduce((a, x) => Math.max(a, x.repeat || 0), 0) : 0;
+    MA.set("ho-o3", rep + "회", rep ? "bad" : "good");
+    MA.el("ho-next").disabled = i >= S.length;
+    cv.redraw();
+  }
+  MA.el("ho-next").addEventListener("click", () => { i = Math.min(SCRIPTS[mode].length, i + 1); render(); });
+  MA.el("ho-reset").addEventListener("click", () => { i = 0; render(); });
+  MA.seg("ho-mode", (v) => { mode = v; i = 0; render(); });
+  render();
+})();
+
+/* ---------------- 3. 메시지 검사기 ---------------- */
+(function () {
+  const PRE = [
+    { task_id: "mkt-07", from: "policy", to: "lead", type: "result", status: "complete", summary: "국내 보조금 3종과 2027년 재활용 의무 비율 개정안을 확인했다.", artifacts: ["artifact://pol-table"] },
+    "정책 쪽은 대체로 긍정적인 것 같습니다. 자세한 건 나중에 정리해서 보내 드릴게요!",
+    { task_id: "mkt-07", from: "policy", to: "lead", type: "resul", status: "complete", summary: "보조금 3종 확인", artifacts: ["artifact://pol-table"] },
+    { task_id: "mkt-07", from: "tech", to: "lead", type: "result", status: "complete", summary: "건식 공정 2건만 확인. 습식 공정은 검색 한도에 걸려 보지 못했다.", artifacts: [] },
+    { task_id: "mkt-07", from: "biz", to: "lead", type: "result", status: "complete", summary: "기업 A는 2023년 … ".repeat(80), artifacts: [] },
+  ];
+  const TYPES = ["request", "result", "question", "error"], STATUS = ["complete", "partial", "failed"];
+  const ta = MA.el("ms-in");
+  function check() {
+    const raw = ta.value, errs = [], warns = [];
+    let m = null;
+    try { m = JSON.parse(raw); } catch (e) { errs.push("JSON으로 읽을 수 없습니다. 메시지는 정해진 필드를 가진 JSON 객체여야 합니다: {task_id, from, to, type, status, summary, artifacts}."); }
+    if (m && (typeof m !== "object" || Array.isArray(m))) { errs.push("최상위는 객체여야 합니다."); m = null; }
+    if (m) {
+      ["task_id", "from", "to", "type", "summary"].forEach((f) => { if (m[f] == null || m[f] === "") errs.push(`필수 필드 '${f}'가 없습니다.`); });
+      if (m.type != null && !TYPES.includes(m.type)) errs.push(`type은 ${TYPES.join("·")} 중 하나여야 합니다. 받은 값: '${m.type}'`);
+      if (m.type === "result" && !STATUS.includes(m.status)) errs.push(`type이 result면 status(${STATUS.join("·")})가 필요합니다.`);
+      if (m.status === "partial" && !m.missing) errs.push("status가 partial이면 무엇이 빠졌는지 'missing' 필드에 적어 주세요. 리더가 재위임할 수 있습니다.");
+      if (m.artifacts != null && !Array.isArray(m.artifacts)) errs.push("artifacts는 참조 문자열의 배열이어야 합니다.");
+      if (Array.isArray(m.artifacts)) m.artifacts.forEach((a) => { if (!/^artifact:\/\/[\w-]+$/.test(a)) errs.push(`참조 형식이 아닙니다: '${a}' (예: artifact://pol-table)`); });
+      if (m.status === "complete" && typeof m.summary === "string" && /(못했|한도|확인하지|보지 못|일부만)/.test(m.summary)) warns.push("요약에 ‘보지 못했다’는 내용이 있는데 status가 complete입니다. partial이 맞는지 확인하세요.");
+      if (typeof m.summary === "string" && m.summary.length > 600 && !(m.artifacts || []).length) warns.push(`summary가 ${m.summary.length}자입니다. 긴 결과는 아티팩트로 저장하고 참조만 넘기세요.`);
+      if (m.from && m.to && m.from === m.to) warns.push("보낸 쪽과 받는 쪽이 같습니다.");
+    }
+    const ok = !errs.length;
+    MA.el("ms-res").innerHTML = (ok ? `<div class="verdict" style="--k:var(--env)"><b>통과</b> — 리더에게 전달합니다.${warns.length ? " 경고는 확인해 보세요." : ""}</div>` : `<div class="verdict" style="--k:var(--guard)"><b>반려</b> — 보낸 에이전트에게 아래 내용과 함께 되돌려 보냅니다.</div>`) +
+      errs.map((e) => `<div class="mem" style="--k:var(--guard)"><span class="op DELETE">ERROR</span><span class="t">${MA.esc(e)}</span></div>`).join("") +
+      warns.map((e) => `<div class="mem" style="--k:var(--tool)"><span class="op UPDATE">WARN</span><span class="t">${MA.esc(e)}</span></div>`).join("");
+    MA.set("ms-o1", ok ? "통과" : "반려", ok ? "good" : "bad");
+    MA.set("ms-o2", String(errs.length), errs.length ? "bad" : "good");
+    MA.set("ms-o3", String(warns.length), warns.length ? "warn" : "good");
+    MA.set("ms-o4", MA.si(Math.ceil(raw.length / 2.2)) + " tok");
+  }
+  MA.$$("#ms-pre button").forEach((b) => b.addEventListener("click", () => { const p = PRE[+b.dataset.i]; ta.value = typeof p === "string" ? p : JSON.stringify(p, null, 2); check(); }));
+  ta.addEventListener("input", check);
+  ta.value = JSON.stringify(PRE[2], null, 2); check();
+})();
+
+/* ---------------- 4. 자유 텍스트 대 구조화 ---------------- */
+(function () {
+  const cv = MA.canvas("st-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const M = MA.val("st-m"), p = MA.val("st-p"), cc = MA.val("st-c"), f = MA.val("st-f");
+    const pe = p * (1 - cc * f); // 잡혀서 고쳐지지 않은 몫만 남는다
+    const A = MA.axes(c, { box: { l: 48, t: 12, r: w - 14, b: h - 38 }, x: [0, 120], y: [0, 1], xt: [0, 30, 60, 90, 120], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "작업당 메시지 수", yl: "오독 없이 끝날 확률", ylOff: 40 });
+    const a = [], b = [];
+    for (let m = 0; m <= 120; m++) { a.push([A.X(m), A.Y(Math.pow(1 - p, m))]); b.push([A.X(m), A.Y(Math.pow(1 - pe, m))]); }
+    MA.line(c, a, MA.col("guard"), 2.6); MA.line(c, b, MA.col("env"), 2.6);
+    MA.line(c, [[A.X(M), A.box.t], [A.X(M), A.box.b]], MA.col("accent"), 1.5, [4, 4]);
+    const s1 = Math.pow(1 - p, M), s2 = Math.pow(1 - pe, M);
+    [[s1, "guard"], [s2, "env"]].forEach(([v, col]) => { c.fillStyle = MA.col(col); c.beginPath(); c.arc(A.X(M), A.Y(v), 5, 0, 7); c.fill(); });
+    MA.set("st-o1", MA.pct(s1), s1 > 0.8 ? "good" : s1 < 0.5 ? "bad" : "warn");
+    MA.set("st-o2", MA.pct(s2), s2 > 0.8 ? "good" : s2 < 0.5 ? "bad" : "warn");
+    MA.set("st-o3", MA.pct(pe, 2));
+  }
+  MA.wire(["st-m", "st-p", "st-c", "st-f"], () => cv.redraw(), { "st-p": (v) => MA.pct(v, 1), "st-c": (v) => MA.pct(v), "st-f": (v) => MA.pct(v), "st-m": (v) => v + "개" });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>왜 여러 에이전트인가 · ChorusBook</title>
+<meta name="description" content="한 에이전트의 벽(컨텍스트, 폭, 전문성)과 멀티에이전트의 대가(조정, 토큰, 정보 손실)를 실험으로 비교하고, 언제 나누고 언제 나누지 말아야 하는지 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #wl-cv, #mp-cv { cursor: crosshair; }
+  .sort-card { border: 1px solid var(--border); background: var(--bg); border-radius: 12px; padding: 14px 16px; font-size: 15px; line-height: 1.55; min-height: 92px; }
+  .sort-card small { display: block; font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); margin-bottom: 4px; }
+  #so-fb { min-height: 48px; }
+</style>
+</head>
+<body data-root="../" data-chapter="why">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 01</div>
+    <h1>왜 여러 에이전트인가</h1>
+    <p class="lead">에이전트 하나는 하나의 컨텍스트 창 안에서, 한 번에 한 가지 행동을 하며 일한다. 대부분의 일은 이것으로 충분하다. 그런데 읽어야 할 자료가 창보다 크거나, 서로 무관한 열 갈래를 동시에 뒤져야 하거나, 전혀 다른 전문성을 번갈아 요구하는 일에서는 이 구조가 벽에 부딪힌다. 이 장에서는 그 벽이 어디에 있는지, 여러 에이전트로 나누면 무엇을 얻고 무엇을 치르는지, 그리고 <b>나누지 말아야 할 때</b>는 언제인지 실험으로 확인한다.</p>
+    <ul class="objectives">
+      <li>단일 에이전트가 부딪히는 세 가지 벽(컨텍스트, 폭, 전문성)을 설명할 수 있다.</li>
+      <li>멀티에이전트의 이득과 대가(조정 비용, 토큰 배수, 정보 손실)를 함께 따질 수 있다.</li>
+      <li>작업의 폭과 결합도로 단일 에이전트·워크플로·멀티에이전트 중 무엇이 맞는지 판단할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="define">
+    <h2>멀티에이전트 시스템이란</h2>
+    <p>이 책에서 <span class="term">에이전트</span><span class="en">agent</span>는 언어 모델이 도구를 쓰며 스스로 다음 행동을 고르는 루프를 말한다. <span class="term">멀티에이전트 시스템</span><span class="en">multi-agent system</span>은 그런 루프가 둘 이상 있고, 각자 <b>자기 컨텍스트</b>를 가지며, 메시지나 공유 상태를 통해 하나의 목표를 위해 협력하는 시스템이다. 같은 모델을 여러 번 부른다고 멀티에이전트가 되는 것은 아니다. 핵심은 <b>서로 다른 컨텍스트</b>다. 각 에이전트가 무엇을 보고 무엇을 모르는지가 설계의 전부라고 해도 과장이 아니다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 260" role="img" aria-label="단일 에이전트와 멀티에이전트의 구조 비교">
+        <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="m1t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--tool)"/></marker></defs>
+        <text x="170" y="22" text-anchor="middle" class="t-b">단일 에이전트</text>
+        <rect x="30" y="38" width="280" height="190" rx="14" class="f-acc-soft"/>
+        <text x="46" y="60" class="t-mono">하나의 컨텍스트 창</text>
+        <rect x="46" y="70" width="248" height="14" rx="3" class="c-state" opacity=".6"/>
+        <rect x="46" y="88" width="200" height="14" rx="3" class="c-ctx" opacity=".55"/>
+        <rect x="46" y="106" width="248" height="14" rx="3" class="c-ctx" opacity=".55"/>
+        <rect x="46" y="124" width="160" height="14" rx="3" class="c-tool" opacity=".55"/>
+        <rect x="46" y="142" width="248" height="14" rx="3" class="c-ctx" opacity=".55"/>
+        <rect x="46" y="160" width="230" height="14" rx="3" class="c-ctx" opacity=".55"/>
+        <rect x="46" y="178" width="248" height="14" rx="3" class="c-guard" opacity=".55"/><text x="54" y="189" class="t-w" style="font-size:10.5px">넘침 → 요약 · 버림</text>
+        <text x="170" y="214" text-anchor="middle" class="t-dim">모든 탐색 · 모든 결정이 한곳에</text>
+        <text x="560" y="22" text-anchor="middle" class="t-b">멀티에이전트</text>
+        <rect x="490" y="38" width="140" height="58" rx="12" class="f-acc-soft"/><text x="560" y="62" text-anchor="middle" class="t-b" style="fill:var(--accent)">리더</text>
+        <rect x="506" y="72" width="108" height="10" rx="3" class="c-state" opacity=".6"/>
+        <g transform="translate(390,150)"><rect width="110" height="78" rx="10" class="soft-ctx"/><text x="55" y="20" text-anchor="middle" class="t-b">워커 A</text><rect x="10" y="30" width="90" height="10" rx="2" class="c-ctx" opacity=".55"/><rect x="10" y="44" width="70" height="10" rx="2" class="c-ctx" opacity=".55"/><rect x="10" y="58" width="90" height="10" rx="2" class="c-ctx" opacity=".55"/></g>
+        <g transform="translate(510,150)"><rect width="110" height="78" rx="10" class="soft-ctx"/><text x="55" y="20" text-anchor="middle" class="t-b">워커 B</text><rect x="10" y="30" width="80" height="10" rx="2" class="c-ctx" opacity=".55"/><rect x="10" y="44" width="90" height="10" rx="2" class="c-ctx" opacity=".55"/></g>
+        <g transform="translate(630,150)"><rect width="110" height="78" rx="10" class="soft-ctx"/><text x="55" y="20" text-anchor="middle" class="t-b">워커 C</text><rect x="10" y="30" width="90" height="10" rx="2" class="c-ctx" opacity=".55"/><rect x="10" y="44" width="60" height="10" rx="2" class="c-ctx" opacity=".55"/><rect x="10" y="58" width="80" height="10" rx="2" class="c-ctx" opacity=".55"/></g>
+        <path d="M530 98 L460 146" class="s-acc" marker-end="url(#m1)"/><path d="M560 98 V146" class="s-acc" marker-end="url(#m1)"/><path d="M590 98 L670 146" class="s-acc" marker-end="url(#m1)"/>
+        <path d="M480 150 C 470 120, 500 106, 516 98" stroke="var(--tool)" stroke-width="1.8" fill="none" stroke-dasharray="4 4" class="flow"/>
+        <path d="M500 190 H508 M620 190 H628" stroke="var(--tool)" stroke-width="2" marker-end="url(#m1t)"/>
+        <text x="368" y="130" class="t-mono" style="fill:var(--tool)">요약만 위로</text>
+        <text x="565" y="250" text-anchor="middle" class="t-dim">창이 여럿 — 대신 서로의 창은 보지 못한다</text>
+      </svg>
+      <figcaption><b>그림 1-1.</b> 단일 에이전트는 모든 자료와 결정을 한 창에 쌓는다. 멀티에이전트는 창을 여러 개로 나눠 총용량을 늘리지만, 각 워커는 다른 워커의 창을 보지 못한다. 위로 올라가는 것은 요약이다. 얻는 것은 용량과 병렬성, 잃는 것은 <b>공유된 맥락</b>이다.</figcaption>
+    </figure>
+    <p>에이전트를 여럿 두는 구조는 넓은 스펙트럼의 한쪽 끝이다. 모델 호출 하나로 되는 일에 루프를 씌울 필요가 없고, 단계가 정해진 일은 코드로 엮은 워크플로가 낫다. 그림 1-2는 오른쪽으로 갈수록 유연해지지만 비용과 예측 불가능성도 함께 커진다는 것을 보여 준다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 170" role="img" aria-label="단일 호출부터 멀티에이전트까지의 스펙트럼">
+        <defs><linearGradient id="g12" x1="0" x2="1"><stop offset="0" stop-color="var(--env)"/><stop offset="1" stop-color="var(--guard)"/></linearGradient></defs>
+        <rect x="30" y="118" width="720" height="8" rx="4" fill="url(#g12)" opacity=".6"/>
+        <text x="30" y="148" class="t-mono">예측 가능 · 저렴</text><text x="750" y="148" text-anchor="end" class="t-mono">유연 · 비쌈 · 편차 큼</text>
+        <g transform="translate(40,26)"><rect width="150" height="74" rx="10" class="f-elev"/><text x="75" y="26" text-anchor="middle" class="t-b">단일 호출</text><text x="75" y="48" text-anchor="middle" class="t-dim">분류 · 요약 · 번역</text><text x="75" y="64" text-anchor="middle" class="t-mono">1 call</text></g>
+        <g transform="translate(220,26)"><rect width="150" height="74" rx="10" class="soft-state"/><text x="75" y="26" text-anchor="middle" class="t-b">워크플로</text><text x="75" y="48" text-anchor="middle" class="t-dim">코드가 순서를 정함</text><text x="75" y="64" text-anchor="middle" class="t-mono">chain · route</text></g>
+        <g transform="translate(400,26)"><rect width="150" height="74" rx="10" class="f-acc-soft"/><text x="75" y="26" text-anchor="middle" class="t-b">단일 에이전트</text><text x="75" y="48" text-anchor="middle" class="t-dim">모델이 다음 행동을 고름</text><text x="75" y="64" text-anchor="middle" class="t-mono">loop × 1</text></g>
+        <g transform="translate(580,26)"><rect width="160" height="74" rx="10" class="soft-ctx"/><text x="80" y="26" text-anchor="middle" class="t-b">멀티에이전트</text><text x="80" y="48" text-anchor="middle" class="t-dim">여러 루프 · 여러 컨텍스트</text><text x="80" y="64" text-anchor="middle" class="t-mono">loop × n + 조정</text></g>
+      </svg>
+      <figcaption><b>그림 1-2.</b> 에이전트 시스템의 스펙트럼. 원칙은 하나다. <b>가장 왼쪽에서 시작하고, 통하지 않을 때만 오른쪽으로 옮긴다.</b> 멀티에이전트는 단일 에이전트로 분명히 부족하다는 근거가 있을 때 고르는 선택지다.</figcaption>
+    </figure>
+  </section>
+
+  <section id="walls">
+    <h2>단일 에이전트의 세 가지 벽</h2>
+    <p>단일 에이전트가 한계에 부딪히는 이유는 대개 세 가지 중 하나다.</p>
+    <table class="tbl">
+      <tr><th>벽</th><th>증상</th><th>멀티에이전트의 처방</th></tr>
+      <tr><td style="color:var(--ctx);font-weight:700">컨텍스트</td><td>읽어야 할 자료가 창보다 크다. 압축할수록 앞에서 본 세부를 잊는다.</td><td>자료를 나눠 각 워커가 자기 몫만 깊이 읽고 요약만 올린다.</td></tr>
+      <tr><td style="color:var(--state);font-weight:700">폭 · 시간</td><td>서로 무관한 방향 열 개를 하나씩 차례로 조사하느라 오래 걸린다.</td><td>방향마다 워커를 두고 동시에 돌린다.</td></tr>
+      <tr><td style="color:var(--accent-2);font-weight:700">전문성 · 관점</td><td>한 지시문에 여러 역할을 다 담으니 지시가 길고 서로 충돌한다. 자기 결과를 스스로 검토하면 같은 맹점이 남는다.</td><td>역할마다 짧은 전용 지시문과 도구를 주고, 다른 에이전트가 검토하게 한다.</td></tr>
+    </table>
+    <p>아래 실험은 첫 번째 벽을 보여 준다. 자료 묶음 하나하나에 <b>사실</b>(작은 점)이 들어 있고, 에이전트는 그것을 읽어 창에 쌓는다. 창이 가득 차면 오래된 묶음을 요약하는데, 요약할 때마다 사실 일부가 사라진다.</p>
+    <div class="sim" id="sim-wall">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>한 컨텍스트의 벽 — 자료가 창을 넘치면</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="wl-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>자료 묶음 수 <output id="wl-n-out"></output></span><input type="range" id="wl-n" min="2" max="16" step="1" value="10"></label>
+          <label class="ctrl"><span>묶음당 크기 (창 대비) <output id="wl-s-out"></output></span><input type="range" id="wl-s" min="0.04" max="0.4" step="0.01" value="0.16"></label>
+          <label class="ctrl"><span>요약 시 사실 보존율 <output id="wl-k-out"></output></span><input type="range" id="wl-k" min="0.3" max="0.95" step="0.05" value="0.6"></label>
+          <label class="ctrl"><span>워커 수 (멀티) <output id="wl-w-out"></output></span><input type="range" id="wl-w" min="2" max="8" step="1" value="4"></label>
+          <div class="btns"><button class="btn primary" id="wl-play">▶ 재생</button><button class="btn" id="wl-reset">처음으로</button></div>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>원문</span><span><i style="background:var(--state)"></i>요약됨</span><span><i style="background:var(--guard)"></i>사라진 사실</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">남은 사실 · 단일</span><span class="v" id="wl-o1">—</span></div>
+        <div class="stat"><span class="k">남은 사실 · 멀티</span><span class="v" id="wl-o2">—</span></div>
+        <div class="stat"><span class="k">요약 횟수 · 단일</span><span class="v" id="wl-o3">—</span></div>
+        <div class="stat"><span class="k">걸린 단계 · 단일 / 멀티</span><span class="v" id="wl-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 묶음 수를 4로 줄이면 단일 에이전트도 창 안에 다 담는다. 이때 멀티는 이득이 없고 마지막 요약 단계만 더한다. ② 묶음 16개, 크기 0.25로 올리면 단일 에이전트는 같은 자료를 여러 번 요약하며 사실을 잃는다. ③ 멀티에서도 워커가 리더에게 <b>요약</b>을 올리는 순간 한 번은 보존율만큼 잃는다. 멀티에이전트는 손실을 없애지 않는다. 손실을 <b>한 번</b>으로 줄일 뿐이다.</div>
+    </div>
+  </section>
+
+  <section id="tradeoff">
+    <h2>이득과 대가</h2>
+    <p>2025년 Anthropic은 자사의 리서치 기능을 설명하며, 리더 에이전트가 여러 하위 에이전트를 병렬로 돌리는 구성이 같은 계열의 단일 에이전트보다 내부 연구 평가에서 크게 앞섰다고 보고했다. 동시에 그 구성이 일반 채팅보다 약 15배의 토큰을 썼고, 성능 차이의 상당 부분이 <b>얼마나 많은 토큰을 썼는가</b>로 설명된다고 밝혔다. 즉 멀티에이전트의 이득 상당 부분은 “더 많은 컨텍스트를 병렬로 태울 수 있다”는 데서 온다.</p>
+    <p>같은 해 Cognition은 반대 방향의 경고를 냈다. 에이전트가 하는 <b>행동에는 암묵적인 결정</b>이 담기는데, 서로의 맥락을 모르는 에이전트들이 각자 결정하면 결과가 어긋난다는 것이다. 예를 들어 한 워커는 배경을 픽셀 아트로, 다른 워커는 사실적인 캐릭터로 만들면 합쳐 놓았을 때 쓸 수가 없다. 그래서 그들은 서로 얽힌 작업에서는 맥락을 통째로 공유하는 단일 스레드를 기본값으로 권했다.</p>
+    <div class="callout"><b class="h">두 주장은 모순이 아니다</b>앞의 사례는 <b>넓게 읽는</b> 일(서로 독립적인 조사), 뒤의 사례는 <b>깊게 만드는</b> 일(서로 얽힌 결정)에 관한 이야기다. 멀티에이전트의 가치는 하위 작업 사이의 <b>결합도</b>가 낮을수록 커진다. 이 책 전체를 관통하는 축이다.</div>
+    <div class="formula"><div class="eq">이득 ≈ <var>Q</var><sub>multi</sub> − <var>Q</var><sub>single</sub> &nbsp;=&nbsp; [용량 이득] − [결합 손실 · <var>c</var>] − [합성 손실] &nbsp;&nbsp;·&nbsp;&nbsp; 비용 ≈ <var>n</var> · (<var>O</var> + <var>D</var>) + 합성</div>
+      <div class="where"><var>c</var>: 하위 작업 사이 결합도(0이면 완전히 독립), <var>n</var>: 워커 수, <var>O</var>: 워커 하나의 시작 비용(시스템 프롬프트·위임 설명), <var>D</var>: 방향 하나를 조사하는 데 드는 토큰. 다음 실험의 지도는 이 식을 단순하게 구현한 것이다.</div></div>
+    <div class="sim" id="sim-map">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>단일 대 멀티 결정 지도 — 폭과 결합도로 고르기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="mp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>방향당 자료량 D (창 대비) <output id="mp-d-out"></output></span><input type="range" id="mp-d" min="0.05" max="0.8" step="0.01" value="0.25"></label>
+          <label class="ctrl"><span>워커 시작 비용 O (창 대비) <output id="mp-o-out"></output></span><input type="range" id="mp-o" min="0" max="0.4" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>합성 시 정보 손실 <output id="mp-l-out"></output></span><input type="range" id="mp-l" min="0" max="0.3" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>비용 민감도 (품질 1점당 토큰 1배) <output id="mp-c-out"></output></span><input type="range" id="mp-c" min="0" max="0.15" step="0.005" value="0.03"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>멀티가 유리</span><span><i style="background:var(--guard)"></i>단일이 유리</span></div>
+          <p style="margin:0;font-size:13px;color:var(--text-faint)">지도를 클릭해 한 지점을 고르세요.</p>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">품질 · 단일</span><span class="v" id="mp-o1">—</span></div>
+        <div class="stat"><span class="k">품질 · 멀티</span><span class="v" id="mp-o2">—</span></div>
+        <div class="stat"><span class="k">토큰 배수</span><span class="v" id="mp-o3">—</span></div>
+        <div class="stat"><span class="k">판정</span><span class="v" id="mp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 오른쪽 아래(폭 넓고 결합도 낮음)가 초록색, 왼쪽 위(폭 좁고 결합도 높음)가 빨간색이다. 넓게 읽는 조사는 나누고, 얽힌 코드 변경은 나누지 않는다. ② 방향당 자료량 D를 0.05로 줄이면 초록 영역이 거의 사라진다. 다 들어가는 일을 나누면 시작 비용과 합성 손실만 남는다. ③ 비용 민감도를 0으로 두면 초록 영역이 넓어지고, 0.15로 올리면 3분의 1로 줄어든다. 품질만 본다면 “토큰을 더 쓰면 낫다”가 멀티에이전트 이득의 상당 부분이고, 토큰 배수가 그 값이다.</div>
+    </div>
+  </section>
+
+  <section id="sort">
+    <h2>나눌까 말까</h2>
+    <p>실무 감각을 익혀 보자. 아래 상황마다 가장 알맞은 구조를 골라 보자. 정답보다 <b>이유</b>가 중요하다. 해설을 꼭 읽어 보자.</p>
+    <div class="sim" id="sim-sort">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>나눌까 말까 — 여덟 가지 상황 분류하기</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="so-card"></div>
+        <div class="bins">
+          <button data-v="single" style="--k:var(--accent)">단일 에이전트</button>
+          <button data-v="flow" style="--k:var(--state)">워크플로</button>
+          <button data-v="multi" style="--k:var(--ctx)">멀티에이전트</button>
+        </div>
+        <div class="verdict" id="so-fb">첫 상황을 읽고 버튼을 눌러 보세요.</div>
+        <div class="budget"><i id="so-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="so-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="so-o2">0</span></div>
+      </div>
+      <div class="sim-note">기준: 단계가 미리 정해져 있으면 <b>워크플로</b>. 단계를 알 수 없지만 결정들이 서로 얽혀 있으면 <b>단일 에이전트</b>. 서로 독립적인 넓은 탐색이거나 한 창에 담기지 않으면 <b>멀티에이전트</b>.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>멀티에이전트 시스템의 본질은 <b>서로 다른 컨텍스트</b>를 가진 여러 루프의 협력이다. 각자 무엇을 보고 무엇을 모르는지가 설계의 핵심이다.</li>
+      <li>단일 에이전트의 벽은 컨텍스트, 폭(시간), 전문성 세 가지다. 멀티에이전트는 창을 늘리고 병렬로 돌리고 역할을 나눠 이를 넘는다.</li>
+      <li>대가는 조정 비용, 토큰 배수, 요약에 따른 정보 손실, 그리고 서로 모르는 채로 내린 결정의 충돌이다.</li>
+      <li>넓게 읽는 일(낮은 결합도)은 나누고, 깊게 만드는 일(높은 결합도)은 나누지 않는다. 가장 단순한 구조에서 시작한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 같은 모델을 세 번 순서대로 호출해 개요 → 초안 → 교정을 하는 시스템은?</p><div class="opts">
+        <button class="opt">멀티에이전트 시스템</button>
+        <button class="opt" data-correct>워크플로(프롬프트 체이닝)</button>
+        <button class="opt">단일 자율 에이전트</button>
+      </div><div class="quiz-exp">순서를 코드가 정하고 각 단계가 스스로 행동을 고르지 않는다면 워크플로다. 호출 수가 아니라 누가 경로를 정하는지가 기준이다.</div></div>
+      <div class="quiz-q"><p>2. 멀티에이전트가 단일 에이전트보다 확실히 유리해지는 조건은?</p><div class="opts">
+        <button class="opt">하위 작업들이 서로의 결정에 강하게 의존할 때</button>
+        <button class="opt" data-correct>독립적인 방향이 많고, 다 합친 자료가 한 창을 넘을 때</button>
+        <button class="opt">작업이 짧고 도구가 하나뿐일 때</button>
+      </div><div class="quiz-exp">폭이 넓고 결합도가 낮을 때 용량과 병렬성의 이득이 조정 비용을 이긴다.</div></div>
+      <div class="quiz-q"><p>3. 워커가 리더에게 결과를 넘길 때 피할 수 없는 손실은?</p><div class="opts">
+        <button class="opt">모델 가중치의 변화</button>
+        <button class="opt" data-correct>요약 과정에서 빠지는 세부와 맥락</button>
+        <button class="opt">도구 정의의 손실</button>
+      </div><div class="quiz-exp">리더는 워커의 창을 보지 못한다. 넘어오는 것은 요약이다. 4장에서 이 손실을 줄이는 방법(참조 전달)을 다룬다.</div></div>
+      <div class="quiz-q"><p>4. “행동에는 암묵적 결정이 담긴다”는 경고가 가장 잘 들어맞는 상황은?</p><div class="opts">
+        <button class="opt">열 개 회사의 공시 자료를 각각 요약하기</button>
+        <button class="opt" data-correct>한 게임의 배경과 캐릭터를 서로 다른 워커가 따로 그리기</button>
+        <button class="opt">한 문서를 다섯 언어로 각각 번역하기</button>
+      </div><div class="quiz-exp">배경과 캐릭터는 화풍·크기·시점 같은 결정을 공유해야 한다. 각자 정하면 어긋난다. 나머지 두 작업은 서로 독립적이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 한 컨텍스트의 벽 ---------------- */
+(function () {
+  const FACTS = 6;
+  let st = null, playing = false, acc = 0;
+  const cv = MA.canvas("wl-cv", { aspect: 0.62, draw });
+  function init() {
+    const n = MA.val("wl-n"), s = MA.val("wl-s"), w = MA.val("wl-w");
+    st = {
+      n, s, k: MA.val("wl-k"), w, step: 0,
+      single: { blocks: [], read: 0, summaries: 0 }, // 블록: {size, facts, sum}
+      multi: Array.from({ length: w }, () => ({ blocks: [], read: 0 })), mStep: 0, merged: null,
+      lost: 0,
+    };
+  }
+  function used(bs) { return bs.reduce((a, b) => a + b.size, 0); }
+  function stepSingle() {
+    const S = st.single;
+    if (S.read >= st.n) return false;
+    S.blocks.push({ size: st.s, facts: FACTS, sum: false });
+    S.read++;
+    // 넘치면 오래된 원문부터 요약, 그래도 넘치면 요약들을 다시 요약
+    let guard = 0;
+    while (used(S.blocks) > 1 && guard++ < 40) {
+      let i = S.blocks.findIndex((b) => !b.sum);
+      if (i === S.blocks.length - 1 || i < 0) i = S.blocks.findIndex((b) => b.sum && b.size > 0.02);
+      if (i < 0) break;
+      const b = S.blocks[i];
+      b.facts = b.facts * st.k; b.size = Math.max(0.015, b.size * (b.sum ? 0.5 : 0.25)); b.sum = true;
+      S.summaries++;
+    }
+    return true;
+  }
+  function stepMulti() {
+    if (st.merged) return false;
+    const per = Math.ceil(st.n / st.w);
+    let any = false;
+    st.multi.forEach((W, wi) => {
+      const mine = Math.min(per, st.n - wi * per);
+      if (W.read < mine) {
+        W.blocks.push({ size: st.s, facts: FACTS, sum: false }); W.read++; any = true;
+        let g = 0;
+        while (used(W.blocks) > 1 && g++ < 40) { const i = W.blocks.findIndex((b) => !b.sum); if (i < 0 || i === W.blocks.length - 1) break; const b = W.blocks[i]; b.facts *= st.k; b.size = Math.max(0.015, b.size * 0.25); b.sum = true; }
+      }
+    });
+    st.mStep++;
+    if (!any) { // 리더에게 요약 전달: 한 번 보존율만큼 잃는다
+      const total = st.multi.reduce((a, W) => a + W.blocks.reduce((x, b) => x + b.facts, 0), 0);
+      st.merged = total * st.k;
+    }
+    return true;
+  }
+  function totals() {
+    const sF = st.single.blocks.reduce((a, b) => a + b.facts, 0);
+    const mF = st.merged != null ? st.merged : st.multi.reduce((a, W) => a + W.blocks.reduce((x, b) => x + b.facts, 0), 0);
+    return { sF, mF, all: st.n * FACTS };
+  }
+  function drawWindow(c, x, y, w, h, blocks, label, sub) {
+    c.strokeStyle = MA.col("border"); c.lineWidth = 1.4; MA.rrect(c, x, y, w, h, 8); c.stroke();
+    c.fillStyle = MA.alpha(MA.col("accent"), 0.04); c.fill();
+    MA.text(c, label, x + 6, y - 9, { size: 11.5, weight: 700, color: MA.col("text-dim") });
+    if (sub) MA.text(c, sub, x + w - 4, y - 9, { size: 10.5, mono: true, align: "right", color: MA.col("text-faint") });
+    let yy = y + h - 3;
+    blocks.forEach((b) => {
+      const bh = Math.max(3, b.size * (h - 6));
+      yy -= bh;
+      const col = b.sum ? MA.col("state") : MA.col("ctx");
+      c.fillStyle = MA.alpha(col, b.sum ? 0.55 : 0.4); MA.rrect(c, x + 3, yy, w - 6, bh - 1.5, 3); c.fill();
+      const fs = Math.round(b.facts * 10) / 10, show = Math.min(FACTS, Math.ceil(fs - 1e-6));
+      for (let i = 0; i < FACTS; i++) {
+        const fx = x + 10 + i * Math.min(10, (w - 20) / FACTS), fy = yy + Math.min(bh / 2, 6);
+        if (bh < 5) break;
+        c.fillStyle = i < show ? (i < Math.floor(fs) ? MA.col("text") : MA.alpha(MA.col("text"), 0.4)) : MA.col("guard");
+        c.beginPath(); c.arc(fx, fy, i < show ? 2.2 : 1.6, 0, 7); c.fill();
+      }
+    });
+    if (yy < y + 2) { c.fillStyle = MA.col("guard"); c.fillRect(x, y, w, 2); }
+  }
+  function draw(c, w, h) {
+    if (!st) init();
+    const top = 26, H = h - top - 40;
+    const half = w * 0.44;
+    drawWindow(c, 12, top, Math.min(150, half - 30), H, st.single.blocks, "단일 에이전트", `${st.single.read}/${st.n}`);
+    // 남은 묶음 줄
+    const q = st.n - st.single.read;
+    for (let i = 0; i < q; i++) { const bx = Math.min(150, half - 30) + 22, by = top + 4 + i * 14; if (by > top + H - 10) break; c.fillStyle = MA.alpha(MA.col("ctx"), 0.3); MA.rrect(c, bx, by, 26, 10, 2); c.fill(); }
+    const mx = half + 10, ww = (w - mx - 10) / st.w - 6;
+    st.multi.forEach((W, i) => drawWindow(c, mx + i * (ww + 6), top, ww, H * 0.72, W.blocks, i === 0 ? "워커" : "", ""));
+    // 리더 합성
+    const ly = top + H * 0.72 + 22, lh = H * 0.28 - 22;
+    c.strokeStyle = MA.col("accent"); MA.rrect(c, mx, ly, w - mx - 10, lh, 8); c.stroke();
+    MA.text(c, "리더가 받은 요약", mx + 8, ly + 12, { size: 11, weight: 700, color: MA.col("accent") });
+    const T = totals();
+    if (st.merged != null) MA.hbar(c, mx + 8, ly + lh - 16, w - mx - 70, 9, T.mF / T.all, MA.col("env"), { label: MA.pct(T.mF / T.all) });
+    // 단일 진행 막대
+    MA.text(c, "보존된 사실", 12, h - 22, { size: 11, color: MA.col("text-dim") });
+    MA.hbar(c, 86, h - 27, half - 130, 9, T.sF / T.all, MA.col("accent"), { label: MA.pct(T.sF / Math.max(1, st.single.read * FACTS)) });
+    const sR = T.sF / Math.max(1, st.single.read * FACTS);
+    MA.set("wl-o1", MA.pct(sR), sR > 0.8 ? "good" : sR < 0.5 ? "bad" : "warn");
+    MA.set("wl-o2", st.merged != null ? MA.pct(T.mF / T.all) : "진행 중", st.merged != null ? (T.mF / T.all > 0.8 ? "good" : T.mF / T.all < 0.5 ? "bad" : "warn") : "");
+    MA.set("wl-o3", st.single.summaries + "회");
+    MA.set("wl-o4", `${st.single.read} / ${st.mStep}`);
+  }
+  const L = MA.loop(MA.el("wl-cv"), (dt) => {
+    if (!playing) return;
+    acc += dt;
+    if (acc < 0.45) return;
+    acc = 0;
+    const a = stepSingle(), b = stepMulti();
+    if (!a && !b) { playing = false; MA.el("wl-play").textContent = "▶ 재생"; }
+    cv.redraw();
+  });
+  L.start();
+  MA.el("wl-play").addEventListener("click", () => {
+    if (st && st.single.read >= st.n && st.merged != null) init();
+    playing = !playing; MA.el("wl-play").textContent = playing ? "❚❚ 멈춤" : "▶ 재생";
+  });
+  MA.el("wl-reset").addEventListener("click", () => { playing = false; MA.el("wl-play").textContent = "▶ 재생"; init(); cv.redraw(); });
+  MA.wire(["wl-n", "wl-s", "wl-k", "wl-w"], () => { playing = false; MA.el("wl-play").textContent = "▶ 재생"; init(); cv.redraw(); }, { "wl-s": (v) => MA.pct(v), "wl-k": (v) => MA.pct(v), "wl-n": (v) => v + "개", "wl-w": (v) => v + "명" });
+})();
+
+/* ---------------- 2. 결정 지도 ---------------- */
+(function () {
+  let pick = { b: 8, c: 0.2 };
+  const BMAX = 12;
+  const cv = MA.canvas("mp-cv", { aspect: 0.7, draw });
+  const fit = (x) => Math.pow(Math.min(1, x), 0.7);
+  function model(b, c) {
+    const D = MA.val("mp-d"), O = MA.val("mp-o"), loss = MA.val("mp-l"), lam = MA.val("mp-c");
+    const Q0 = 0.92;
+    // 단일: 창 하나에 b·D. 넘치면 fit 저하. 결합도 높아도 맥락 공유라 손실 없음.
+    const qs = Q0 * fit(1 / (b * D));
+    // 멀티: 워커마다 D만. 결합도 c만큼 결정 충돌, 합성 손실, 폭이 1이면 이득 없음
+    const qm = Q0 * fit(1 / Math.max(D, 1e-6)) * (1 - 0.75 * c * (1 - 1 / b)) * (1 - loss);
+    // 토큰: 단일은 누적 컨텍스트 재전송 ~ (b·D)^1.3 근사, 멀티는 n(O+D) + 합성
+    // 단일 에이전트는 창의 약 1.5배까지만 읽는다(나머지는 압축·포기), 멀티는 방향마다 워커가 끝까지 읽는다
+    const sb = Math.min(b * D, 1.5);
+    const ts = Math.max(0.05, sb) * (1 + 0.5 * sb);
+    const tm = b * (O + D) * (1 + 0.5 * D) * 1.4 + 0.2 * b;
+    const mult = tm / ts;
+    const gain = qm - qs - lam * Math.max(0, mult - 1);
+    return { qs, qm, mult, gain };
+  }
+  let box = null;
+  function draw(c, w, h) {
+    box = { l: 52, t: 12, r: w - 14, b: h - 40 };
+    const A = MA.axes(c, { box, x: [1, BMAX], y: [0, 1], xt: [1, 3, 6, 9, 12], yt: [0, 0.25, 0.5, 0.75, 1], xl: "작업의 폭 (독립적인 방향 수)", yl: "결합도 c", ylOff: 40 });
+    const nx = 44, ny = 30, cw = (box.r - box.l) / nx, ch = (box.b - box.t) / ny;
+    const env = MA.col("env"), gd = MA.col("guard");
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const b = 1 + ((i + 0.5) / nx) * (BMAX - 1), cc = 1 - (j + 0.5) / ny;
+      const g = model(b, cc).gain;
+      const a = MA.clamp(Math.abs(g) * 2.2, 0, 0.75);
+      c.fillStyle = MA.alpha(g > 0 ? env : gd, a);
+      c.fillRect(box.l + i * cw, box.t + j * ch, cw + 0.6, ch + 0.6);
+    }
+    // 0 등고선 근사
+    c.fillStyle = MA.col("text");
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny - 1; j++) {
+      const b = 1 + ((i + 0.5) / nx) * (BMAX - 1);
+      const g1 = model(b, 1 - (j + 0.5) / ny).gain, g2 = model(b, 1 - (j + 1.5) / ny).gain;
+      if (g1 * g2 < 0) c.fillRect(box.l + i * cw + cw / 2 - 1, box.t + (j + 1) * ch - 1, 2.2, 2.2);
+    }
+    MA.text(c, "넓게 읽기", A.X(11.6), A.Y(0.06), { size: 11.5, weight: 700, align: "right", color: MA.col("text") });
+    MA.text(c, "깊게 만들기", A.X(1.4), A.Y(0.94), { size: 11.5, weight: 700, color: MA.col("text") });
+    const px = A.X(pick.b), py = A.Y(pick.c);
+    c.strokeStyle = MA.col("text"); c.lineWidth = 2; c.beginPath(); c.arc(px, py, 7, 0, 7); c.stroke();
+    c.fillStyle = MA.col("bg-elev"); c.beginPath(); c.arc(px, py, 3, 0, 7); c.fill();
+    const r = model(pick.b, pick.c);
+    MA.set("mp-o1", r.qs.toFixed(2));
+    MA.set("mp-o2", r.qm.toFixed(2));
+    MA.set("mp-o3", r.mult.toFixed(1) + "×", r.mult > 3 ? "bad" : r.mult > 1.5 ? "warn" : "");
+    MA.set("mp-o4", Math.abs(r.gain) < 0.02 ? "비슷함" : r.gain > 0 ? "멀티" : "단일", Math.abs(r.gain) < 0.02 ? "warn" : r.gain > 0 ? "good" : "bad");
+  }
+  cv.on("click", (x, y) => {
+    if (!box) return;
+    pick.b = MA.clamp(1 + ((x - box.l) / (box.r - box.l)) * (BMAX - 1), 1, BMAX);
+    pick.c = MA.clamp(1 - (y - box.t) / (box.b - box.t), 0, 1);
+    cv.redraw();
+  });
+  MA.wire(["mp-d", "mp-o", "mp-l", "mp-c"], () => cv.redraw(), { "mp-d": (v) => MA.pct(v), "mp-o": (v) => MA.pct(v), "mp-l": (v) => MA.pct(v), "mp-c": (v) => v.toFixed(3) });
+})();
+
+/* ---------------- 3. 나눌까 말까 ---------------- */
+(function () {
+  const CARDS = [
+    ["고객 문의 이메일을 받아 환불·배송·기타로 분류하고 정해진 답장 틀을 채운다.", "flow", "단계가 고정되어 있다(분류 → 템플릿). 라우팅 워크플로로 충분하고, 에이전트 루프는 비용만 늘린다."],
+    ["50개 경쟁 제품의 공식 문서와 가격표를 읽고 기능 비교표를 만든다. 문서 전체는 200만 토큰쯤 된다.", "multi", "제품끼리 서로 독립적이고, 자료 전체가 한 창을 훨씬 넘는다. 제품별 워커가 각자 읽고 정해진 표 형식으로 돌려주면 된다."],
+    ["한 저장소에서 날짜 처리 버그를 찾아 고치고 테스트를 통과시킨다.", "single", "어디를 고칠지 미리 모르니 에이전트가 필요하다. 하지만 탐색·수정·테스트가 하나의 맥락으로 얽혀 있어 나누면 결정이 어긋난다."],
+    ["회의 녹취록을 요약하고, 요약을 영어로 번역하고, 결정 사항만 뽑아 슬랙 메시지로 만든다.", "flow", "단계가 미리 정해져 있다. 프롬프트 체이닝이면 각 단계가 짧고 검사하기 쉽다."],
+    ["새 웹 서비스 하나를 프런트엔드·백엔드·DB 스키마까지 처음부터 만든다. 세 부분은 API 규약을 공유해야 한다.", "single", "겉보기엔 셋으로 나눌 수 있지만 API 규약, 이름 짓기, 오류 처리 같은 결정을 계속 공유해야 한다. 결합도가 높다. 나누더라도 규약을 먼저 고정하고, 기본값은 단일 스레드다."],
+    ["“최근 3년 고체 전지 특허 동향”을 조사한다. 어떤 회사·기술 갈래를 봐야 할지 조사해 봐야 안다.", "multi", "갈래를 미리 모르니 워크플로가 아니고, 갈래끼리는 독립적이니 병렬 탐색이 효과적이다. 리더가 갈래를 정해 워커에게 나눠 주는 전형적인 리서치 구성."],
+    ["사용자가 업로드한 계약서 한 건의 위험 조항을 찾아 설명한다. 계약서는 30쪽이다.", "single", "한 창에 들어가고, 조항들이 서로 참조한다. 단일 에이전트(또는 단일 호출)로 충분하다."],
+    ["보안 감사: 같은 코드에 대해 인증·입력 검증·비밀 관리를 각각 독립적으로 검토하고, 지적 사항을 모은다.", "multi", "관점마다 독립적으로 보는 것이 가치다. 서로의 결론에 끌려가지 않도록 따로 돌린 뒤 모은다(6장의 독립성). 단계가 고정된 병렬화 워크플로로도 구현할 수 있다."],
+  ];
+  let i = 0, score = 0, locked = false;
+  const NAME = { single: "단일 에이전트", flow: "워크플로", multi: "멀티에이전트" };
+  function show() {
+    if (i >= CARDS.length) {
+      MA.el("so-card").innerHTML = `<small>완료</small><b>${score} / ${CARDS.length}</b> 맞혔습니다. 다시 하려면 아무 버튼이나 누르세요.`;
+      return;
+    }
+    MA.el("so-card").innerHTML = `<small>상황 ${i + 1} / ${CARDS.length}</small>${MA.esc(CARDS[i][0])}`;
+  }
+  MA.$$("#sim-sort .bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= CARDS.length) { i = 0; score = 0; MA.set("so-o2", "0"); MA.el("so-fb").textContent = "다시 시작합니다."; MA.el("so-bar").style.width = "0"; show(); return; }
+    if (locked) return;
+    const [, ans, why] = CARDS[i];
+    const ok = b.dataset.v === ans;
+    if (ok) score++;
+    const fb = MA.el("so-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + NAME[ans]}</b> — ${MA.esc(why)}`;
+    locked = true;
+    i++;
+    MA.set("so-o1", `${i} / ${CARDS.length}`); MA.set("so-o2", String(score), score === i ? "good" : "");
+    MA.el("so-bar").style.width = (i / CARDS.length) * 100 + "%";
+    setTimeout(() => { locked = false; show(); }, 1400);
+  }));
+  show();
+})();
+</script>
+</body>
+</html>

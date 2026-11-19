@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>조정과 합의 · ChorusBook</title>
+<meta name="description" content="다수결과 콩도르세 배심원 정리, 오류 상관이 투표의 이득을 지우는 원리, 다중 에이전트 토론과 동조, 계약망 경매로 일을 나누는 방법을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="consensus">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 06</div>
+    <h1>조정과 합의</h1>
+    <p class="lead">여러 에이전트가 같은 질문에 답하면 답이 갈린다. 어떻게 하나로 정할까? 가장 단순한 방법은 다수결이다. 다수결은 놀라울 만큼 강력하지만 한 가지 조건이 깨지면 무력해진다. 투표자들이 <b>서로 다르게 틀려야</b> 한다는 조건이다. 이 장에서는 투표, 토론, 경매라는 세 가지 조정 방식을 차례로 실험한다. 앞의 둘은 “무엇이 답인가”를, 마지막은 “누가 어떤 일을 맡을까”를 정한다.</p>
+    <ul class="objectives">
+      <li>콩도르세 배심원 정리로 다수결 정확도가 투표자 수에 따라 어떻게 변하는지 설명할 수 있다.</li>
+      <li>오류 상관이 투표의 이득을 지우는 원리와, 유효 투표자 수를 계산할 수 있다.</li>
+      <li>다중 에이전트 토론에서 근거의 힘과 동조 압력이 결과를 어떻게 바꾸는지 설명할 수 있다.</li>
+      <li>계약망 프로토콜(공고-입찰-낙찰)로 작업을 배분하는 방법을 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="vote">
+    <h2>다수결과 오류 상관</h2>
+    <p>각자 정답률이 <var>p</var>인 투표자 <var>n</var>명이 <b>서로 독립적으로</b> 답한다면, 다수결이 맞을 확률은 이항분포로 계산된다. <var>p</var>가 0.5보다 크기만 하면 <var>n</var>이 늘수록 다수결 정확도는 1에 가까워진다. 18세기 콩도르세가 배심원 제도를 분석하며 보인 이 결과를 <span class="term">콩도르세 배심원 정리</span><span class="en">Condorcet jury theorem</span>라 한다. 같은 모델에서 답을 여러 번 뽑아 다수결을 하는 자기 일관성(self-consistency)이나, 에이전트 수를 늘려 투표하는 방법이 효과를 보이는 이유다.</p>
+    <div class="formula"><div class="eq"><var>P</var><sub>maj</sub> = <span style="font-size:1.4em">Σ</span><sub><var>k</var> &gt; <var>n</var>/2</sub> <span style="font-size:.9em">(</span><var>n</var> &nbsp;<var>k</var><span style="font-size:.9em">)</span> <var>p</var><sup><var>k</var></sup>(1 − <var>p</var>)<sup><var>n</var>−<var>k</var></sup> &nbsp;&nbsp;·&nbsp;&nbsp; <var>n</var><sub>eff</sub> = <span class="frac"><span><var>n</var></span><span>1 + (<var>n</var> − 1) <var>ρ</var></span></span></div>
+      <div class="where">문제는 독립성이다. 같은 모델, 같은 프롬프트, 같은 자료를 쓰는 에이전트들은 <b>같은 문제에서 같이 틀린다</b>. 오류 상관 <var>ρ</var>가 있으면 투표자 <var>n</var>명은 독립 투표자 <var>n</var><sub>eff</sub>명만큼의 힘밖에 없다. <var>ρ</var> = 0.3이면 100명이 3.3명, <var>ρ</var> = 1이면 1명이다. 아래 실험은 “확률 <var>ρ</var>로 모두가 공통 원인을 따르고, 나머지 경우에는 독립적으로 답한다”는 단순한 모형을 쓴다.</div></div>
+    <div class="sim" id="sim-vote">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>다수결 — 투표자를 늘리면 얼마나 좋아지나</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="vt-cv"></canvas><canvas id="vt-dots" style="margin-top:8px"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>투표자 수 n <output id="vt-n-out"></output></span><input type="range" id="vt-n" min="1" max="51" step="2" value="9"></label>
+          <label class="ctrl"><span>개별 정답률 p <output id="vt-p-out"></output></span><input type="range" id="vt-p" min="0.3" max="0.95" step="0.01" value="0.65"></label>
+          <label class="ctrl"><span>오류 상관 ρ <output id="vt-r-out"></output></span><input type="range" id="vt-r" min="0" max="1" step="0.02" value="0.3"></label>
+          <div class="btns"><button class="btn" id="vt-roll">투표 한 번 해 보기</button></div>
+          <div class="legend"><span><i style="background:var(--env)"></i>ρ = 0 (독립)</span><span><i style="background:var(--accent-2)"></i>현재 ρ</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">한 명의 정답률</span><span class="v" id="vt-o1">—</span></div>
+        <div class="stat"><span class="k">다수결 정답률</span><span class="v" id="vt-o2">—</span></div>
+        <div class="stat"><span class="k">유효 투표자 수</span><span class="v" id="vt-o3">—</span></div>
+        <div class="stat"><span class="k">토큰 배수</span><span class="v" id="vt-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① ρ=0, p=0.65에서 n을 51로 올리면 다수결은 거의 98%에 닿는다. ② ρ를 0.5로 올리면 n을 아무리 늘려도 곡선이 80% 언저리에서 멈춘다. 토큰은 51배를 쓰는데. ③ p를 0.45로 내려 보자. 다수결이 오히려 <b>더 나빠진다</b>. 투표는 모두가 대체로 맞힐 때만 돕는다. ④ ρ를 낮추는 방법: 다른 모델, 다른 프롬프트, 다른 자료, 다른 풀이 방법. 다양성이 투표의 연료다.</div>
+    </div>
+  </section>
+
+  <section id="debate">
+    <h2>토론: 근거인가 동조인가</h2>
+    <p><span class="term">다중 에이전트 토론</span><span class="en">multi-agent debate</span>은 투표에 한 단계를 더한다. 각 에이전트가 먼저 답을 내고, 서로의 답과 이유를 본 뒤 여러 라운드에 걸쳐 자기 답을 고친다. 2023년 Du 등의 연구는 이런 토론이 산술·추론 문제에서 정확도와 사실성을 높일 수 있음을 보였다. 토론이 돕는 이유는 <b>맞는 답의 근거가 더 설득력 있을 때</b> 틀린 쪽이 고쳐지기 때문이다. 하지만 언어 모델에는 근거보다 <b>다수나 상대의 확신에 끌려가는</b> 경향(동조, 아첨)도 있다. 두 힘 중 어느 쪽이 큰지에 따라 토론은 정답으로 수렴하기도, 틀린 답으로 굳어지기도 한다.</p>
+    <div class="sim" id="sim-debate">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>토론 라운드 — 누가 누구를 설득하나</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="db-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트 수 <output id="db-n-out"></output></span><input type="range" id="db-n" min="3" max="9" step="1" value="5"></label>
+          <label class="ctrl"><span>처음 정답률 <output id="db-p-out"></output></span><input type="range" id="db-p" min="0.2" max="0.9" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>근거의 힘 (정답 쪽 설득력) <output id="db-s-out"></output></span><input type="range" id="db-s" min="0" max="0.6" step="0.02" value="0.3"></label>
+          <label class="ctrl"><span>동조 압력 (다수를 따름) <output id="db-c-out"></output></span><input type="range" id="db-c" min="0" max="0.8" step="0.02" value="0.3"></label>
+          <label class="ctrl"><span>라운드 수 <output id="db-r-out"></output></span><input type="range" id="db-r" min="1" max="6" step="1" value="4"></label>
+          <div class="btns"><button class="btn" id="db-roll">다른 토론 보기</button></div>
+          <div class="legend"><span><i style="background:var(--env)"></i>정답</span><span><i style="background:var(--guard)"></i>오답</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">처음 다수결 정답률</span><span class="v" id="db-o1">—</span></div>
+        <div class="stat"><span class="k">토론 후 다수결 정답률</span><span class="v" id="db-o2">—</span></div>
+        <div class="stat"><span class="k">정답 → 오답으로 바뀐 비율</span><span class="v" id="db-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 토론은 다수결 정답률을 끌어올린다. 근거의 힘이 동조보다 크기 때문이다. ② 동조 압력을 0.7로, 근거의 힘을 0.05로 바꿔 보자. 처음 다수가 틀렸으면 맞던 에이전트까지 넘어가고(정답 → 오답 비율), 결과는 처음 다수결과 거의 같아진다. 토큰을 라운드 수만큼 더 쓴 <b>투표</b>일 뿐이다. ③ 처음 정답률을 0.3으로 낮추면 근거의 힘이 충분히 커야만 뒤집힌다. 실무에서는 서로의 답을 보기 전에 <b>독립적으로 먼저 답하게</b> 하고, 출처나 실행 결과처럼 검증 가능한 근거를 요구해 근거의 힘을 키운다. 위 숫자는 500번 돌린 평균이다.</div>
+    </div>
+    <div class="callout warn"><b class="h">심판도 에이전트다</b>토론 끝에 심판 에이전트가 승자를 고르는 구성도 흔하다. 이때 심판은 더 길고 자신 있게 쓴 쪽, 먼저 나온 쪽, 자기와 같은 모델이 쓴 쪽을 선호하는 편향을 가질 수 있다. 가능하면 테스트 실행, 출처 대조처럼 <b>모델 바깥의 검증</b>으로 결론을 내리게 한다(7장, 11장).</div>
+  </section>
+
+  <section id="auction">
+    <h2>계약망: 일은 누가 맡을까</h2>
+    <p>답을 고르는 것과 다른 종류의 조정도 있다. 어떤 일을 어떤 에이전트에게 맡길지 정하는 것이다. 리더가 모든 워커의 능력과 현재 부하를 알고 있다면 직접 정하면 된다. 모른다면 1980년 Reid Smith가 제안한 <span class="term">계약망 프로토콜</span><span class="en">contract net protocol</span>처럼 물어보면 된다. 관리자가 작업을 <b>공고</b>하고, 할 수 있는 에이전트들이 예상 비용을 적어 <b>입찰</b>하고, 관리자가 가장 좋은 입찰에 <b>낙찰</b>한다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 200" role="img" aria-label="계약망 프로토콜의 공고, 입찰, 낙찰, 결과 순서도">
+        <defs><marker id="m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--tool)"/></marker></defs>
+        <g class="t-b"><text x="80" y="22" text-anchor="middle" style="fill:var(--accent)">관리자</text><text x="330" y="22" text-anchor="middle" style="fill:var(--ctx)">워커 A</text><text x="500" y="22" text-anchor="middle" style="fill:var(--ctx)">워커 B</text><text x="670" y="22" text-anchor="middle" style="fill:var(--ctx)">워커 C</text></g>
+        <g stroke="var(--border)" stroke-dasharray="4 4"><path d="M80 30V190M330 30V190M500 30V190M670 30V190"/></g>
+        <g stroke="var(--tool)" stroke-width="1.8" fill="none"><path d="M80 50H326" marker-end="url(#m6)"/><path d="M80 50 C 200 50, 380 50, 496 50" marker-end="url(#m6)"/><path d="M80 50 C 300 50, 560 50, 666 50" marker-end="url(#m6)"/></g>
+        <text x="200" y="44" class="t-mono" style="fill:var(--tool)">① 공고: "표 추출, PDF 40쪽"</text>
+        <g stroke="var(--state)" stroke-width="1.8" fill="none"><path d="M330 86H84" marker-end="url(#m6)"/><path d="M500 100H84" marker-end="url(#m6)"/></g>
+        <text x="190" y="82" class="t-mono" style="fill:var(--state)">② 입찰: 비용 7 (OCR 있음)</text><text x="190" y="114" class="t-mono" style="fill:var(--state)">② 입찰: 비용 12 (대기 2건)</text>
+        <text x="672" y="96" text-anchor="middle" class="t-mono">입찰 안 함</text>
+        <path d="M80 140H326" stroke="var(--env)" stroke-width="2.2" fill="none" marker-end="url(#m6)"/><text x="200" y="134" class="t-mono" style="fill:var(--env)">③ 낙찰 → 워커 A</text>
+        <path d="M330 176H84" stroke="var(--accent)" stroke-width="2" fill="none" stroke-dasharray="4 3" marker-end="url(#m6)"/><text x="200" y="170" class="t-mono" style="fill:var(--accent)">④ 결과 보고</text>
+      </svg>
+      <figcaption><b>그림 6-1.</b> 계약망 프로토콜. 입찰에는 능력(이 일을 할 수 있는 도구가 있는가)과 현재 부하가 함께 반영된다. 관리자는 워커의 내부를 몰라도 된다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-auction">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>작업 배분 — 무작위, 차례대로, 경매</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view">
+          <div class="seg" id="au-mode" style="margin-bottom:10px"><button data-v="rand">무작위</button><button data-v="rr">차례대로</button><button data-v="auc" class="on">경매 (계약망)</button></div>
+          <canvas id="au-cv"></canvas>
+        </div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>작업 수 <output id="au-t-out"></output></span><input type="range" id="au-t" min="4" max="24" step="1" value="14"></label>
+          <label class="ctrl"><span>전문성 차이 (맞는 워커일 때 빨라지는 정도) <output id="au-s-out"></output></span><input type="range" id="au-s" min="1" max="5" step="0.25" value="3"></label>
+          <label class="ctrl"><span>입찰 비용 (공고·입찰 오버헤드) <output id="au-o-out"></output></span><input type="range" id="au-o" min="0" max="2" step="0.1" value="0.3"></label>
+          <div class="btns"><button class="btn" id="au-new">새 작업 묶음</button></div>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>검색</span><span><i style="background:var(--tool)"></i>코드</span><span><i style="background:var(--state)"></i>문서</span><span><i style="background:var(--guard)"></i>안 맞는 배정</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">완료 시간</span><span class="v" id="au-o1">—</span></div>
+        <div class="stat"><span class="k">전문성이 맞은 배정</span><span class="v" id="au-o2">—</span></div>
+        <div class="stat"><span class="k">가장 바쁜 워커 / 가장 한가한 워커</span><span class="v" id="au-o3">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 세 방식을 번갈아 보자. 무작위는 맞지 않는 배정(빨간 테두리)이 많고, 차례대로는 부하는 고르지만 전문성을 무시한다. ② 경매는 능력과 부하를 함께 보고 입찰해 가장 빨리 끝난다. ③ 입찰 비용을 2로 올리면 경매의 이득이 줄어든다. 작업이 짧고 많으면 공고·입찰 자체가 부담이다. 그럴 때는 리더가 능력표를 들고 직접 배정하는 편이 낫다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>독립적이고 절반보다 잘 맞히는 투표자를 늘리면 다수결 정확도는 1에 가까워진다(콩도르세 배심원 정리).</li>
+      <li>오류가 상관되면 n명은 n/(1+(n−1)ρ)명의 힘밖에 없다. 다른 모델, 다른 프롬프트, 다른 자료로 다양성을 만든다.</li>
+      <li>토론은 근거의 힘이 동조 압력보다 클 때만 돕는다. 먼저 독립적으로 답하게 하고, 검증 가능한 근거를 요구한다.</li>
+      <li>계약망은 공고-입찰-낙찰로 능력과 부하를 함께 반영해 일을 나눈다. 입찰 오버헤드가 작업보다 크면 직접 배정한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 같은 모델·같은 프롬프트로 답을 50번 뽑아 다수결을 했는데 정확도가 거의 오르지 않았다. 가장 그럴듯한 이유는?</p><div class="opts">
+        <button class="opt">50번이 너무 적어서</button>
+        <button class="opt" data-correct>오답들이 서로 강하게 상관되어 있어서(같은 문제에서 같이 틀림)</button>
+        <button class="opt">다수결 계산 오류</button>
+      </div><div class="quiz-exp">유효 투표자 수 n/(1+(n−1)ρ)가 작다. 모델·프롬프트·풀이 경로를 다양화해 ρ를 낮춰야 한다.</div></div>
+      <div class="quiz-q"><p>2. 개별 정답률이 0.4인 독립 투표자를 늘리면 다수결 정답률은?</p><div class="opts">
+        <button class="opt">0.5로 수렴한다</button>
+        <button class="opt">1로 수렴한다</button>
+        <button class="opt" data-correct>0으로 수렴한다</button>
+      </div><div class="quiz-exp">p &lt; 0.5면 다수결은 틀린 답을 더 확실하게 만든다. 투표는 기본 실력을 대신하지 못한다.</div></div>
+      <div class="quiz-q"><p>3. 토론이 처음에 맞던 에이전트까지 틀리게 만드는 조건은?</p><div class="opts">
+        <button class="opt">근거의 힘이 동조 압력보다 클 때</button>
+        <button class="opt" data-correct>동조 압력이 근거의 힘보다 크고, 처음 다수가 틀렸을 때</button>
+        <button class="opt">라운드가 한 번뿐일 때</button>
+      </div><div class="quiz-exp">맞던 소수가 다수에 끌려간다. 독립적인 첫 답과 검증 가능한 근거가 이를 막는다.</div></div>
+      <div class="quiz-q"><p>4. 계약망 프로토콜에서 입찰가에 반영되는 것은?</p><div class="opts">
+        <button class="opt" data-correct>그 작업에 대한 능력과 현재 부하</button>
+        <button class="opt">에이전트의 이름</button>
+        <button class="opt">관리자의 선호</button>
+      </div><div class="quiz-exp">워커가 자기 사정을 가장 잘 안다. 관리자는 입찰만 비교하면 된다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 다수결 ---------------- */
+(function () {
+  const maj = (n, p) => { let s = 0; for (let k = Math.floor(n / 2) + 1; k <= n; k++) s += MA.binom(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k); if (n % 2 === 0) s += 0.5 * MA.binom(n, n / 2) * Math.pow(p, n / 2) * Math.pow(1 - p, n / 2); return s; };
+  const acc = (n, p, r) => r * p + (1 - r) * maj(n, p);
+  let seed = 1;
+  const cv = MA.canvas("vt-cv", { aspect: 0.5, draw });
+  const dots = MA.canvas("vt-dots", { height: 64, draw: drawDots });
+  function draw(c, w, h) {
+    const n = MA.val("vt-n"), p = MA.val("vt-p"), r = MA.val("vt-r");
+    const A = MA.axes(c, { box: { l: 46, t: 12, r: w - 12, b: h - 36 }, x: [1, 51], y: [0, 1], xt: [1, 11, 21, 31, 41, 51], yt: [0, 0.5, 1], yf: (v) => v * 100 + "%", xl: "투표자 수 n", yl: "다수결 정답률", ylOff: 36 });
+    const a = [], b = [];
+    for (let k = 1; k <= 51; k += 2) { a.push([A.X(k), A.Y(acc(k, p, 0))]); b.push([A.X(k), A.Y(acc(k, p, r))]); }
+    MA.line(c, [[A.X(1), A.Y(p)], [A.X(51), A.Y(p)]], MA.col("text-faint"), 1, [3, 3]);
+    MA.text(c, "한 명 " + MA.pct(p), A.X(51) - 4, A.Y(p) - 8, { size: 10.5, align: "right", color: MA.col("text-faint") });
+    MA.line(c, a, MA.col("env"), 2.2, [6, 4]); MA.line(c, b, MA.col("accent-2"), 2.8);
+    const v = acc(n, p, r);
+    c.fillStyle = MA.col("accent-2"); c.beginPath(); c.arc(A.X(n), A.Y(v), 5.5, 0, 7); c.fill();
+    MA.set("vt-o1", MA.pct(p));
+    MA.set("vt-o2", MA.pct(v, 1), v > p + 0.05 ? "good" : v < p ? "bad" : "warn");
+    const ne = n / (1 + (n - 1) * r);
+    MA.set("vt-o3", ne.toFixed(1) + "명", ne < n / 3 ? "bad" : "");
+    MA.set("vt-o4", n + "×", n > 10 ? "warn" : "");
+  }
+  function drawDots(c, w, h) {
+    const n = MA.val("vt-n"), p = MA.val("vt-p"), r = MA.val("vt-r"), rnd = MA.rng(seed * 131 + n);
+    const common = rnd() < r, cAns = rnd() < p;
+    let right = 0;
+    const R = Math.min(9, (w - 140) / n / 2 - 1.5);
+    for (let i = 0; i < n; i++) {
+      const ok = common ? cAns : rnd() < p; if (ok) right++;
+      c.fillStyle = MA.col(ok ? "env" : "guard");
+      c.beginPath(); c.arc(14 + R + i * (2 * R + 3), h / 2, R, 0, 7); c.fill();
+    }
+    const win = right * 2 > n;
+    MA.text(c, (common ? "공통 원인 · " : "독립 · ") + (win ? "다수결 정답" : "다수결 오답"), w - 8, h / 2, { size: 12, weight: 700, align: "right", color: MA.col(win ? "env" : "guard") });
+  }
+  MA.el("vt-roll").addEventListener("click", () => { seed++; dots.redraw(); });
+  MA.wire(["vt-n", "vt-p", "vt-r"], () => { cv.redraw(); dots.redraw(); }, { "vt-p": (v) => MA.pct(v), "vt-r": (v) => v.toFixed(2), "vt-n": (v) => v + "명" });
+})();
+
+/* ---------------- 2. 토론 ---------------- */
+(function () {
+  let seed = 3;
+  const cv = MA.canvas("db-cv", { aspect: 0.62, draw });
+  function run(rnd, n, p, s, cpr, R) {
+    let a = Array.from({ length: n }, () => (rnd() < p ? 1 : 0));
+    const hist = [a.slice()];
+    for (let r = 0; r < R; r++) {
+      const k = a.reduce((x, y) => x + y, 0), fracR = k / n;
+      a = a.map((v) => {
+        if (v === 0) { // 오답: 정답 쪽 근거에 설득되거나(정답자가 있을 때), 다수가 정답이면 동조
+          const pr = s * (k > 0 ? 1 : 0) * (0.5 + fracR / 2) + cpr * (fracR > 0.5 ? fracR : 0);
+          return rnd() < Math.min(0.95, pr) ? 1 : 0;
+        }
+        const pw = cpr * (fracR < 0.5 ? 1 - fracR : 0) * (1 - s); // 정답: 다수가 오답이면 동조로 넘어감
+        return rnd() < Math.min(0.95, pw) ? 0 : 1;
+      });
+      hist.push(a.slice());
+    }
+    return hist;
+  }
+  function draw(c, w, h) {
+    const n = MA.val("db-n"), p = MA.val("db-p"), s = MA.val("db-s"), cpr = MA.val("db-c"), R = MA.val("db-r");
+    // 한 번의 토론 그림
+    const H = run(MA.rng(seed * 71), n, p, s, cpr, R);
+    const gw = w * 0.5, cell = Math.min(34, (gw - 40) / (R + 1), (h * 0.62) / n);
+    MA.text(c, "한 번의 토론", 10, 12, { size: 11.5, weight: 700, color: MA.col("text-dim") });
+    H.forEach((row, r) => {
+      MA.text(c, r === 0 ? "처음" : "R" + r, 34 + r * cell + cell / 2, 30, { size: 10, mono: true, align: "center", color: MA.col("text-faint") });
+      row.forEach((v, i) => {
+        c.fillStyle = MA.alpha(MA.col(v ? "env" : "guard"), 0.8);
+        MA.rrect(c, 34 + r * cell + 2, 40 + i * cell + 2, cell - 4, cell - 4, 5); c.fill();
+        if (r > 0 && H[r - 1][i] !== v) { c.strokeStyle = MA.col("text"); c.lineWidth = 1.6; MA.rrect(c, 34 + r * cell + 2, 40 + i * cell + 2, cell - 4, cell - 4, 5); c.stroke(); }
+      });
+    });
+    H[0].forEach((_, i) => MA.text(c, "A" + (i + 1), 16, 40 + i * cell + cell / 2, { size: 10, mono: true, align: "center", color: MA.col("text-faint") }));
+    // 평균 곡선 (몬테카를로)
+    const T = 500, rnd = MA.rng(99 + n * 7), accR = Array(R + 1).fill(0);
+    let flips = 0, rightStart = 0;
+    for (let t = 0; t < T; t++) {
+      const hh = run(rnd, n, p, s, cpr, R);
+      hh.forEach((row, r) => { const k = row.reduce((x, y) => x + y, 0); accR[r] += k * 2 > n ? 1 : k * 2 === n ? 0.5 : 0; });
+      hh[0].forEach((v, i) => { if (v) { rightStart++; if (!hh[R][i]) flips++; } });
+    }
+    const x0 = gw + 30, A = MA.axes(c, { box: { l: x0, t: 22, r: w - 12, b: h - 36 }, x: [0, R], y: [0, 1], xt: Array.from({ length: R + 1 }, (_, i) => i), yt: [0, 0.5, 1], yf: (v) => v * 100 + "%", xl: "라운드", yl: "" });
+    MA.text(c, "다수결 정답률 (500회 평균)", x0, 12, { size: 11.5, weight: 700, color: MA.col("text-dim") });
+    MA.line(c, accR.map((v, r) => [A.X(r), A.Y(v / T)]), MA.col("accent"), 2.8);
+    accR.forEach((v, r) => { c.fillStyle = MA.col("accent"); c.beginPath(); c.arc(A.X(r), A.Y(v / T), 3.5, 0, 7); c.fill(); });
+    const a0 = accR[0] / T, a1 = accR[R] / T;
+    MA.set("db-o1", MA.pct(a0));
+    MA.set("db-o2", MA.pct(a1), a1 > a0 + 0.03 ? "good" : a1 < a0 - 0.03 ? "bad" : "warn");
+    MA.set("db-o3", MA.pct(flips / Math.max(1, rightStart)), flips / Math.max(1, rightStart) > 0.15 ? "bad" : "good");
+  }
+  MA.el("db-roll").addEventListener("click", () => { seed++; cv.redraw(); });
+  MA.wire(["db-n", "db-p", "db-s", "db-c", "db-r"], () => cv.redraw(), { "db-p": (v) => MA.pct(v), "db-s": (v) => v.toFixed(2), "db-c": (v) => v.toFixed(2), "db-n": (v) => v + "명", "db-r": (v) => v + "회" });
+})();
+
+/* ---------------- 3. 계약망 경매 ---------------- */
+(function () {
+  let mode = "auc", seed = 4;
+  const SK = ["search", "code", "doc"], SC = { search: "ctx", code: "tool", doc: "state" };
+  const WK = [["W1", "search"], ["W2", "search"], ["W3", "code"], ["W4", "doc"], ["W5", "code"]];
+  const cv = MA.canvas("au-cv", { aspect: 0.6, draw });
+  function plan() {
+    const T = MA.val("au-t"), sp = MA.val("au-s"), ov = MA.val("au-o"), r = MA.rng(seed * 53);
+    const tasks = Array.from({ length: T }, (_, i) => ({ i, sk: SK[Math.floor(r() * 3)], size: 1 + Math.floor(r() * 3) }));
+    const load = WK.map(() => 0), lanes = WK.map(() => []);
+    const dur = (t, w) => (WK[w][1] === t.sk ? t.size : t.size * sp);
+    tasks.forEach((t, k) => {
+      let w;
+      if (mode === "rand") w = Math.floor(r() * WK.length);
+      else if (mode === "rr") w = k % WK.length;
+      else { let best = Infinity; WK.forEach((_, j) => { const bid = load[j] + dur(t, j); if (bid < best) { best = bid; w = j; } }); }
+      const d = dur(t, w) + (mode === "auc" ? ov : 0);
+      lanes[w].push({ t, s: load[w], e: load[w] + d, fit: WK[w][1] === t.sk });
+      load[w] += d;
+    });
+    return { lanes, load, tasks };
+  }
+  function draw(c, w, h) {
+    const P = plan(), mk = Math.max(...P.load), l = 64, rowH = (h - 40) / WK.length;
+    const tmax = Math.max(mk, 1) * 1.05;
+    const X = (v) => l + (v / tmax) * (w - l - 12);
+    WK.forEach(([name, sk], j) => {
+      const y = 8 + j * rowH;
+      MA.node(c, 14, y + rowH / 2, 7, SC[sk], null);
+      MA.text(c, name, 26, y + rowH / 2, { size: 11, mono: true, color: MA.col("text") });
+      c.fillStyle = MA.col("surface"); c.fillRect(l, y + 4, w - l - 12, rowH - 8);
+      P.lanes[j].forEach((b) => {
+        c.fillStyle = MA.alpha(MA.col(SC[b.t.sk]), 0.55);
+        MA.rrect(c, X(b.s) + 1, y + 6, Math.max(2, X(b.e) - X(b.s) - 2), rowH - 12, 4); c.fill();
+        if (!b.fit) { c.strokeStyle = MA.col("guard"); c.lineWidth = 2; MA.rrect(c, X(b.s) + 1, y + 6, Math.max(2, X(b.e) - X(b.s) - 2), rowH - 12, 4); c.stroke(); }
+        if (X(b.e) - X(b.s) > 22) MA.text(c, "T" + (b.t.i + 1), X(b.s) + 5, y + rowH / 2, { size: 10, mono: true });
+      });
+    });
+    MA.line(c, [[X(mk), 4], [X(mk), h - 30]], MA.col("accent"), 1.5, [4, 3]);
+    MA.text(c, "완료 " + mk.toFixed(1), X(mk), h - 18, { size: 11, mono: true, align: "center", color: MA.col("accent") });
+    const fit = P.lanes.flat().filter((b) => b.fit).length;
+    MA.set("au-o1", mk.toFixed(1));
+    MA.set("au-o2", `${fit} / ${P.tasks.length}`, fit / P.tasks.length > 0.85 ? "good" : fit / P.tasks.length < 0.5 ? "bad" : "warn");
+    MA.set("au-o3", `${Math.max(...P.load).toFixed(1)} / ${Math.min(...P.load).toFixed(1)}`);
+  }
+  MA.seg("au-mode", (v) => { mode = v; cv.redraw(); });
+  MA.el("au-new").addEventListener("click", () => { seed++; cv.redraw(); });
+  MA.wire(["au-t", "au-s", "au-o"], () => cv.redraw(), { "au-s": (v) => v + "×", "au-t": (v) => v + "개" });
+})();
+</script>
+</body>
+</html>

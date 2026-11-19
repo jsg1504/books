@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="470" viewBox="0 0 400 470">
+<defs><radialGradient id="glow" cx="50%" cy="58%" r="55%"><stop offset="0" stop-color="#2f8fb0" stop-opacity=".55"/><stop offset="1" stop-color="#101a2b" stop-opacity="0"/></radialGradient>
+<pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#3fcbe8" stroke-opacity=".07"/></pattern></defs>
+<rect width="400" height="470" fill="#101a2b"/><rect width="400" height="470" fill="url(#grid)"/><rect width="400" height="470" fill="url(#glow)"/><path d="M13 0v470" stroke="#3fcbe8" opacity=".35"/>
+<g fill="#eaf7ff" font-family="Georgia,serif" font-size="58"><text x="34" y="84">Chorus</text><text x="34" y="142">Book</text></g>
+<g transform="translate(205 296)">
+<path d="M-150 70 L150 70 L118 110 L-118 110 Z" fill="#3fd28f" fill-opacity=".10" stroke="#3fd28f" stroke-opacity=".6"/>
+<ellipse rx="120" ry="34" fill="none" stroke="#3fcbe8" stroke-opacity=".5" stroke-dasharray="6 6" stroke-width="1.6"/>
+<g stroke="#8aa2ff" stroke-opacity=".35" stroke-width="1.2"><path d="M0 -84 L-120 0 M0 -84 L-60 30 M0 -84 L60 30 M0 -84 L120 0 M0 -84 L0 -34"/></g>
+<path d="M-60 30 C -30 0, 30 0, 60 30" fill="none" stroke="#f5b544" stroke-width="2.2" stroke-dasharray="4 4"/>
+<circle cx="0" cy="-84" r="22" fill="#1c2766" stroke="#8aa2ff" stroke-width="3"/><circle cx="0" cy="-84" r="8" fill="#8aa2ff"/>
+<g stroke-width="2.4"><circle cx="-120" cy="0" r="12" fill="#12303a" stroke="#3fcbe8"/><circle cx="-60" cy="30" r="12" fill="#12303a" stroke="#3fcbe8"/><circle cx="60" cy="30" r="12" fill="#12303a" stroke="#3fcbe8"/><circle cx="120" cy="0" r="12" fill="#3a1424" stroke="#ff7aa6"/><circle cx="0" cy="-34" r="11" fill="#3a1414" stroke="#ff6b6b" stroke-dasharray="3 3"/></g>
+<g fill="#3fd28f"><rect x="-80" y="82" width="22" height="10" rx="2"/><rect x="-46" y="82" width="22" height="10" rx="2" fill="#b391ff"/><rect x="-12" y="82" width="22" height="10" rx="2"/><rect x="22" y="82" width="22" height="10" rx="2"/></g>
+</g>
+<g font-family="monospace" font-size="12" fill="#b8dff5"><text x="232" y="206">lead</text><text x="40" y="270">worker</text><text x="296" y="262">judge</text><text x="250" y="420" fill="#8fe8b8">blackboard</text></g>
+<path d="M34 432h331" stroke="#2a4a66"/><text x="34" y="456" fill="#dff2ff" font-family="sans-serif" font-size="15" font-weight="700">멀티에이전트 시스템 설계 실험 교과서</text>
+</svg>
