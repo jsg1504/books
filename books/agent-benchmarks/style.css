@@ -670,7 +670,7 @@ footer a {
   margin: 10px 0 2px;
 }
 .panel .barrow {
-  grid-template-columns: 82px 1fr 40px;
+  grid-template-columns: 108px 1fr 40px;
   gap: 9px;
   font-size: 13px;
   margin: 8px 0;

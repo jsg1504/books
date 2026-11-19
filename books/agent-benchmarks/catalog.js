@@ -43,7 +43,7 @@ const benchmarkRows = [
     "Almost@1",
     "29.1",
     "https://programbench.com/",
-    "1017 카드는 지표명을 생략합니다. 같은 비교값을 담은 이전 Flash 카드는 Almost@1으로 표기합니다.",
+    "1017 카드는 지표명을 생략합니다. 같은 비교값을 담은 DeepSeek-V4.1-Flash 카드는 Almost@1으로 표기합니다.",
   ],
   [
     "NL2Repo-Bench",

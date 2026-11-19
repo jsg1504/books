@@ -119,7 +119,7 @@ const scores = [
   [
     "ProgramBench",
     [29.1, 20.3, 17.5, 19, 23, 37],
-    "동작 재구현 · 이전 모델 카드 지표 Almost@1",
+    "동작 재구현 · V4.1-Flash 카드 지표 Almost@1",
   ],
   [
     "NL2Repo-Bench",
@@ -154,8 +154,8 @@ const scores = [
   ["ZeroBench-main", [51, 49, 41, null, 53, 52], "도구 허용 · Pass@5"],
 ];
 const models = [
-  "Flash 1017",
-  "이전 Flash",
+  "V4.1-Flash-1017",
+  "V4.1-Flash",
   "Kimi K3",
   "GLM-5.3",
   "GPT-5.6 Sol",
@@ -695,7 +695,7 @@ function compare() {
       scores
         .map((s, i) => '<option value="' + i + '">' + s[0] + "</option>")
         .join("") +
-      '</select><p class="sub" id="metric"></p><div id="bars"></div><p class="muted">막대 범위 0–100 · 미보고 항목은 빈 막대로 표시합니다.</p></section><a class="source" href="' +
+      '</select><p class="sub" id="metric"></p><div id="bars"></div><p class="muted">막대 범위 0–100 · 미보고 항목은 빈 막대로 표시합니다. V4.1-Flash는 1017이 업데이트한 원래 모델 DeepSeek-V4.1-Flash입니다.</p></section><a class="source" href="' +
       cardURL +
       '">DeepSeek 공식 모델 카드 ↗</a>',
   );
