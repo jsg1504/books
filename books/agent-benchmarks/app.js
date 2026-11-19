@@ -124,7 +124,7 @@ const scores = [
   [
     "NL2Repo-Bench",
     [68.2, 65.4, 58, 58, 56.8, 75.3],
-    "프로젝트별 테스트 통과 비율의 평균",
+    "프로젝트별 테스트 통과 비율의 평균 · V4.1-Flash 값은 1017 카드 기준(자체 카드는 64.0)",
   ],
   [
     "Automation-Bench v1.0.6",
@@ -156,7 +156,7 @@ const scores = [
 const models = [
   "V4.1-Flash-1017",
   "V4.1-Flash",
-  "Kimi K3",
+  "K3",
   "GLM-5.3",
   "GPT-5.6 Sol",
   "Opus 5",
