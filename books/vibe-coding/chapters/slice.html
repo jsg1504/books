@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업 크기와 분해 · VibeBook</title>
+<meta name="description" content="AI가 끝낼 수 있는 과제의 길이(과제 지평선), 작업을 쪼개 체크포인트로 검증하면 성공 확률이 어떻게 바뀌는지, 안전한 수직 슬라이스 순서를 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="slice">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 06</div>
+    <h1>작업 크기와 분해</h1>
+    <p class="lead">에이전트에게 맡기는 일의 크기는 성공 확률을 가장 크게 좌우하는 변수다. 10분짜리 일은 거의 늘 해내고, 하루짜리 일은 자주 길을 잃는다. 그래서 숙련된 사람들은 큰 일을 <b>검증할 수 있는 작은 조각</b>으로 쪼개 하나씩 맡긴다. 하지만 너무 잘게 쪼개면 위임하고 확인하는 비용이 일 자체보다 커진다. 이 장에서는 AI가 끝낼 수 있는 과제의 길이를 재는 방법, 쪼개기의 최적점, 그리고 쪼갠 조각을 어떤 순서로 쌓아야 안전한지를 본다.</p>
+    <ul class="objectives">
+      <li>과제 지평선의 뜻을 설명하고, 과제 길이에 따른 성공 확률을 어림할 수 있다.</li>
+      <li>쪼개기의 이득(조각당 성공 확률, 조기 발견)과 비용(위임 오버헤드, 통합 위험)을 함께 따질 수 있다.</li>
+      <li>각 조각이 따로 동작하고 검증되는 수직 슬라이스 순서를 설계할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="horizon">
+    <h2>과제 지평선</h2>
+    <p>연구 기관 METR은 AI의 능력을 독특한 단위로 잰다. 숙련된 사람이 몇 분 걸리는 과제부터 몇 시간 걸리는 과제까지 모아 놓고, 모델이 <b>50% 확률로 해내는 과제의 길이</b>(사람 기준 소요 시간)를 구한다. 이것이 <span class="term">과제 지평선</span><span class="en">task time horizon</span>이다. 2025년 3월 발표에서 당시 최전선 모델의 50% 지평선은 약 한 시간이었고, 2019년 이후 이 값은 대략 <b>7개월마다 두 배</b>로 늘어 왔다. 같은 연구에서 80% 확률로 해내는 과제의 길이는 50% 지평선보다 다섯 배쯤 짧았다.</p>
+    <div class="callout warn"><b class="h">지평선을 읽는 법</b>지평선은 특정한 과제 모음(주로 소프트웨어·연구 과제)에서 잰 값이다. 당신의 저장소, 당신의 요구 사항에서 같은 숫자가 나온다는 보장은 없다. 그래도 두 가지 교훈은 일반적이다. ① 과제가 길어질수록 성공 확률은 <b>매끄럽게</b> 떨어진다. ② 믿고 맡길 만한(80%+) 과제의 길이는 “절반은 해낸다”의 길이보다 훨씬 짧다.</div>
+    <div class="formula"><div class="eq"><var>p</var>(<var>L</var>) = 1 / (1 + (<var>L</var> / <var>H</var>)<sup>β</sup>) &nbsp;·&nbsp; <var>H</var>(<var>t</var>) = <var>H</var><sub>0</sub> · 2<sup><var>t</var> / <var>T</var><sub>d</sub></sup></div>
+      <div class="where"><var>L</var>: 과제 길이(사람 기준 분), <var>H</var>: 50% 지평선, β: 곡선의 기울기(여기서는 0.9로 두어 80% 지평선이 50% 지평선의 약 1/5이 되게 했다), <var>T</var><sub>d</sub>: 두 배가 되는 기간. 이 실험은 지평선 연구를 흉내 낸 단순 모형이며 특정 모델의 측정값이 아니다.</div></div>
+    <div class="sim" id="sim-horizon">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>과제 지평선 — 이 일을 맡기면 성공할까</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="hz-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>오늘의 50% 지평선 H₀ <output id="hz-h-out"></output></span><input type="range" id="hz-h" min="10" max="600" step="10" value="60"></label>
+          <label class="ctrl"><span>두 배 기간 T<sub>d</sub> <output id="hz-d-out"></output></span><input type="range" id="hz-d" min="4" max="14" step="1" value="7"></label>
+          <label class="ctrl"><span>몇 달 뒤 <output id="hz-m-out"></output></span><input type="range" id="hz-m" min="0" max="36" step="1" value="0"></label>
+          <label class="ctrl"><span>맡기려는 과제 길이 <output id="hz-l-out"></output></span><input type="range" id="hz-l" min="0" max="1" step="0.01" value="0.55"></label>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>오늘</span><span><i style="background:var(--accent-2)"></i>몇 달 뒤</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">이 과제 성공 확률 · 오늘</span><span class="v" id="hz-o1">—</span></div>
+        <div class="stat"><span class="k">몇 달 뒤</span><span class="v" id="hz-o2">—</span></div>
+        <div class="stat"><span class="k">80% 지평선 · 오늘</span><span class="v" id="hz-o3">—</span></div>
+        <div class="stat"><span class="k">80% 지평선 · 몇 달 뒤</span><span class="v" id="hz-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① H₀ = 60분이면 80% 지평선은 13분이다. 한 시간짜리 일을 그대로 맡기면 절반은 실패한다. ② “몇 달 뒤”를 14로 밀면(두 배 기간 7개월) 곡선이 오른쪽으로 두 칸 이동한다. 지평선은 네 배가 된다. ③ 과제 길이를 하루(8시간) 근처로 두고 비교해 보자. 같은 일이 오늘은 “쪼개야 하는 일”, 몇 년 뒤에는 “통째로 맡길 수 있는 일”이 된다. <b>쪼개는 크기는 고정된 규칙이 아니라 지평선을 따라 움직이는 값이다.</b></div>
+    </div>
+  </section>
+
+  <section id="chunk">
+    <h2>쪼갤수록 좋을까</h2>
+    <p>4시간짜리 일을 그대로 맡기면 성공 확률이 낮다. 1시간짜리 네 조각으로 나누고 조각마다 테스트로 확인하면 각 조각의 성공 확률이 높고, 실패해도 그 조각만 다시 하면 된다. 그런데 조각마다 위임 설명을 쓰고 결과를 확인하는 데 사람의 시간이 든다. 그리고 조각 사이의 경계에서 <b>통합 버그</b>가 생길 수 있다. 쪼개기에는 최적점이 있다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 190" role="img" aria-label="큰 작업 하나와 체크포인트가 있는 작은 조각들의 비교">
+        <defs><marker id="m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--axis)"/></marker></defs>
+        <text x="20" y="24" class="t-b">한 번에</text>
+        <rect x="120" y="10" width="560" height="26" rx="6" class="soft-ctx"/><text x="400" y="28" text-anchor="middle" class="t-mono">4시간짜리 작업 하나 — 끝에서야 확인</text>
+        <circle cx="700" cy="23" r="10" class="soft-guard"/><text x="700" y="28" text-anchor="middle" class="t-mono" style="fill:var(--guard)">?</text>
+        <text x="20" y="84" class="t-b">쪼개서</text>
+        <g transform="translate(120,70)">
+          <rect width="128" height="26" rx="6" class="soft-ctx"/><circle cx="140" cy="13" r="9" class="soft-env"/><path d="M135 13l4 4 6-7" stroke="var(--env)" stroke-width="2" fill="none"/>
+          <rect x="156" width="128" height="26" rx="6" class="soft-ctx"/><circle cx="296" cy="13" r="9" class="soft-env"/><path d="M291 13l4 4 6-7" stroke="var(--env)" stroke-width="2" fill="none"/>
+          <rect x="312" width="128" height="26" rx="6" class="soft-ctx"/><circle cx="452" cy="13" r="9" class="soft-guard"/><path d="M447 8l10 10M457 8l-10 10" stroke="var(--guard)" stroke-width="2"/>
+          <rect x="312" y="34" width="128" height="22" rx="6" class="soft-ctx" opacity=".7"/><text x="376" y="50" text-anchor="middle" class="t-mono">이 조각만 다시</text>
+          <rect x="468" width="92" height="26" rx="6" class="soft-ctx"/>
+        </g>
+        <text x="120" y="160" class="t-dim">체크포인트(초록 원)마다 테스트·리뷰로 확인한다. 실패의 비용이 조각 하나로 한정된다.</text>
+        <text x="120" y="180" class="t-dim">대가: 조각마다 위임·확인 비용, 그리고 조각 사이 경계의 통합 위험.</text>
+      </svg>
+      <figcaption><b>그림 6-1.</b> 쪼개기와 체크포인트. 작업을 쪼개면 각 조각이 지평선 안쪽으로 들어오고, 실패를 일찍 발견해 그 조각만 다시 한다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-chunk">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>쪼개기의 최적점 — 조각 수 k에 따른 성공과 사람 시간</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ck-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>전체 작업 길이 <output id="ck-l-out"></output></span><input type="range" id="ck-l" min="30" max="480" step="30" value="240"></label>
+          <label class="ctrl"><span>50% 지평선 H <output id="ck-h-out"></output></span><input type="range" id="ck-h" min="15" max="480" step="15" value="60"></label>
+          <label class="ctrl"><span>조각당 사람 시간 (위임+확인) <output id="ck-o-out"></output></span><input type="range" id="ck-o" min="2" max="30" step="1" value="8"></label>
+          <label class="ctrl"><span>검증이 실패를 잡을 확률 <output id="ck-v-out"></output></span><input type="range" id="ck-v" min="0" max="1" step="0.05" value="0.9"></label>
+          <label class="ctrl"><span>경계당 통합 버그 확률 <output id="ck-i-out"></output></span><input type="range" id="ck-i" min="0" max="0.1" step="0.005" value="0.01"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>전체 성공 확률</span><span><i style="background:var(--tool)"></i>사람 시간 (분)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">k = 1 성공 확률</span><span class="v" id="ck-o1">—</span></div>
+        <div class="stat"><span class="k">최적 k</span><span class="v" id="ck-o2">—</span></div>
+        <div class="stat"><span class="k">최적 k의 성공 확률</span><span class="v" id="ck-o3">—</span></div>
+        <div class="stat"><span class="k">최적 k의 사람 시간</span><span class="v" id="ck-o4">—</span></div>
+      </div>
+      <div class="sim-note">최적 k는 “성공 1건당 사람 시간”이 가장 작은 조각 수다. 한 작업 안의 조각들은 같은 맥락으로 이어지므로, 여기서는 조각이 길수록 실수가 쌓여 지평선 그래프보다 가파르게 실패한다고 두었다(β = 2). 해볼 것: ① 기본값(4시간 작업, H 1시간)에서 통째로 맡기면 성공 확률 38%에 재시도가 많아 사람 시간이 3시간 가까이 든다. 여섯 조각이면 73%에 1시간 반이다. ② 검증 포착률을 0으로 내리면 아무리 쪼개도 성공 확률이 30%대에 머문다. 확인하지 않는 체크포인트는 체크포인트가 아니다. ③ 조각당 사람 시간을 30분으로 올리면 최적 k가 줄어든다. 위임이 비싸면 덜 쪼갠다. ④ 경계당 통합 버그를 5%로 올리면 성공 확률이 다섯 조각에서 꺾여 내려간다. ⑤ H를 480분으로 올리면 최적 k가 1이 된다. 모델이 강해질수록 크게 맡긴다.</div>
+    </div>
+  </section>
+
+  <section id="slice">
+    <h2>수직 슬라이스로 쌓기</h2>
+    <p>쪼개는 방법에도 좋고 나쁨이 있다. 나쁜 방법은 <b>층으로</b> 쪼개는 것이다. “DB 전부, 그다음 API 전부, 그다음 UI 전부.” 마지막 조각이 끝날 때까지 아무것도 동작하지 않으니, 앞 조각의 오해가 끝에서야 드러난다. 좋은 방법은 <span class="term">수직 슬라이스</span><span class="en">vertical slice</span>다. 각 조각이 얇게나마 끝에서 끝까지 동작하고, 따로 배포하고 테스트할 수 있다. 그리고 순서가 중요하다. <b>되돌리기 쉬운 것 먼저, 사용자에게 보이는 것은 기능 플래그 뒤에, 켜는 것은 맨 마지막에.</b></p>
+    <div class="sim" id="sim-order">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>안전한 순서 맞히기 — 로그인에 2단계 인증 추가</h3></div>
+      <div class="sim-body">
+        <p style="margin:0;font-size:14.5px;color:var(--text-dim)">각 조각은 에이전트에게 한 번에 맡길 크기다. ↑↓로 순서를 바꾼 뒤 “검사”를 눌러 보자. 각 조각이 배포된 순간 시스템이 깨지지 않아야 한다.</p>
+        <div class="order" id="or-list"></div>
+        <div class="btns"><button class="btn primary" id="or-check">검사</button><button class="btn" id="or-shuffle">섞기</button></div>
+        <div class="verdict" id="or-fb">순서를 정하고 검사를 눌러 보세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">지킨 의존 관계</span><span class="v" id="or-o1">—</span></div>
+        <div class="stat"><span class="k">중간에 깨지는 배포</span><span class="v" id="or-o2">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>과제 지평선은 AI가 50% 확률로 해내는 과제의 길이다. 성공 확률은 길이에 따라 매끄럽게 떨어지고, 믿고 맡길 길이(80%)는 훨씬 짧다.</li>
+      <li>쪼개면 각 조각이 지평선 안쪽으로 들어오고 실패를 일찍 잡는다. 대신 위임·확인 비용과 통합 위험이 생겨 최적 조각 수가 있다.</li>
+      <li>확인하지 않는 체크포인트는 소용없다. 조각마다 테스트나 리뷰로 끝을 확인해야 쪼개기의 이득이 생긴다.</li>
+      <li>층이 아니라 수직 슬라이스로 쪼개고, 되돌리기 쉬운 것 먼저, 켜는 것은 마지막에 둔다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 어떤 모델의 50% 과제 지평선이 2시간이다. 2시간짜리 일을 맡기면?</p><div class="opts">
+        <button class="opt">거의 확실히 성공한다</button>
+        <button class="opt" data-correct>대략 절반은 실패한다</button>
+        <button class="opt">반드시 실패한다</button>
+      </div><div class="quiz-exp">지평선의 정의가 50% 성공이다. 믿고 맡기려면 그보다 훨씬 짧은 조각으로 나눈다.</div></div>
+      <div class="quiz-q"><p>2. 작업을 열 조각으로 나눴지만 조각마다 결과를 확인하지 않는다. 무엇이 문제인가?</p><div class="opts">
+        <button class="opt">문제없다, 조각이 작을수록 좋다</button>
+        <button class="opt" data-correct>실패한 조각이 다음 조각의 전제가 되어 끝에서야 드러나고, 통합 위험만 늘어난다</button>
+        <button class="opt">토큰이 줄어든다</button>
+      </div><div class="quiz-exp">쪼개기의 이득은 조각마다 실패를 잡고 그 조각만 다시 하는 데서 나온다. 확인이 없으면 그 이득이 사라진다.</div></div>
+      <div class="quiz-q"><p>3. 다음 중 수직 슬라이스는?</p><div class="opts">
+        <button class="opt">모든 테이블의 스키마를 먼저 만든다</button>
+        <button class="opt" data-correct>“할 일 하나를 추가하고 목록에서 보기”를 DB부터 화면까지 얇게 완성한다</button>
+        <button class="opt">모든 화면의 디자인을 먼저 만든다</button>
+      </div><div class="quiz-exp">수직 슬라이스는 끝에서 끝까지 동작하는 얇은 기능이다. 바로 실행하고 테스트할 수 있다.</div></div>
+      <div class="quiz-q"><p>4. 2단계 인증을 추가할 때 “로그인 시 2단계 확인 요구”를 “등록 화면”보다 먼저 배포하면?</p><div class="opts">
+        <button class="opt">아무 문제 없다</button>
+        <button class="opt" data-correct>아직 아무도 2단계 인증을 등록할 수 없는데 로그인에서 요구해, 기능 플래그가 없다면 사용자가 잠길 수 있다</button>
+        <button class="opt">테스트가 빨라진다</button>
+      </div><div class="quiz-exp">각 조각이 배포된 순간 시스템이 깨지지 않도록 의존 순서를 지킨다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+const BETA = 0.9;
+const pOf = (L, H) => 1 / (1 + Math.pow(L / H, BETA));
+const fmtMin = (m) => (m < 60 ? Math.round(m) + "분" : m < 60 * 24 ? (m / 60).toFixed(m < 600 ? 1 : 0) + "시간" : (m / 60 / 8).toFixed(1) + "일(8h)");
+/* ---------------- 1. 과제 지평선 ---------------- */
+(function () {
+  const LMIN = 1, LMAX = 60 * 8 * 20; // 1분 ~ 20일(8시간 기준)
+  const cv = VB.canvas("hz-cv", { aspect: 0.6, draw });
+  const lenOf = (v) => Math.pow(10, Math.log10(LMIN) + v * (Math.log10(LMAX) - Math.log10(LMIN)));
+  function draw(c, w, h) {
+    const H0 = VB.val("hz-h"), Td = VB.val("hz-d"), m = VB.val("hz-m"), L = lenOf(VB.val("hz-l"));
+    const H1 = H0 * Math.pow(2, m / Td);
+    const box = { l: 46, t: 14, r: w - 14, b: h - 42 };
+    const A = VB.axes(c, { box, x: [LMIN, LMAX], y: [0, 1], logx: true, xt: [1, 10, 60, 480, 2400, 9600], xf: (v) => fmtMin(v).replace("일(8h)", "일"), yt: [0, 0.2, 0.5, 0.8, 1], yf: (v) => v * 100 + "%", xl: "과제 길이 (사람 기준, 로그 눈금)", yl: "성공 확률" });
+    [0.5, 0.8].forEach((y) => { c.save(); c.strokeStyle = VB.col("text-faint"); c.setLineDash([2, 4]); c.beginPath(); c.moveTo(box.l, A.Y(y)); c.lineTo(box.r, A.Y(y)); c.stroke(); c.restore(); });
+    const curve = (H) => Array.from({ length: 120 }, (_, i) => { const x = Math.pow(10, (i / 119) * Math.log10(LMAX)); return [A.X(x), A.Y(pOf(x, H))]; });
+    VB.line(c, curve(H0), VB.col("ctx"), 2.6);
+    if (m > 0) VB.line(c, curve(H1), VB.col("accent-2"), 2.6, [6, 4]);
+    // 지평선 표시
+    [[H0, "ctx"], ...(m > 0 ? [[H1, "accent-2"]] : [])].forEach(([H, k]) => { c.fillStyle = VB.col(k); c.beginPath(); c.arc(A.X(Math.min(H, LMAX)), A.Y(0.5), 4, 0, 7); c.fill(); });
+    c.strokeStyle = VB.col("accent"); c.lineWidth = 1.8; c.beginPath(); c.moveTo(A.X(L), box.t); c.lineTo(A.X(L), box.b); c.stroke();
+    VB.text(c, fmtMin(L), A.X(L) + 5, box.t + 8, { size: 11.5, weight: 700, color: VB.col("accent") });
+    const h80 = (H) => H * Math.pow(0.25, 1 / BETA);
+    const p0 = pOf(L, H0), p1 = pOf(L, H1);
+    VB.set("hz-o1", VB.pct(p0), p0 > 0.8 ? "good" : p0 < 0.4 ? "bad" : "warn");
+    VB.set("hz-o2", VB.pct(p1), p1 > 0.8 ? "good" : p1 < 0.4 ? "bad" : "warn");
+    VB.set("hz-o3", fmtMin(h80(H0))); VB.set("hz-o4", fmtMin(h80(H1)));
+  }
+  VB.wire(["hz-h", "hz-d", "hz-m", "hz-l"], () => cv.redraw(), { "hz-h": fmtMin, "hz-d": (v) => v + "개월", "hz-m": (v) => v + "개월", "hz-l": (v) => fmtMin(lenOf(v)) });
+})();
+
+/* ---------------- 2. 쪼개기의 최적점 ---------------- */
+(function () {
+  const KMAX = 16;
+  // 한 작업 안의 조각은 같은 맥락으로 이어지므로 길수록 실수가 쌓여 더 가파르게 실패한다 (β = 2)
+  const pChunk = (l, H) => 1 / (1 + Math.pow(l / H, 2));
+  const cv = VB.canvas("ck-cv", { aspect: 0.62, draw });
+  function model(k) {
+    const L = VB.val("ck-l"), H = VB.val("ck-h"), o = VB.val("ck-o"), v = VB.val("ck-v"), ib = VB.val("ck-i");
+    const l = L / k, p = pChunk(l, H);
+    // 조각 하나: 실패하면 v 확률로 발견해 다시 시도, 발견 못 하면 숨은 실패로 넘어간다
+    const q = (1 - p) * v;
+    const pHidden = ((1 - p) * (1 - v)) / (1 - q);
+    const tries = 1 / (1 - q);
+    const success = Math.pow(1 - pHidden, k) * Math.pow(1 - ib, k - 1);
+    const human = k * tries * (o + 0.08 * l); // 위임 설명 + 결과 확인(조각이 클수록 오래 걸림)
+    return { success, human, perSuccess: human / Math.max(success, 1e-3) };
+  }
+  function draw(c, w, h) {
+    const ks = Array.from({ length: KMAX }, (_, i) => i + 1), R = ks.map(model);
+    const hmax = Math.max(60, Math.ceil(Math.max(...R.map((r) => r.human)) / 60) * 60);
+    const box = { l: 46, t: 14, r: w - 52, b: h - 42 };
+    const A = VB.axes(c, { box, x: [1, KMAX], y: [0, 1], xt: [1, 4, 8, 12, 16], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "조각 수 k", yl: "성공 확률" });
+    const Y2 = (v) => box.b - (v / hmax) * (box.b - box.t);
+    [0, hmax / 2, hmax].forEach((v) => VB.text(c, Math.round(v) + "분", box.r + 6, Y2(v), { size: 10.5, mono: true, color: VB.col("tool") }));
+    VB.line(c, R.map((r, i) => [A.X(i + 1), Y2(r.human)]), VB.col("tool"), 2, [5, 4]);
+    VB.line(c, R.map((r, i) => [A.X(i + 1), A.Y(r.success)]), VB.col("env"), 2.6);
+    R.forEach((r, i) => { c.fillStyle = VB.col("env"); c.beginPath(); c.arc(A.X(i + 1), A.Y(r.success), 2.6, 0, 7); c.fill(); });
+    const best = R.reduce((b, r, i) => (r.perSuccess < R[b].perSuccess ? i : b), 0);
+    c.strokeStyle = VB.col("accent"); c.lineWidth = 2; c.beginPath(); c.arc(A.X(best + 1), A.Y(R[best].success), 8, 0, 7); c.stroke();
+    VB.text(c, "최적", A.X(best + 1), A.Y(R[best].success) - 15, { size: 11, weight: 700, align: "center", color: VB.col("accent") });
+    VB.set("ck-o1", VB.pct(R[0].success), R[0].success < 0.5 ? "bad" : "");
+    VB.set("ck-o2", best + 1 + "조각 (" + fmtMin(VB.val("ck-l") / (best + 1)) + "씩)");
+    VB.set("ck-o3", VB.pct(R[best].success), R[best].success > 0.8 ? "good" : "warn");
+    VB.set("ck-o4", Math.round(R[best].human) + "분");
+  }
+  VB.wire(["ck-l", "ck-h", "ck-o", "ck-v", "ck-i"], () => cv.redraw(), { "ck-l": fmtMin, "ck-h": fmtMin, "ck-o": (v) => v + "분", "ck-v": (v) => VB.pct(v), "ck-i": (v) => VB.pct(v, 1) });
+})();
+
+/* ---------------- 3. 안전한 순서 ---------------- */
+(function () {
+  const STEPS = [
+    { id: "db", t: "DB에 totp_secret · totp_enabled 컬럼 추가 (기본값 꺼짐, 마이그레이션)" },
+    { id: "lib", t: "TOTP 생성·검증 유틸과 단위 테스트" },
+    { id: "enroll", t: "설정 화면: QR로 2단계 인증 등록 (기능 플래그 뒤)" },
+    { id: "login", t: "로그인 흐름에 2단계 확인 추가 (totp_enabled 사용자만)" },
+    { id: "recover", t: "복구 코드 발급과 사용" },
+    { id: "flag", t: "기능 플래그 켜고 사내 사용자에게 먼저 배포" },
+  ];
+  const DEPS = [["db", "enroll", "등록하려면 저장할 컬럼이 있어야 한다"], ["db", "login", "로그인 확인은 totp_enabled 컬럼을 읽는다"], ["db", "recover", "복구 코드도 DB에 저장한다"], ["lib", "enroll", "등록 화면은 QR 비밀값을 만들 유틸이 필요하다"], ["lib", "login", "로그인은 코드를 검증할 유틸이 필요하다"], ["enroll", "login", "등록할 방법이 없는데 로그인에서 요구하면 안 된다"], ["login", "flag", "켜기 전에 로그인 흐름이 완성되어 있어야 한다"], ["recover", "flag", "휴대폰을 잃어버린 사용자가 잠기지 않도록 복구 코드가 먼저다"]];
+  let order = [];
+  const list = VB.el("or-list");
+  function shuffle() { const r = VB.rng(Date.now() % 9973); order = STEPS.map((s) => s.id); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } render(); VB.el("or-fb").textContent = "순서를 정하고 검사를 눌러 보세요."; VB.el("or-fb").style.removeProperty("--k"); VB.set("or-o1", "—"); VB.set("or-o2", "—"); }
+  function render(marks = {}) {
+    list.innerHTML = order.map((id, i) => { const s = STEPS.find((x) => x.id === id); return `<div class="it ${marks[id] || ""}"><span class="n">${i + 1}</span><span class="tx">${VB.esc(s.t)}</span><button data-i="${i}" data-d="-1" aria-label="위로">↑</button><button data-i="${i}" data-d="1" aria-label="아래로">↓</button></div>`; }).join("");
+  }
+  list.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; const i = +b.dataset.i, j = i + +b.dataset.d; if (j < 0 || j >= order.length) return; [order[i], order[j]] = [order[j], order[i]]; render(); });
+  VB.el("or-check").addEventListener("click", () => {
+    const pos = Object.fromEntries(order.map((id, i) => [id, i]));
+    const bad = DEPS.filter(([a, b]) => pos[a] > pos[b]);
+    const broken = new Set(bad.map(([, b]) => b));
+    const marks = Object.fromEntries(order.map((id) => [id, broken.has(id) ? "no" : "ok"]));
+    render(marks);
+    VB.set("or-o1", `${DEPS.length - bad.length} / ${DEPS.length}`, bad.length ? "warn" : "good");
+    VB.set("or-o2", broken.size + "개", broken.size ? "bad" : "good");
+    const fb = VB.el("or-fb");
+    fb.style.setProperty("--k", bad.length ? "var(--guard)" : "var(--env)");
+    fb.innerHTML = bad.length ? `<b>깨지는 순서가 있습니다</b> — ${bad.slice(0, 2).map(([a, b, why]) => VB.esc(why)).join(" · ")}` : "<b>완벽합니다</b> — 모든 조각이 배포되는 순간에도 시스템이 동작합니다. 사용자가 보는 변화는 마지막 플래그 하나뿐입니다.";
+  });
+  VB.el("or-shuffle").addEventListener("click", shuffle);
+  shuffle();
+})();
+</script>
+</body>
+</html>

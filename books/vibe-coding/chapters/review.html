@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>리뷰와 신뢰 보정 · VibeBook</title>
+<meta name="description" content="AI 도구로 느낀 속도와 실제 속도의 차이, 자동화 편향과 신뢰 보정, AI가 쓴 diff에서 버그 찾기, 리뷰 크기와 결함 발견율을 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #df-box .diff { max-height: 420px; }
+  .df-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  #lc-cv { cursor: crosshair; }
+</style>
+</head>
+<body data-root="../" data-chapter="review">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>리뷰와 신뢰 보정</h1>
+    <p class="lead">에이전트가 코드를 쓰는 속도는 사람이 읽는 속도를 이미 넘어섰다. 그래서 병목은 생성이 아니라 <b>검토</b>로 옮겨 왔다. 검토를 줄이면 빨라진 것처럼 느껴진다. 실제로 빨라졌는지는 다른 문제다. 이 장에서는 느낌과 측정이 어떻게 갈라지는지, 도구를 얼마나 믿어야 하는지(신뢰 보정), AI가 쓴 코드에서 버그가 어디에 숨는지, 그리고 한 번에 얼마만큼 읽어야 제대로 읽는 것인지를 본다.</p>
+    <ul class="objectives">
+      <li>체감 생산성과 측정 생산성이 다를 수 있음을 연구 사례로 설명할 수 있다.</li>
+      <li>도구의 정확도에 맞춰 검토 강도를 정하는 신뢰 보정을 설명하고, 자동화 편향을 경계할 수 있다.</li>
+      <li>AI가 쓴 diff에서 자주 숨는 버그 유형을 알고, 리뷰 크기와 속도의 한계를 지킬 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="perception">
+    <h2>느낀 속도와 실제 속도</h2>
+    <p>2025년 7월 METR은 흥미로운 무작위 대조 실험을 발표했다. 자기 저장소를 잘 아는 숙련 오픈 소스 개발자 16명이 실제 이슈 246개를 처리했고, 이슈마다 AI 도구 사용 허용 여부를 무작위로 정했다. 개발자들은 시작 전에 AI가 작업을 24% 빠르게 해 줄 것이라 예상했고, 끝난 뒤에도 20% 빨라졌다고 느꼈다. 측정 결과는 반대였다. AI를 쓸 수 있었던 이슈가 <b>19% 더 오래</b> 걸렸다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 230" role="img" aria-label="METR 실험: 예상 24% 빨라짐, 체감 20% 빨라짐, 측정 19% 느려짐">
+        <line x1="390" y1="20" x2="390" y2="180" stroke="var(--axis)" stroke-width="1.5"/>
+        <text x="390" y="200" text-anchor="middle" class="t-mono">0% (AI 없을 때와 같음)</text>
+        <text x="200" y="200" text-anchor="middle" class="t-mono">← 느려짐</text><text x="580" y="200" text-anchor="middle" class="t-mono">빨라짐 →</text>
+        <g transform="translate(0,30)"><text x="20" y="20" class="t-b">시작 전 예상</text><rect x="390" y="4" width="216" height="26" rx="5" class="soft-ctx"/><text x="614" y="22" class="t-b" style="fill:var(--ctx)">+24%</text></g>
+        <g transform="translate(0,78)"><text x="20" y="20" class="t-b">끝난 뒤 체감</text><rect x="390" y="4" width="180" height="26" rx="5" class="f-acc-soft"/><text x="578" y="22" class="t-b" style="fill:var(--accent)">+20%</text></g>
+        <g transform="translate(0,126)"><text x="20" y="20" class="t-b">측정</text><rect x="219" y="4" width="171" height="26" rx="5" class="soft-guard"/><text x="210" y="22" text-anchor="end" class="t-b" style="fill:var(--guard)">−19%</text></g>
+        <text x="760" y="222" text-anchor="end" class="t-mono">METR, 2025년 7월 (16명 · 246개 이슈)</text>
+      </svg>
+      <figcaption><b>그림 7-1.</b> 예상·체감·측정. 막대 길이는 속도 변화의 크기다. 이 결과는 특정 조건(크고 성숙한 저장소, 그 저장소를 깊이 아는 개발자, 2025년 초의 도구)에서 나온 것이라 일반화할 수는 없다. 그래도 교훈은 분명하다. <b>AI를 쓰면 빨라졌다는 느낌은 측정을 대신하지 못한다.</b></figcaption>
+    </figure>
+    <p>왜 느낌이 틀릴까? 연구진이 꼽은 요인 중에는 이런 것들이 있다. 프롬프트를 쓰고 기다리는 시간은 “일한 시간”처럼 느껴지지 않는다. AI의 제안을 검토하고 고치고 버리는 데 생각보다 많은 시간이 든다. 그리고 저장소의 암묵적인 맥락을 아는 숙련자에게는 AI의 일반적인 제안이 덜 맞는다. 바이브 코딩의 “빠르다”는 감각도 같은 함정에 빠질 수 있다.</p>
+  </section>
+
+  <section id="calibrate">
+    <h2>얼마나 믿어야 할까</h2>
+    <p>도구를 너무 믿으면 오류가 새고, 너무 의심하면 도구를 쓰는 의미가 없다. <span class="term">신뢰 보정</span><span class="en">trust calibration</span>은 믿는 정도를 도구의 <b>실제</b> 정확도에 맞추는 일이다. 문제는 사람의 신뢰가 실제 정확도를 따라가지 않는다는 것이다. 몇 번 연속으로 맞으면 우리는 확인을 줄인다. 이것이 <span class="term">자동화 편향</span><span class="en">automation bias</span>이다. 에이전트가 스무 번 맞고 스물한 번째에 틀릴 때, 그 한 번이 가장 위험하다. 그때 우리는 이미 읽지 않고 있다.</p>
+    <div class="formula"><div class="eq">비용(신뢰 <var>t</var>) = 리뷰 시간 · (1 − <var>t</var>) &nbsp;+&nbsp; (1 − <var>a</var>) · (1 − <var>s</var> · √(1 − <var>t</var>)) · 버그 비용</div>
+      <div class="where"><var>a</var>: 에이전트 변경이 옳을 확률, <var>t</var>: 신뢰(0이면 꼼꼼히 다 읽음, 1이면 읽지 않음), <var>s</var>: 꼼꼼히 읽을 때 버그를 찾는 실력. 리뷰를 줄일수록 시간은 줄지만 새는 버그가 는다. 최적 신뢰는 <var>a</var>와 버그 비용에 따라 움직인다.</div></div>
+    <div class="sim" id="sim-calib">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>신뢰 보정 — 리뷰 강도의 최적점</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cb-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트 정확도 a <output id="cb-a-out"></output></span><input type="range" id="cb-a" min="0.5" max="0.99" step="0.01" value="0.85"></label>
+          <label class="ctrl"><span>내 신뢰 t <output id="cb-t-out"></output></span><input type="range" id="cb-t" min="0" max="1" step="0.02" value="0.9"></label>
+          <label class="ctrl"><span>버그 하나의 비용 (분) <output id="cb-c-out"></output></span><input type="range" id="cb-c" min="10" max="2000" step="10" value="240"></label>
+          <label class="ctrl"><span>꼼꼼한 리뷰 시간 (분/변경) <output id="cb-r-out"></output></span><input type="range" id="cb-r" min="2" max="60" step="1" value="30"></label>
+          <div class="legend"><span><i style="background:var(--accent-2)"></i>리뷰 시간</span><span><i style="background:var(--guard)"></i>새는 버그 비용</span><span><i style="background:var(--text)"></i>합계</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">변경 100개당 새는 버그</span><span class="v" id="cb-o1">—</span></div>
+        <div class="stat"><span class="k">변경당 총비용</span><span class="v" id="cb-o2">—</span></div>
+        <div class="stat"><span class="k">최적 신뢰</span><span class="v" id="cb-o3">—</span></div>
+        <div class="stat"><span class="k">판정</span><span class="v" id="cb-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값(신뢰 0.9)에서 최적 신뢰는 0.74다. 지금은 너무 믿고 있다. ② 정확도를 0.97로 올리면 최적 신뢰가 오른쪽으로 간다. 도구가 좋아지면 덜 읽어도 된다. 하지만 ③ 버그 비용을 2,000분(결제·보안 사고)으로 올리면 정확도 0.97에서도 최적 신뢰가 다시 내려간다. <b>얼마나 읽을지는 도구의 정확도만이 아니라 틀렸을 때의 피해로 정해진다.</b> ④ 버그 비용을 10분으로 내리면 거의 읽지 않는 것이 최적이다. 1장의 “나만 쓰는 스크립트”다.</div>
+    </div>
+  </section>
+
+  <section id="diff">
+    <h2>AI가 쓴 diff에서 버그 찾기</h2>
+    <p>AI가 쓴 코드는 <b>그럴듯해 보인다</b>. 이름이 적절하고, 형식이 깔끔하고, 주석까지 달려 있다. 그래서 사람이 쓴 엉성한 코드보다 버그가 눈에 덜 띈다. 경험적으로 AI 코드의 버그는 몇 군데에 몰린다. <b>경계</b>(off-by-one, 빈 입력, 단위 — 초와 밀리초), <b>권한</b>(사용자가 보낸 ID를 그대로 믿음), <b>부작용</b>(결제·메일 같은 비멱등 작업의 재시도), <b>시간</b>(시간대, UTC), <b>조용한 실패</b>(예외 삼키기, 기본값으로 덮기), 그리고 <b>로그에 남는 개인정보</b>.</p>
+    <div class="sim" id="sim-diff">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>버그 사냥 — 수상한 줄을 클릭하고 제출하세요</h3></div>
+      <div class="sim-body" id="df-box">
+        <div class="df-tabs seg" id="df-tab"><button data-v="0" class="on">① 주문 목록 API</button><button data-v="1">② 결제 재시도</button><button data-v="2">③ 토큰과 날짜</button></div>
+        <div class="hk-msg" id="df-msg" style="font-size:14px;color:var(--text-dim)"></div>
+        <div class="diff" id="df-diff"></div>
+        <div class="btns"><button class="btn primary" id="df-submit">제출</button><button class="btn" id="df-reset">다시</button></div>
+        <div class="verdict" id="df-fb">줄을 클릭해 표시하세요. 다시 클릭하면 표시가 풀립니다.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">찾은 버그</span><span class="v" id="df-o1">—</span></div>
+        <div class="stat"><span class="k">잘못 표시한 줄</span><span class="v" id="df-o2">—</span></div>
+        <div class="stat"><span class="k">세 문제 누적</span><span class="v" id="df-o3">0 / 8</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="size">
+    <h2>한 번에 얼마나 읽을까</h2>
+    <p>코드 리뷰 연구에는 오래된 경험칙이 있다. 시스코에서 SmartBear가 진행한 대규모 사례 연구는, 한 번에 검토하는 코드가 <b>200–400줄</b>을 넘거나 검토 속도가 <b>시간당 500줄</b>을 넘으면 결함 발견 효율이 뚝 떨어진다고 보고했다. 에이전트는 한 번에 1,000줄짜리 diff도 쉽게 만든다. 그 diff를 15분에 훑으면 시간당 4,000줄을 “읽은” 셈이다. 이것은 리뷰가 아니라 승인 버튼이다.</p>
+    <div class="sim" id="sim-loc">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>리뷰 크기와 속도 — 결함 발견율 지도</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="lc-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트가 만든 변경 (줄) <output id="lc-n-out"></output></span><input type="range" id="lc-n" min="100" max="3000" step="100" value="1200"></label>
+          <label class="ctrl"><span>PR 하나의 크기 (줄) <output id="lc-s-out"></output></span><input type="range" id="lc-s" min="50" max="2000" step="50" value="1200"></label>
+          <label class="ctrl"><span>리뷰 속도 (줄/시간) <output id="lc-r-out"></output></span><input type="range" id="lc-r" min="100" max="3000" step="50" value="2000"></label>
+          <label class="ctrl"><span>결함 밀도 (1,000줄당) <output id="lc-d-out"></output></span><input type="range" id="lc-d" min="2" max="40" step="1" value="15"></label>
+          <p style="margin:0;font-size:13px;color:var(--text-faint)">지도를 클릭하면 PR 크기와 속도를 한 번에 고릅니다.</p>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">발견율</span><span class="v" id="lc-o1">—</span></div>
+        <div class="stat"><span class="k">찾은 결함 / 전체</span><span class="v" id="lc-o2">—</span></div>
+        <div class="stat"><span class="k">총 리뷰 시간</span><span class="v" id="lc-o3">—</span></div>
+        <div class="stat"><span class="k">PR 수</span><span class="v" id="lc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값(1,200줄 PR 하나, 시간당 2,000줄)은 지도의 오른쪽 위, 붉은 곳이다. 36분 만에 끝나지만 결함을 10%도 못 찾는다. ② PR 크기를 300줄로, 속도를 400줄/시간으로 옮겨 보자. 리뷰 시간은 세 시간으로 늘지만 발견율이 60%에 이른다. ③ 그 시간이 부담스럽다면 답은 대충 읽기가 아니라 <b>덜 만들기</b>다. 에이전트가 만든 변경을 줄여 보자. 작은 diff를 요구하고(3장 비목표, 6장 슬라이스), 기계가 먼저 거르게 하는(5장) 것이 사람의 리뷰를 감당할 수 있게 만든다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>AI로 빨라졌다는 느낌은 측정을 대신하지 못한다. 한 무작위 실험에서 숙련 개발자는 20% 빨라졌다고 느꼈지만 19% 느려졌다.</li>
+      <li>신뢰는 도구의 실제 정확도와 틀렸을 때의 피해에 맞춘다. 연속된 성공이 확인을 줄이게 만드는 자동화 편향을 경계한다.</li>
+      <li>AI 코드의 버그는 경계·권한·부작용·시간·조용한 실패·로그에 몰린다. 그럴듯함에 속지 말고 이 지점들을 먼저 본다.</li>
+      <li>한 번에 수백 줄, 시간당 수백 줄이 리뷰의 한계다. 리뷰를 빨리 하지 말고, 리뷰할 양을 줄여라.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. METR의 2025년 실험에서 숙련 개발자들이 AI 도구를 쓴 결과에 대해 맞는 것은?</p><div class="opts">
+        <button class="opt">측정 결과 24% 빨라졌다</button>
+        <button class="opt" data-correct>스스로는 빨라졌다고 느꼈지만 측정상 19% 느려졌다</button>
+        <button class="opt">체감과 측정이 일치했다</button>
+      </div><div class="quiz-exp">체감 +20%, 측정 −19%. 특정 조건의 결과지만, 체감을 측정으로 확인해야 한다는 교훈을 준다.</div></div>
+      <div class="quiz-q"><p>2. 에이전트가 최근 30번 연속으로 맞았다. 다음 변경을 대하는 가장 좋은 태도는?</p><div class="opts">
+        <button class="opt">이제 믿을 만하니 읽지 않고 수락한다</button>
+        <button class="opt" data-correct>변경의 위험도(건드리는 영역, 피해 크기)에 맞춰 검토 강도를 정한다</button>
+        <button class="opt">더 의심해서 모든 줄을 두 번 읽는다</button>
+      </div><div class="quiz-exp">연속 성공은 자동화 편향을 부른다. 검토 강도는 기분이 아니라 정확도와 피해로 정한다.</div></div>
+      <div class="quiz-q"><p>3. 결제 함수 호출을 재시도 유틸로 감싼 diff에서 가장 먼저 확인할 것은?</p><div class="opts">
+        <button class="opt">재시도 간격이 지수적으로 늘어나는가</button>
+        <button class="opt" data-correct>결제가 멱등한가 — 재시도하면 두 번 청구되지 않는가</button>
+        <button class="opt">함수 이름이 적절한가</button>
+      </div><div class="quiz-exp">비멱등 작업의 재시도는 중복 결제를 만든다. 멱등 키 없이 감싸면 안 된다.</div></div>
+      <div class="quiz-q"><p>4. 에이전트가 1,500줄짜리 PR을 만들었다. 리뷰를 제대로 하려면?</p><div class="opts">
+        <button class="opt">15분 안에 빠르게 훑는다</button>
+        <button class="opt" data-correct>수백 줄 단위의 작은 PR로 나누게 하고, 기계 검사를 먼저 통과시킨 뒤 읽는다</button>
+        <button class="opt">AI 리뷰어에게만 맡긴다</button>
+      </div><div class="quiz-exp">리뷰의 효율은 크기와 속도에 한계가 있다. 양을 줄이는 것이 유일하게 확장되는 방법이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 신뢰 보정 ---------------- */
+(function () {
+  const S = 0.85;
+  const cv = VB.canvas("cb-cv", { aspect: 0.62, draw });
+  function cost(t) {
+    const a = VB.val("cb-a"), C = VB.val("cb-c"), R = VB.val("cb-r");
+    const review = R * (1 - t);
+    const escape = (1 - a) * (1 - S * Math.sqrt(1 - t));
+    return { review, bug: escape * C, total: review + escape * C, escape };
+  }
+  function draw(c, w, h) {
+    const t = VB.val("cb-t");
+    const ts = Array.from({ length: 51 }, (_, i) => i / 50), R = ts.map(cost);
+    const ymax = Math.max(10, Math.ceil(Math.max(...R.map((r) => r.total)) / 10) * 10);
+    const box = { l: 48, t: 14, r: w - 14, b: h - 42 };
+    const A = VB.axes(c, { box, x: [0, 1], y: [0, ymax], xt: [0, 0.25, 0.5, 0.75, 1], xf: (v) => (v === 0 ? "다 읽음" : v === 1 ? "안 읽음" : v), yt: [0, ymax / 2, ymax].map(Math.round), xl: "신뢰 t", yl: "변경당 비용 (분)" });
+    VB.line(c, R.map((r, i) => [A.X(ts[i]), A.Y(r.review)]), VB.col("accent-2"), 2, [5, 4]);
+    VB.line(c, R.map((r, i) => [A.X(ts[i]), A.Y(r.bug)]), VB.col("guard"), 2, [5, 4]);
+    VB.line(c, R.map((r, i) => [A.X(ts[i]), A.Y(r.total)]), VB.col("text"), 2.6);
+    let bi = 0; R.forEach((r, i) => { if (r.total < R[bi].total) bi = i; });
+    c.strokeStyle = VB.col("env"); c.lineWidth = 2; c.beginPath(); c.arc(A.X(ts[bi]), A.Y(R[bi].total), 8, 0, 7); c.stroke();
+    VB.text(c, "최적", A.X(ts[bi]), A.Y(R[bi].total) - 15, { size: 11, weight: 700, align: "center", color: VB.col("env") });
+    const cur = cost(t);
+    c.fillStyle = VB.col("accent"); c.beginPath(); c.arc(A.X(t), A.Y(cur.total), 6, 0, 7); c.fill();
+    VB.text(c, "나", A.X(t) + 9, A.Y(cur.total), { size: 11, weight: 700, color: VB.col("accent") });
+    VB.set("cb-o1", (cur.escape * 100).toFixed(1) + "개", cur.escape > 0.08 ? "bad" : cur.escape > 0.03 ? "warn" : "good");
+    VB.set("cb-o2", cur.total.toFixed(1) + "분");
+    VB.set("cb-o3", ts[bi].toFixed(2));
+    const d = t - ts[bi];
+    VB.set("cb-o4", Math.abs(d) < 0.1 ? "잘 보정됨" : d > 0 ? "너무 믿음" : "너무 의심함", Math.abs(d) < 0.1 ? "good" : d > 0 ? "bad" : "warn");
+  }
+  VB.wire(["cb-a", "cb-t", "cb-c", "cb-r"], () => cv.redraw(), { "cb-a": (v) => VB.pct(v), "cb-t": (v) => v.toFixed(2), "cb-c": (v) => v + "분", "cb-r": (v) => v + "분" });
+})();
+
+/* ---------------- 2. 버그 사냥 ---------------- */
+(function () {
+  // 각 줄: [기호, 코드, 버그 설명 | null]
+  const P = [
+    { msg: "feat: 주문 목록 API에 페이지네이션 추가 — 테스트 12개 통과", file: "src/api/orders.ts", lines: [
+      [" ", "export async function listOrders(req, res) {", null],
+      ["-", "  const page = Number(req.query.page) || 1", null],
+      ["+", "  const page = Number(req.query.page ?? 1)", "page=abc면 NaN이 된다. 예전 코드의 || 1은 이 경우를 막았다. NaN이 offset 계산과 DB 쿼리로 흘러간다."],
+      [" ", "  const size = Math.min(Number(req.query.size) || 20, 100)", null],
+      ["-", "  const offset = (page - 1) * size", null],
+      ["+", "  const offset = page * size", "off-by-one. 1페이지가 21번째 행부터 시작해 첫 페이지가 통째로 사라진다."],
+      [" ", "  const rows = await db.orders.findMany({", null],
+      ["+", "    where: { userId: req.query.userId },", "권한 버그(IDOR). 로그인한 사용자(req.user.id)가 아니라 쿼리 문자열의 userId를 믿는다. 남의 주문을 볼 수 있다."],
+      [" ", "    skip: offset, take: size,", null],
+      [" ", "    orderBy: { createdAt: 'desc' },", null],
+      [" ", "  })", null],
+      ["+", "  logger.info('orders listed', { count: rows.length, rows })", "개인정보가 담긴 주문 행 전체를 로그에 남긴다. 개수만 남겨야 한다."],
+      ["+", "  res.json({ page, size, rows })", null],
+      [" ", "}", null],
+    ] },
+    { msg: "fix: 일시적 네트워크 오류에 재시도 추가", file: "src/lib/retry.ts · src/checkout.ts", lines: [
+      ["+", "export async function withRetry(fn, retries = 3) {", null],
+      ["+", "  for (let i = 0; i <= retries; i++) {", null],
+      ["+", "    try {", null],
+      ["+", "      return await fn()", null],
+      ["+", "    } catch (e) {", null],
+      ["+", "      if (i === retries) throw e", null],
+      ["+", "      await sleep(100 * 2 ** i)", null],
+      ["+", "    }", null],
+      ["+", "  }", null],
+      ["+", "}", null],
+      [" ", "// checkout.ts", null],
+      ["-", "  await chargeCard(order.paymentMethod, order.total)", null],
+      ["+", "  await withRetry(() => chargeCard(order.paymentMethod, order.total))", "결제는 멱등하지 않다. 결제 승인 후 응답만 끊겨도 재시도가 두 번째 청구를 만든다. 멱등 키를 넘기거나 결제는 재시도에서 빼야 한다."],
+      [" ", "  await sendReceipt(order)", null],
+    ] },
+    { msg: "refactor: 날짜 처리 정리 (moment 제거)", file: "src/auth/token.ts · src/habits/streak.ts", lines: [
+      [" ", "export function isExpired(token) {", null],
+      ["-", "  return Date.now() > token.expiresAt * 1000", null],
+      ["+", "  return Date.now() > token.expiresAt", "단위 버그. expiresAt은 초 단위(JWT exp)인데 밀리초인 Date.now()와 바로 비교한다. 모든 토큰이 즉시 만료로 판정된다."],
+      [" ", "}", null],
+      [" ", "", null],
+      [" ", "export function streakDays(checks, tz) {", null],
+      ["+", "  const days = new Set(checks.map((c) => c.toISOString().slice(0, 10)))", "시간대 버그. toISOString은 UTC 날짜다. 한국에서 오전 9시 전에 체크하면 전날로 센다. tz 인자를 받고도 쓰지 않는다."],
+      ["+", "  const sorted = [...days].sort()", null],
+      ["+", "  let streak = 0", null],
+      ["+", "  for (let i = sorted.length - 1; i > 0; i--) {", null],
+      ["+", "    if (diffDays(sorted[i], sorted[i - 1]) !== 1) break", null],
+      ["+", "    streak++", null],
+      ["+", "  }", null],
+      ["+", "  return streak + 1", null],
+      [" ", "}", null],
+    ] },
+  ];
+  const TOTAL = P.reduce((a, p) => a + p.lines.filter((l) => l[2]).length, 0);
+  const state = P.map(() => ({ picked: new Set(), done: false, hit: 0, fp: 0 }));
+  const getTab = VB.seg("df-tab", () => render());
+  function render() {
+    const i = +getTab(), p = P[i], s = state[i];
+    VB.el("df-msg").innerHTML = `<span class="chip k-acc">commit</span> ${VB.esc(p.msg)}`;
+    VB.el("df-diff").innerHTML = `<div class="hd">${VB.esc(p.file)}</div>` + p.lines.map(([sg, code, bug], j) => {
+      let cls = sg === "+" ? "add" : sg === "-" ? "del" : "";
+      if (s.done) { if (bug && s.picked.has(j)) cls += " hit"; else if (bug) cls += " miss"; else if (s.picked.has(j)) cls += " miss"; }
+      else if (s.picked.has(j)) cls += " pick";
+      return `<div class="dl ${cls}" data-j="${j}"><span class="no">${j + 1}</span><span class="sg">${sg}</span>${VB.esc(code)}</div>`;
+    }).join("");
+    if (s.done) {
+      const bugs = p.lines.map((l, j) => [l, j]).filter(([l]) => l[2]);
+      VB.el("df-fb").style.setProperty("--k", s.hit === bugs.length && !s.fp ? "var(--env)" : "var(--tool)");
+      VB.el("df-fb").innerHTML = `<b>${s.hit} / ${bugs.length} 찾음</b>` + bugs.map(([l, j]) => `<br>${s.picked.has(j) ? "✓" : "✗"} ${j + 1}행 — ${VB.esc(l[2])}`).join("");
+      VB.set("df-o1", `${s.hit} / ${bugs.length}`, s.hit === bugs.length ? "good" : "warn");
+      VB.set("df-o2", s.fp + "줄", s.fp ? "warn" : "good");
+    } else {
+      VB.el("df-fb").style.removeProperty("--k");
+      VB.el("df-fb").textContent = `표시한 줄 ${s.picked.size}개. 버그가 숨은 줄을 모두 표시했다고 생각되면 제출하세요.`;
+      VB.set("df-o1", "—"); VB.set("df-o2", "—");
+    }
+    const tot = state.reduce((a, x) => a + x.hit, 0);
+    VB.set("df-o3", `${tot} / ${TOTAL}`);
+  }
+  VB.el("df-diff").addEventListener("click", (e) => {
+    const d = e.target.closest(".dl"); if (!d) return;
+    const s = state[+getTab()]; if (s.done) return;
+    const j = +d.dataset.j; s.picked.has(j) ? s.picked.delete(j) : s.picked.add(j); render();
+  });
+  VB.el("df-submit").addEventListener("click", () => {
+    const i = +getTab(), s = state[i], p = P[i];
+    if (s.done) return;
+    s.done = true;
+    s.hit = [...s.picked].filter((j) => p.lines[j][2]).length;
+    s.fp = s.picked.size - s.hit;
+    render();
+  });
+  VB.el("df-reset").addEventListener("click", () => { state[+getTab()] = { picked: new Set(), done: false, hit: 0, fp: 0 }; render(); });
+  render();
+})();
+
+/* ---------------- 3. 리뷰 크기와 속도 ---------------- */
+(function () {
+  const SMAX = 2000, RMAX = 3000;
+  const eff = (s, r) => (0.92 / (1 + Math.pow(s / 600, 2)) / (1 + Math.pow(r / 800, 2))) * (1 + Math.pow(50 / 600, 2)) * (1 + Math.pow(100 / 800, 2));
+  let box = null;
+  const cv = VB.canvas("lc-cv", { aspect: 0.66, draw });
+  function draw(c, w, h) {
+    box = { l: 52, t: 12, r: w - 14, b: h - 42 };
+    const A = VB.axes(c, { box, x: [50, SMAX], y: [100, RMAX], xt: [50, 400, 800, 1200, 1600, 2000], yt: [100, 500, 1000, 2000, 3000], xl: "PR 하나의 크기 (줄)", yl: "리뷰 속도 (줄/시간)", ylOff: 44 });
+    const nx = 40, ny = 30, cw = (box.r - box.l) / nx, ch = (box.b - box.t) / ny;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const s = 50 + ((i + 0.5) / nx) * (SMAX - 50), r = RMAX - ((j + 0.5) / ny) * (RMAX - 100);
+      const e = Math.min(1, eff(s, r));
+      c.fillStyle = VB.alpha(VB.col(e > 0.5 ? "env" : e > 0.2 ? "tool" : "guard"), 0.15 + 0.5 * (e > 0.5 ? e : e > 0.2 ? 0.6 : 0.6 - e * 2));
+      c.fillRect(box.l + i * cw, box.t + j * ch, cw + 0.6, ch + 0.6);
+    }
+    c.save(); c.strokeStyle = VB.col("text"); c.setLineDash([4, 4]); c.lineWidth = 1.2;
+    c.strokeRect(A.X(50), A.Y(500), A.X(400) - A.X(50), A.Y(100) - A.Y(500)); c.restore();
+    VB.text(c, "≤400줄 · ≤500줄/h", A.X(60), A.Y(560), { size: 11, weight: 700, color: VB.col("text") });
+    const s = VB.val("lc-s"), r = VB.val("lc-r"), N = VB.val("lc-n"), d = VB.val("lc-d");
+    c.strokeStyle = VB.col("text"); c.lineWidth = 2; c.beginPath(); c.arc(A.X(Math.min(s, SMAX)), A.Y(r), 8, 0, 7); c.stroke();
+    c.fillStyle = VB.col("bg-elev"); c.beginPath(); c.arc(A.X(Math.min(s, SMAX)), A.Y(r), 3, 0, 7); c.fill();
+    const size = Math.min(s, N), prs = Math.ceil(N / size), e = Math.min(1, eff(size, r));
+    const total = (N / 1000) * d;
+    VB.set("lc-o1", VB.pct(e), e > 0.5 ? "good" : e > 0.2 ? "warn" : "bad");
+    VB.set("lc-o2", `${(total * e).toFixed(1)} / ${total.toFixed(1)}`);
+    const mins = (N / r) * 60;
+    VB.set("lc-o3", mins >= 120 ? (mins / 60).toFixed(1) + "시간" : Math.round(mins) + "분");
+    VB.set("lc-o4", prs + "개");
+  }
+  cv.on("click", (x, y) => {
+    if (!box) return;
+    const s = VB.clamp(50 + ((x - box.l) / (box.r - box.l)) * (SMAX - 50), 50, SMAX), r = VB.clamp(100 + ((box.b - y) / (box.b - box.t)) * (RMAX - 100), 100, RMAX);
+    VB.el("lc-s").value = Math.round(s / 50) * 50; VB.el("lc-r").value = Math.round(r / 50) * 50;
+    VB.el("lc-s").dispatchEvent(new Event("input"));
+  });
+  VB.wire(["lc-n", "lc-s", "lc-r", "lc-d"], () => cv.redraw(), { "lc-n": (v) => v + "줄", "lc-s": (v) => v + "줄", "lc-r": (v) => v + "줄/h", "lc-d": (v) => v + "개" });
+})();
+</script>
+</body>
+</html>

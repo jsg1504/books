@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>바이브 코딩이란 무엇인가 · VibeBook</title>
+<meta name="description" content="바이브 코딩과 에이전틱 엔지니어링의 차이, AI 코딩의 스펙트럼, 폭발 반경과 코드 수명으로 바이브를 허용할지 정하는 법을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #mp-cv { cursor: crosshair; }
+  .sort-card { border: 1px solid var(--border); background: var(--bg); border-radius: 12px; padding: 14px 16px; font-size: 15px; line-height: 1.55; min-height: 92px; }
+  .sort-card small { display: block; font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); margin-bottom: 4px; }
+  #so-fb { min-height: 48px; }
+</style>
+</head>
+<body data-root="../" data-chapter="spectrum">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 01</div>
+    <h1>바이브 코딩이란 무엇인가</h1>
+    <p class="lead">2025년 2월, 안드레이 카파시는 자신이 요즘 코딩하는 방식을 <b>바이브 코딩</b>이라고 불렀다. 말로 시키고, 돌려 보고, 오류가 나면 오류 메시지를 그대로 붙여 넣고, 바뀐 코드는 읽지 않고 수락한다. 그 말은 순식간에 퍼졌다. 그리고 곧 같은 방식으로 만든 서비스에서 키가 새고 데이터가 지워지는 사례도 함께 퍼졌다. 이 장에서는 바이브 코딩이 정확히 무엇이고, 그것이 <b>에이전틱 엔지니어링</b>과 어떻게 다른지, 그리고 둘 사이의 어디에 서야 할지를 정하는 기준을 실험으로 찾는다.</p>
+    <ul class="objectives">
+      <li>바이브 코딩, AI 보조 코딩, 에이전틱 엔지니어링을 구분해 설명할 수 있다.</li>
+      <li>폭발 반경과 코드 수명이라는 두 축으로 바이브를 허용할지 판단할 수 있다.</li>
+      <li>빠른 시작과 지속 가능한 속도 사이의 교차점이 왜 생기는지 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="define">
+    <h2>바이브 코딩이라는 말</h2>
+    <p>카파시의 원래 설명은 꽤 구체적이었다. 바이브에 완전히 몸을 맡기고, 코드가 존재한다는 사실조차 잊는다. 변경 사항(diff)은 읽지 않고 “모두 수락”을 누른다. 오류가 나면 설명 없이 오류 메시지를 복사해 붙인다. 코드가 자기 이해를 넘어 자라도 그냥 둔다. 그리고 그는 이것이 <b>주말에 만들고 버릴 프로젝트</b>에는 꽤 괜찮다고 덧붙였다.</p>
+    <p>이 말이 퍼지면서 의미가 넓어졌다. 어떤 사람은 AI가 짠 코드라면 무엇이든 바이브 코딩이라고 부른다. 사이먼 윌리슨은 이 혼동을 경계했다. 그의 기준은 간단하다. <b>AI가 쓴 코드를 검토하고, 테스트하고, 남에게 설명할 수 있을 만큼 이해했다면 그것은 바이브 코딩이 아니다.</b> 그것은 AI를 아주 빠른 타자수로 쓰는 소프트웨어 개발이다.</p>
+    <div class="quote">이 책의 정의 — <b>바이브 코딩</b>은 생성된 코드를 읽지 않고, 실행 결과의 <b>느낌</b>만으로 수락하는 방식이다. <b>에이전틱 엔지니어링</b>은 코딩 에이전트에게 구현을 크게 맡기되, 명세·컨텍스트·자동 검증·사람의 리뷰로 결과에 <b>책임</b>을 지는 방식이다.<cite>둘을 가르는 것은 AI가 얼마나 많이 하느냐가 아니라, 사람이 무엇을 확인하느냐다.</cite></div>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 340" role="img" aria-label="AI 코딩 방식의 지도. 가로축은 AI가 맡는 범위, 세로축은 사람의 검증 강도">
+        <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent-2)"/></marker></defs>
+        <rect x="80" y="20" width="660" height="260" rx="10" class="f-surface"/>
+        <rect x="410" y="20" width="330" height="130" rx="10" fill="var(--accent-2-soft)"/>
+        <rect x="410" y="150" width="330" height="130" rx="10" fill="var(--accent-soft)"/>
+        <path d="M80 280 H740 M80 280 V20" class="s-line"/>
+        <text x="410" y="306" text-anchor="middle" class="t-dim">AI가 맡는 범위 →</text>
+        <g class="t-mono"><text x="110" y="298" class="t-mono">한 줄</text><text x="250" y="298" class="t-mono">함수</text><text x="390" y="298" class="t-mono">파일</text><text x="530" y="298" class="t-mono">기능</text><text x="670" y="298" class="t-mono">저장소</text></g>
+        <text x="40" y="150" text-anchor="middle" class="t-dim" transform="rotate(-90 40 150)">사람의 검증 강도 →</text>
+        <g transform="translate(130,64)"><circle r="10" fill="var(--user)" opacity=".8"/><text x="16" y="5" class="t-b">손으로 짠 코드</text></g>
+        <g transform="translate(200,110)"><circle r="10" class="c-ctx" opacity=".8"/><text x="16" y="5" class="t-b">자동완성</text><text x="16" y="22" class="t-mono">Tab으로 한 줄씩</text></g>
+        <g transform="translate(340,196)"><circle r="10" class="c-tool" opacity=".85"/><text x="16" y="5" class="t-b">채팅 복붙</text><text x="16" y="22" class="t-mono">답을 복사해 붙임</text></g>
+        <g transform="translate(620,236)"><circle r="13" fill="var(--accent)"/><text x="-18" y="5" text-anchor="end" class="t-b" style="fill:var(--accent)">바이브 코딩</text><text x="-18" y="22" text-anchor="end" class="t-mono">읽지 않고 수락</text></g>
+        <g transform="translate(620,70)"><circle r="13" fill="var(--accent-2)"/><text x="-18" y="5" text-anchor="end" class="t-b" style="fill:var(--accent-2)">에이전틱 엔지니어링</text><text x="-18" y="22" text-anchor="end" class="t-mono">맡기되 검증하고 책임</text></g>
+        <path d="M640 222 C 690 180, 690 130, 640 88" fill="none" stroke="var(--accent-2)" stroke-width="2.4" stroke-dasharray="6 5" class="flow" marker-end="url(#m1)"/>
+        <text x="700" y="160" class="t-acc" style="fill:var(--accent-2)">이 책의</text><text x="700" y="176" class="t-acc" style="fill:var(--accent-2)">방향</text>
+      </svg>
+      <figcaption><b>그림 1-1.</b> AI 코딩 방식의 지도. 오른쪽으로 갈수록 AI가 한 번에 맡는 범위가 커진다. 바이브 코딩과 에이전틱 엔지니어링은 둘 다 오른쪽 끝에 있다. 둘의 차이는 <b>세로축</b>, 사람이 결과를 얼마나 확인하느냐다. 이 책은 오른쪽 아래에서 오른쪽 위로 올라가는 법, 그리고 굳이 올라가지 않아도 되는 때를 다룬다.</figcaption>
+    </figure>
+    <table class="tbl">
+      <tr><th></th><th style="color:var(--accent)">바이브 코딩</th><th style="color:var(--accent-2)">에이전틱 엔지니어링</th></tr>
+      <tr><td><b>시작</b></td><td>떠오른 대로 말한다</td><td>목표·제약·수용 기준을 먼저 적는다 (3장)</td></tr>
+      <tr><td><b>맥락</b></td><td>대화에 쌓인 것이 전부</td><td>규칙 파일과 관련 파일을 골라 준다 (4장)</td></tr>
+      <tr><td><b>판단 근거</b></td><td>“돌아가네?”</td><td>테스트·타입 검사·리뷰 (5·7장)</td></tr>
+      <tr><td><b>작업 단위</b></td><td>“앱 만들어 줘” 한 번</td><td>검증 가능한 작은 조각 (6장)</td></tr>
+      <tr><td><b>실패하면</b></td><td>오류를 붙여 넣고 다시</td><td>체크포인트로 되돌리고 원인을 고친다 (2장)</td></tr>
+      <tr><td><b>어울리는 일</b></td><td>시제품, 일회용 스크립트, 개인 도구, 학습</td><td>남이 쓰는 서비스, 오래 유지할 코드, 돈·개인정보</td></tr>
+    </table>
+  </section>
+
+  <section id="axes">
+    <h2>바이브를 허용하는 두 축</h2>
+    <p>“바이브 코딩은 나쁘다”는 말도, “이제 코드는 안 읽어도 된다”는 말도 틀렸다. 맞는 질문은 <b>이 코드가 틀리면 얼마나 아프고, 얼마나 오래 아플까</b>다. 앞의 것은 <span class="term">폭발 반경</span><span class="en">blast radius</span>, 뒤의 것은 코드의 <b>수명</b>이다. 나 혼자 쓰고 오늘 버릴 스크립트는 틀려도 나만 잠깐 아프다. 수천 명의 결제를 처리하고 몇 년 유지할 코드는 틀리면 모두가 오래 아프다.</p>
+    <div class="formula"><div class="eq">기대 비용(모드) ≈ <var>w</var> · 시간 &nbsp;+&nbsp; <var>P</var>(결함) · 피해(<var>R</var>) &nbsp;+&nbsp; 유지 비용(<var>L</var>)</div>
+      <div class="where"><var>R</var>: 폭발 반경 (나만 → 수많은 사용자·돈·개인정보), <var>L</var>: 코드 수명 (오늘 버림 → 수년 유지), <var>w</var>: 사람 시간의 가치. 바이브는 시간이 가장 싸지만 결함 확률과 유지 비용(이해하지 못한 코드를 나중에 고치는 비용)이 크다. 엔지니어링은 그 반대다. 세 모드 가운데 기대 비용이 가장 작은 것이 지도의 색이 된다.</div></div>
+    <div class="sim" id="sim-map">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>바이브 허용 지도 — 폭발 반경과 수명으로 모드 고르기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="mp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>자동 테스트 수준 <output id="mp-t-out"></output></span><input type="range" id="mp-t" min="0" max="1" step="0.05" value="0.3"></label>
+          <label class="ctrl"><span>되돌리기 쉬움 <output id="mp-u-out"></output></span><input type="range" id="mp-u" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>개발자 숙련도 <output id="mp-s-out"></output></span><input type="range" id="mp-s" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>사람 시간의 가치 w <output id="mp-w-out"></output></span><input type="range" id="mp-w" min="0.3" max="1.2" step="0.05" value="0.6"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>바이브</span><span><i style="background:var(--tool)"></i>가드레일 바이브</span><span><i style="background:var(--accent-2)"></i>엔지니어링</span></div>
+          <p style="margin:0;font-size:13px;color:var(--text-faint)">지도를 클릭해 내 프로젝트의 위치를 고르세요.</p>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">기대 비용 · 바이브</span><span class="v" id="mp-o1">—</span></div>
+        <div class="stat"><span class="k">기대 비용 · 가드레일</span><span class="v" id="mp-o2">—</span></div>
+        <div class="stat"><span class="k">기대 비용 · 엔지니어링</span><span class="v" id="mp-o3">—</span></div>
+        <div class="stat"><span class="k">추천</span><span class="v" id="mp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 왼쪽 아래(나만 쓰고 곧 버림)는 어떤 설정에서도 분홍색이다. 여기서 명세와 리뷰는 낭비다. ② 자동 테스트 수준을 0.9로 올리면 주황 영역(가드레일 바이브)이 지도의 3분의 2로 넓어진다. <b>테스트는 바이브가 안전하게 갈 수 있는 거리를 늘린다.</b> ③ 되돌리기 쉬움을 100%로 올려도 오른쪽 위 꼭짓점은 파란색으로 남는다. 되돌릴 수 있어도 오래 유지할 코드를 이해하는 비용은 줄지 않는다. ④ 사람 시간의 가치 w를 1.2로 올리면 파란 영역이 거의 사라진다. 시간이 비쌀수록 검증을 아끼고 싶어진다. 그래도 오른쪽 위 꼭짓점만은 끝까지 파랗다.</div>
+    </div>
+  </section>
+
+  <section id="race">
+    <h2>빠른 출발, 느린 결승</h2>
+    <p>바이브 코딩의 첫 몇 시간은 마법 같다. 기능이 말하는 속도로 생긴다. 그런데 어느 순간부터 새 기능을 붙일 때마다 다른 무언가가 조용히 깨진다. 아무도 코드를 읽지 않았으니, 깨진 것은 누군가 써 보기 전까지 드러나지 않는다. 드러난 버그를 고치는 변경이 또 다른 곳을 깨뜨린다. 반대로 엔지니어링 방식은 출발이 느리다. 명세를 쓰고, 테스트를 붙이고, diff를 읽는 데 시간이 든다. 하지만 회귀를 그 자리에서 잡으니 속도가 크게 떨어지지 않는다.</p>
+    <p>아래 실험은 같은 앱을 두 방식으로 만드는 과정을 300번 시뮬레이션해 평균을 그린다. 한 번의 프롬프트가 기능 하나를 시도하고, 받아들인 변경은 일정 확률로 이미 되던 기능 하나를 <b>조용히</b> 깨뜨린다. 코드가 커질수록, 그리고 아무도 구조를 돌보지 않을수록 그 확률은 커진다.</p>
+    <div class="sim" id="sim-race">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>같은 앱, 두 가지 방식 — 누가 먼저 결승선에 닿나</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rc-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>변경당 조용한 회귀 확률 <output id="rc-q-out"></output></span><input type="range" id="rc-q" min="0" max="0.3" step="0.01" value="0.12"></label>
+          <label class="ctrl"><span>엔지니어링의 테스트 포착률 <output id="rc-c-out"></output></span><input type="range" id="rc-c" min="0" max="1" step="0.05" value="0.8"></label>
+          <label class="ctrl"><span>엔지니어링 한 바퀴의 시간 배수 <output id="rc-k-out"></output></span><input type="range" id="rc-k" min="1" max="3" step="0.1" value="1.6"></label>
+          <div class="btns"><button class="btn primary" id="rc-play">▶ 재생</button></div>
+          <div class="legend"><span><i style="background:var(--accent)"></i>바이브 · 동작하는 기능</span><span><i style="background:var(--accent-2)"></i>엔지니어링</span><span><i style="background:var(--guard)"></i>숨은 고장 (점선)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">데모 날(시간 15) · 바이브 / 엔지</span><span class="v" id="rc-o1">—</span></div>
+        <div class="stat"><span class="k">시간 60 · 바이브 / 엔지</span><span class="v" id="rc-o2">—</span></div>
+        <div class="stat"><span class="k">추월 시점</span><span class="v" id="rc-o3">—</span></div>
+        <div class="stat"><span class="k">끝에서 숨은 고장 · 바이브</span><span class="v" id="rc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 데모 날에는 바이브가 앞서지만 시간 30 무렵 엔지니어링이 추월하고, 시간 60에는 25개 대 33개로 벌어진다. 바이브 곡선이 평평해지는 이유는 새 기능이 늘어나는 만큼 오래된 기능이 조용히 깨지기 때문이다(빨간 점선). ② 회귀 확률을 0.02로 내리면 추월이 오지 않는다. 작고 단순한 앱에서는 바이브가 끝까지 이긴다. ③ 테스트 포착률을 0으로 내리면 엔지니어링의 숨은 고장이 0.7개에서 3.6개로 늘어난다. 엔지니어링의 안정성은 상당 부분 테스트에서 온다. ④ 시간 배수를 3으로 올리면 지나친 의식(儀式)이 이득을 먹어 버려 바이브가 끝까지 앞선다.</div>
+    </div>
+  </section>
+
+  <section id="sort">
+    <h2>바이브로 괜찮을까</h2>
+    <p>실무 감각을 익혀 보자. 상황마다 가장 알맞은 모드를 골라 보자. <b>가드레일 바이브</b>는 코드를 한 줄 한 줄 읽지는 않되, 테스트·작은 커밋·샌드박스 같은 안전장치를 두고 바이브로 가는 중간 모드다.</p>
+    <div class="sim" id="sim-sort">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>바이브 판정 — 여덟 가지 상황 분류하기</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="so-card"></div>
+        <div class="bins">
+          <button data-v="vibe" style="--k:var(--accent)">바이브</button>
+          <button data-v="guard" style="--k:var(--tool)">가드레일 바이브</button>
+          <button data-v="eng" style="--k:var(--accent-2)">에이전틱 엔지니어링</button>
+        </div>
+        <div class="verdict" id="so-fb">첫 상황을 읽고 버튼을 눌러 보세요.</div>
+        <div class="budget"><i id="so-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="so-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="so-o2">0</span></div>
+      </div>
+      <div class="sim-note">기준: 나만 쓰고 곧 버리면 <b>바이브</b>. 남도 쓰거나 며칠 이상 쓰지만 틀려도 쉽게 되돌릴 수 있으면 <b>가드레일 바이브</b>. 돈·개인정보·다른 사람의 시스템이 걸려 있거나 오래 유지할 코드면 <b>엔지니어링</b>.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>바이브 코딩은 AI가 쓴 코드를 <b>읽지 않고</b> 실행 결과의 느낌만으로 수락하는 방식이다. AI를 쓴다고 다 바이브 코딩은 아니다.</li>
+      <li>에이전틱 엔지니어링은 구현을 크게 맡기되 명세·컨텍스트·자동 검증·리뷰로 결과에 책임지는 방식이다. 차이는 AI의 양이 아니라 사람의 확인이다.</li>
+      <li>바이브를 허용할지는 <b>폭발 반경</b>과 <b>코드 수명</b>으로 정한다. 둘 다 작으면 바이브가 가장 싸다.</li>
+      <li>바이브는 빨리 출발하지만 숨은 회귀가 쌓여 속도가 꺾인다. 자동 테스트는 바이브가 안전하게 갈 수 있는 거리를 늘린다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 에이전트가 만든 300줄짜리 변경을 개발자가 모두 읽고, 테스트를 돌리고, 동료에게 설명할 수 있다. 이것은?</p><div class="opts">
+        <button class="opt">AI가 코드를 썼으니 바이브 코딩이다</button>
+        <button class="opt" data-correct>바이브 코딩이 아니다. AI를 도구로 쓴 소프트웨어 개발이다</button>
+        <button class="opt">300줄이 넘지 않으니 자동완성이다</button>
+      </div><div class="quiz-exp">기준은 누가 썼느냐가 아니라 사람이 검토·테스트·이해했느냐다.</div></div>
+      <div class="quiz-q"><p>2. 바이브 허용 지도에서 왼쪽 아래(나만 쓰고 곧 버림)가 어떤 설정에서도 바이브인 이유는?</p><div class="opts">
+        <button class="opt">AI가 작은 코드는 틀리지 않기 때문에</button>
+        <button class="opt" data-correct>틀려도 피해가 작고 유지할 일이 없어 검증 비용이 이득보다 크기 때문에</button>
+        <button class="opt">테스트를 쓸 수 없기 때문에</button>
+      </div><div class="quiz-exp">결함 확률이 높아도 피해와 수명이 작으면 기대 비용이 작다. 이때 명세와 리뷰에 쓰는 시간은 그대로 손해다.</div></div>
+      <div class="quiz-q"><p>3. 바이브 방식의 기능 수 곡선이 시간이 지나며 평평해지는 주된 이유는?</p><div class="opts">
+        <button class="opt">모델의 토큰 한도가 차서</button>
+        <button class="opt" data-correct>새 변경이 이미 되던 기능을 조용히 깨뜨리고, 그 고장이 늦게 발견되어서</button>
+        <button class="opt">사용자가 줄어서</button>
+      </div><div class="quiz-exp">읽지 않고 수락한 변경의 회귀는 쌓인다. 코드가 커질수록 회귀 확률도 커져 결국 새로 만든 만큼 깨진다.</div></div>
+      <div class="quiz-q"><p>4. 같은 프로젝트에서 바이브를 더 멀리까지 안전하게 쓰게 해 주는 투자는?</p><div class="opts">
+        <button class="opt">더 긴 프롬프트</button>
+        <button class="opt" data-correct>빠르게 도는 자동 테스트와 쉬운 되돌리기(작은 커밋)</button>
+        <button class="opt">더 많은 이모지</button>
+      </div><div class="quiz-exp">테스트는 숨은 회귀를 즉시 드러내고, 작은 커밋은 피해를 한정한다. 둘 다 가드레일 바이브의 영역을 넓힌다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 바이브 허용 지도 ---------------- */
+(function () {
+  let pick = { r: 0.55, l: 0.6 };
+  const cv = VB.canvas("mp-cv", { aspect: 0.72, draw });
+  const MODES = [
+    { k: "vibe", name: "바이브", col: "accent" },
+    { k: "guard", name: "가드레일", col: "tool" },
+    { k: "eng", name: "엔지니어링", col: "accent-2" },
+  ];
+  function model(R, L) {
+    const T = VB.val("mp-t"), U = VB.val("mp-u"), S = VB.val("mp-s"), w = VB.val("mp-w");
+    const D = 0.05 + 0.95 * Math.pow(R, 1.3) * (1 - 0.5 * U); // 결함 하나의 피해
+    const K = 4;
+    const vibe = w * 0.2 + 0.4 * (1 - 0.5 * T) * (1 - 0.4 * S) * D * K + 0.85 * Math.pow(L, 1.3);
+    const guard = w * 0.45 + 0.18 * (1 - 0.5 * T) * D * K + 0.55 * Math.pow(L, 1.3) * (1 - 0.25 * T);
+    const eng = w * 1.0 + 0.06 * (1 - 0.4 * T) * D * K + 0.12 * L;
+    const c = [vibe, guard, eng];
+    const best = c.indexOf(Math.min(...c));
+    return { c, best };
+  }
+  let box = null;
+  function draw(c, w, h) {
+    box = { l: 54, t: 14, r: w - 14, b: h - 42 };
+    const A = VB.axes(c, { box, x: [0, 1], y: [0, 1], xt: [0, 0.25, 0.5, 0.75, 1], yt: [0, 0.25, 0.5, 0.75, 1], xf: (v) => ["나만", "", "팀", "", "고객·돈"][v * 4], yf: (v) => ["오늘", "", "몇 달", "", "수년"][v * 4], xl: "폭발 반경 R", yl: "코드 수명 L", ylOff: 44 });
+    const nx = 48, ny = 34, cw = (box.r - box.l) / nx, ch = (box.b - box.t) / ny;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const R = (i + 0.5) / nx, L = 1 - (j + 0.5) / ny;
+      const m = model(R, L);
+      const sorted = m.c.slice().sort((a, b) => a - b);
+      const margin = sorted[1] - sorted[0];
+      c.fillStyle = VB.alpha(VB.col(MODES[m.best].col), 0.22 + VB.clamp(margin * 1.6, 0, 0.45));
+      c.fillRect(box.l + i * cw, box.t + j * ch, cw + 0.6, ch + 0.6);
+    }
+    // 경계선
+    c.fillStyle = VB.col("text");
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny - 1; j++) {
+      const R = (i + 0.5) / nx;
+      if (model(R, 1 - (j + 0.5) / ny).best !== model(R, 1 - (j + 1.5) / ny).best) c.fillRect(box.l + i * cw + cw / 2 - 1, box.t + (j + 1) * ch - 1, 2.2, 2.2);
+    }
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx - 1; i++) {
+      const L = 1 - (j + 0.5) / ny;
+      if (model((i + 0.5) / nx, L).best !== model((i + 1.5) / nx, L).best) c.fillRect(box.l + (i + 1) * cw - 1, box.t + j * ch + ch / 2 - 1, 2.2, 2.2);
+    }
+    const lab = [["주말 장난감", 0.08, 0.06], ["사내 대시보드", 0.42, 0.42], ["결제 서비스", 0.9, 0.92]];
+    lab.forEach(([s, R, L]) => { c.fillStyle = VB.col("text"); c.beginPath(); c.arc(A.X(R), A.Y(L), 3, 0, 7); c.fill(); VB.text(c, s, A.X(R) + (R > 0.7 ? -6 : 6), A.Y(L) - 9, { size: 11.5, weight: 700, align: R > 0.7 ? "right" : "left" }); });
+    const px = A.X(pick.r), py = A.Y(pick.l);
+    c.strokeStyle = VB.col("text"); c.lineWidth = 2; c.beginPath(); c.arc(px, py, 8, 0, 7); c.stroke();
+    c.fillStyle = VB.col("bg-elev"); c.beginPath(); c.arc(px, py, 3, 0, 7); c.fill();
+    const m = model(pick.r, pick.l);
+    MODES.forEach((md, i) => VB.set("mp-o" + (i + 1), m.c[i].toFixed(2), i === m.best ? "good" : ""));
+    VB.set("mp-o4", MODES[m.best].name);
+    VB.el("mp-o4").style.color = VB.col(MODES[m.best].col);
+  }
+  cv.on("click", (x, y) => {
+    if (!box) return;
+    pick.r = VB.clamp((x - box.l) / (box.r - box.l), 0, 1);
+    pick.l = VB.clamp(1 - (y - box.t) / (box.b - box.t), 0, 1);
+    cv.redraw();
+  });
+  VB.wire(["mp-t", "mp-u", "mp-s", "mp-w"], () => cv.redraw(), { "mp-t": (v) => VB.pct(v), "mp-u": (v) => VB.pct(v), "mp-s": (v) => VB.pct(v), "mp-w": (v) => v.toFixed(2) });
+})();
+
+/* ---------------- 2. 같은 앱, 두 가지 방식 ---------------- */
+(function () {
+  const TMAX = 60, RUNS = 300, STEP = 0.5;
+  let curves = null, shown = TMAX, playing = false;
+  const cv = VB.canvas("rc-cv", { aspect: 0.62, draw });
+  /* 한 번의 실행: t는 사람이 쓴 시간. 바이브는 한 바퀴 1, 엔지니어링은 k */
+  function run(mode, q, cap, k, rnd) {
+    const work = [], hidden = []; // 시간 격자마다 기록
+    let t = 0, ok = 0, broken = 0, nextRec = 0;
+    const rec = () => { while (nextRec <= t && nextRec <= TMAX) { work[Math.round(nextRec / STEP)] = ok; hidden[Math.round(nextRec / STEP)] = broken; nextRec += STEP; } };
+    rec();
+    while (t < TMAX) {
+      const vibe = mode === "vibe";
+      const size = ok + broken;
+      const qEff = vibe ? q * (0.4 + size / 5) : q * 0.6 * (1 + size / 50);
+      let dt = vibe ? 1 : k;
+      if (broken > 0 && vibe && rnd() < Math.min(0.9, 0.12 * broken)) {
+        // 누군가 써 보다가 고장을 발견 → 이번 바퀴는 고치기
+        broken--; ok++;
+      } else if (rnd() < (vibe ? 0.85 : 0.92)) {
+        ok++;
+      }
+      // 이번 변경이 기존 기능 하나를 조용히 깨뜨릴 수 있다
+      if (ok > 1 && rnd() < qEff) {
+        if (!vibe && rnd() < cap) { dt += 0.3 * k; } // 테스트가 잡아 같은 바퀴에서 고친다
+        else { ok--; broken++; }
+      }
+      t += dt;
+      rec();
+    }
+    return { work, hidden };
+  }
+  function compute() {
+    const q = VB.val("rc-q"), cap = VB.val("rc-c"), k = VB.val("rc-k");
+    const n = Math.round(TMAX / STEP) + 1;
+    const out = { vibe: { w: new Float64Array(n), h: new Float64Array(n) }, eng: { w: new Float64Array(n), h: new Float64Array(n) } };
+    ["vibe", "eng"].forEach((mode) => {
+      const rnd = VB.rng(mode === "vibe" ? 17 : 29);
+      for (let r = 0; r < RUNS; r++) {
+        const { work, hidden } = run(mode, q, cap, k, rnd);
+        for (let i = 0; i < n; i++) { out[mode].w[i] += (work[i] ?? work[work.length - 1]) / RUNS; out[mode].h[i] += (hidden[i] ?? hidden[hidden.length - 1]) / RUNS; }
+      }
+    });
+    return out;
+  }
+  function draw(c, w, h) {
+    if (!curves) curves = compute();
+    const ymax = Math.max(10, Math.ceil(Math.max(...curves.vibe.w, ...curves.eng.w) / 10) * 10 + 5);
+    const box = { l: 46, t: 14, r: w - 14, b: h - 42 };
+    const A = VB.axes(c, { box, x: [0, TMAX], y: [0, ymax], xt: [0, 15, 30, 45, 60], yt: [0, ymax / 4, ymax / 2, (3 * ymax) / 4, ymax].map(Math.round), xl: "사람이 쓴 시간 (프롬프트 한 바퀴 = 1)", yl: "기능 수" });
+    // 데모 날
+    c.save(); c.strokeStyle = VB.col("text-faint"); c.setLineDash([3, 4]); c.beginPath(); c.moveTo(A.X(15), box.t); c.lineTo(A.X(15), box.b); c.stroke(); c.restore();
+    VB.text(c, "데모 날", A.X(15) + 4, box.t + 8, { size: 11, color: VB.col("text-faint") });
+    const upto = Math.round(shown / STEP);
+    const pts = (arr) => Array.from(arr).slice(0, upto + 1).map((v, i) => [A.X(i * STEP), A.Y(v)]);
+    VB.line(c, pts(curves.vibe.h), VB.col("guard"), 1.6, [5, 4]);
+    VB.line(c, pts(curves.eng.h), VB.alpha(VB.col("guard"), 0.5), 1.4, [2, 4]);
+    VB.line(c, pts(curves.vibe.w), VB.col("accent"), 2.6);
+    VB.line(c, pts(curves.eng.w), VB.col("accent-2"), 2.6);
+    const lastV = pts(curves.vibe.w).pop(), lastE = pts(curves.eng.w).pop();
+    if (lastV) VB.text(c, "바이브", lastV[0] - 4, lastV[1] - 10, { size: 11.5, weight: 700, align: "right", color: VB.col("accent") });
+    if (lastE) VB.text(c, "엔지니어링", lastE[0] - 4, lastE[1] + 12, { size: 11.5, weight: 700, align: "right", color: VB.col("accent-2") });
+    const at = (m, t) => curves[m].w[Math.round(t / STEP)];
+    VB.set("rc-o1", `${at("vibe", 15).toFixed(1)} / ${at("eng", 15).toFixed(1)}`, at("vibe", 15) > at("eng", 15) ? "warn" : "");
+    VB.set("rc-o2", `${at("vibe", 60).toFixed(1)} / ${at("eng", 60).toFixed(1)}`, at("vibe", 60) < at("eng", 60) ? "bad" : "good");
+    let cross = null;
+    for (let i = 4; i < curves.vibe.w.length; i++) if (curves.eng.w[i] > curves.vibe.w[i] && curves.eng.w[i - 1] <= curves.vibe.w[i - 1] + 1e-9) { cross = i * STEP; }
+    const engLeads = curves.eng.w[curves.eng.w.length - 1] > curves.vibe.w[curves.vibe.w.length - 1];
+    VB.set("rc-o3", engLeads && cross != null ? "시간 " + cross.toFixed(1) : engLeads ? "처음부터" : "추월 없음", engLeads ? "" : "warn");
+    VB.set("rc-o4", curves.vibe.h[curves.vibe.h.length - 1].toFixed(1) + "개", curves.vibe.h[curves.vibe.h.length - 1] > 3 ? "bad" : "");
+  }
+  const L = VB.loop(VB.el("rc-cv"), (dt) => {
+    if (!playing) return;
+    shown = Math.min(TMAX, shown + dt * 12);
+    if (shown >= TMAX) { playing = false; VB.el("rc-play").textContent = "▶ 재생"; }
+    cv.redraw();
+  });
+  L.start();
+  VB.el("rc-play").addEventListener("click", () => { if (!playing) { shown = 0; playing = true; VB.el("rc-play").textContent = "❚❚ 재생 중"; } });
+  VB.wire(["rc-q", "rc-c", "rc-k"], () => { curves = null; cv.redraw(); }, { "rc-q": (v) => VB.pct(v), "rc-c": (v) => VB.pct(v), "rc-k": (v) => v.toFixed(1) + "×" });
+})();
+
+/* ---------------- 3. 바이브 판정 ---------------- */
+(function () {
+  const CARDS = [
+    ["가족 여행 사진 400장을 날짜별 폴더로 옮기는 파이썬 스크립트. 한 번 돌리고 버린다. 원본은 백업해 두었다.", "vibe", "나만 쓰고 한 번 쓰고 버린다. 원본 백업까지 있어 피해가 없다. 결과 폴더만 눈으로 확인하면 충분하다."],
+    ["다음 주 투자자 미팅에서 보여 줄 클릭 가능한 시제품. 가짜 데이터만 쓰고, 통과하면 처음부터 다시 만들 계획이다.", "vibe", "수명이 짧고 실제 사용자 데이터가 없다. 속도가 전부인 일이다. 단, ‘다시 만들 계획’이 실제로 지켜져야 한다."],
+    ["팀 10명이 매일 쓰는 사내 회의실 예약 봇. 데이터는 사내 캘린더 API에서 읽고 쓴다.", "guard", "남이 매일 쓰고 남의 캘린더에 쓴다. 하지만 틀려도 사내 범위이고 되돌릴 수 있다. 테스트 몇 개, 작은 커밋, 쓰기 권한 제한을 두고 바이브로 가도 된다."],
+    ["고객 결제를 처리하는 백엔드의 환불 로직 변경.", "eng", "돈이 걸려 있고 실수는 되돌리기 어렵다. 명세와 테스트, 사람의 리뷰가 필수다."],
+    ["개인 블로그의 CSS를 다크 모드에 맞게 손보기. 깃으로 관리하고 있다.", "vibe", "틀리면 눈에 바로 보이고 git으로 즉시 되돌린다. 화면을 보며 수락해도 된다."],
+    ["오픈 소스 라이브러리(주간 다운로드 50만)에 새 파싱 옵션을 추가하는 PR.", "eng", "다른 사람의 시스템이 이 코드를 믿고 돌아간다. 폭발 반경이 크고 유지 기간도 길다. 메인테이너가 읽을 수 있는 작은 diff와 테스트가 필요하다."],
+    ["데이터 분석가가 이번 분기 보고서용으로 쓰는 SQL·판다스 노트북. 결과 숫자가 경영 회의에 올라간다.", "guard", "코드 자체는 곧 버리지만 숫자가 의사결정에 쓰인다. 알려진 값과 대조하는 검산(작은 테스트)을 붙인 바이브가 알맞다. 숫자를 검증하지 않으면 엔지니어링보다 더 위험하다."],
+    ["병원 환자 기록을 읽어 요약하는 내부 도구의 첫 버전.", "eng", "개인 건강 정보다. 수명이 짧은 시제품이라도 데이터가 새면 되돌릴 수 없다. 데이터 접근이 걸린 순간 엔지니어링 쪽으로 간다."],
+  ];
+  let i = 0, score = 0, locked = false;
+  const NAME = { vibe: "바이브", guard: "가드레일 바이브", eng: "에이전틱 엔지니어링" };
+  function show() {
+    if (i >= CARDS.length) { VB.el("so-card").innerHTML = `<small>완료</small><b>${score} / ${CARDS.length}</b> 맞혔습니다. 다시 하려면 아무 버튼이나 누르세요.`; return; }
+    VB.el("so-card").innerHTML = `<small>상황 ${i + 1} / ${CARDS.length}</small>${VB.esc(CARDS[i][0])}`;
+  }
+  VB.$$("#sim-sort .bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= CARDS.length) { i = 0; score = 0; VB.set("so-o2", "0"); VB.set("so-o1", "0 / 8"); VB.el("so-fb").textContent = "다시 시작합니다."; VB.el("so-bar").style.width = "0"; show(); return; }
+    if (locked) return;
+    const [, ans, why] = CARDS[i];
+    const ok = b.dataset.v === ans;
+    if (ok) score++;
+    const fb = VB.el("so-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + NAME[ans]}</b> — ${VB.esc(why)}`;
+    locked = true; i++;
+    VB.set("so-o1", `${i} / ${CARDS.length}`); VB.set("so-o2", String(score), score === i ? "good" : "");
+    VB.el("so-bar").style.width = (i / CARDS.length) * 100 + "%";
+    setTimeout(() => { locked = false; show(); }, 1400);
+  }));
+  show();
+})();
+</script>
+</body>
+</html>

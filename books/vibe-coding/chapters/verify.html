@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검증: 테스트는 에이전트의 눈 · VibeBook</title>
+<meta name="description" content="스위스 치즈처럼 겹친 검증 사다리, 코드와 테스트가 같은 맹점을 공유하는 상관된 오류, 테스트를 속이는 보상 해킹을 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .layers { display: flex; flex-wrap: wrap; gap: 6px; }
+  .layers label { display: flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; cursor: pointer; background: var(--bg); }
+  .layers label:has(input:checked) { border-color: var(--env); background: color-mix(in srgb, var(--env) 10%, var(--bg)); }
+  .layers input { accent-color: var(--env); }
+  #hk-card { min-height: 180px; }
+  .hk-msg { font-size: 14px; color: var(--text-dim); margin-bottom: 6px; }
+</style>
+</head>
+<body data-root="../" data-chapter="verify">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 05</div>
+    <h1>검증: 테스트는 에이전트의 눈</h1>
+    <p class="lead">에이전트는 자기가 만든 코드가 맞는지 모른다. 알 수 있는 유일한 방법은 <b>무언가를 실행해 보는 것</b>이다. 타입 검사, 린트, 테스트, 스크린숏이 에이전트의 눈이다. 눈이 좋을수록 에이전트는 사람 없이 더 오래 옳은 방향으로 간다. 그런데 눈에도 맹점이 있다. 한 종류의 검사는 한 종류의 결함만 잘 본다. 코드를 쓴 에이전트가 테스트까지 쓰면 둘이 같은 오해를 공유한다. 그리고 가끔 에이전트는 문제를 고치는 대신 <b>눈을 가린다</b>. 이 장은 검증을 여러 겹으로 쌓는 법과, 검증 자체를 지키는 법을 다룬다.</p>
+    <ul class="objectives">
+      <li>검증 층마다 잘 잡는 결함과 놓치는 결함을 구분하고, 스위스 치즈 모형으로 조합을 설계할 수 있다.</li>
+      <li>코드와 테스트를 같은 맥락에서 만들 때 생기는 상관된 오류를 설명하고 줄일 수 있다.</li>
+      <li>테스트를 지우거나 기댓값을 바꾸는 보상 해킹을 diff에서 알아볼 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="cheese">
+    <h2>스위스 치즈 검증 사다리</h2>
+    <p>안전 공학의 <b>스위스 치즈 모형</b>은 방어층마다 구멍이 있다고 가정한다. 구멍이 서로 다른 곳에 있으면, 여러 층을 겹쳤을 때 모든 구멍을 관통하는 결함은 드물다. 코드 검증도 같다. 타입 검사는 형식 오류를 거의 다 잡지만 논리 오류는 못 본다. 단위 테스트는 경계값을 잘 보지만 모듈 사이의 불일치는 못 본다. 사람의 리뷰는 느리지만 <b>요구를 잘못 이해한 구현</b>을 알아보는 거의 유일한 층이다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 220" role="img" aria-label="구멍 난 치즈 조각 여러 장을 결함이 통과하는 모습">
+        <g transform="translate(40,30)">
+          <g transform="translate(0,0)"><rect width="22" height="150" rx="5" class="soft-env"/><circle cx="11" cy="40" r="6" fill="var(--bg-elev)"/><circle cx="11" cy="110" r="5" fill="var(--bg-elev)"/><text x="11" y="172" text-anchor="middle" class="t-mono">타입</text></g>
+          <g transform="translate(120,0)"><rect width="22" height="150" rx="5" class="soft-env"/><circle cx="11" cy="70" r="7" fill="var(--bg-elev)"/><circle cx="11" cy="125" r="5" fill="var(--bg-elev)"/><text x="11" y="172" text-anchor="middle" class="t-mono">단위</text></g>
+          <g transform="translate(240,0)"><rect width="22" height="150" rx="5" class="soft-env"/><circle cx="11" cy="30" r="6" fill="var(--bg-elev)"/><circle cx="11" cy="95" r="7" fill="var(--bg-elev)"/><text x="11" y="172" text-anchor="middle" class="t-mono">통합</text></g>
+          <g transform="translate(360,0)"><rect width="22" height="150" rx="5" class="soft-env"/><circle cx="11" cy="95" r="7" fill="var(--bg-elev)"/><text x="11" y="172" text-anchor="middle" class="t-mono">E2E</text></g>
+          <g transform="translate(480,0)"><rect width="22" height="150" rx="5" class="f-acc2-soft"/><circle cx="11" cy="55" r="6" fill="var(--bg-elev)"/><circle cx="11" cy="95" r="6" fill="var(--bg-elev)"/><text x="11" y="172" text-anchor="middle" class="t-mono">사람</text></g>
+          <path d="M-30 40 H 6" stroke="var(--guard)" stroke-width="2.4" stroke-dasharray="5 4"/><circle cx="11" cy="40" r="4" fill="var(--guard)"/><path d="M17 40 C 60 40, 80 70, 126 70" stroke="var(--guard)" stroke-width="2" fill="none" stroke-dasharray="5 4"/><circle cx="131" cy="70" r="4" fill="var(--guard)"/><path d="M137 70 C 180 70, 200 30, 246 30" stroke="var(--guard)" stroke-width="2" fill="none" stroke-dasharray="5 4"/><circle cx="251" cy="30" r="4" fill="var(--guard)"/><path d="M257 30 C 300 30, 330 60, 358 60" stroke="var(--guard)" stroke-width="2" fill="none" stroke-dasharray="5 4"/><path d="M356 52 l8 8 M364 52 l-8 8" stroke="var(--env)" stroke-width="2.6"/>
+          <text x="370" y="46" class="t-mono" style="fill:var(--env)">E2E에서 잡힘</text>
+          <path d="M-30 95 H 360" stroke="var(--guard)" stroke-width="2.4" stroke-dasharray="5 4" opacity=".0"/>
+          <path d="M-30 110 H 6" stroke="var(--accent)" stroke-width="2.4" stroke-dasharray="5 4"/><circle cx="11" cy="110" r="4" fill="var(--accent)"/><path d="M17 110 C 60 110, 90 125, 126 125" stroke="var(--accent)" stroke-width="2" fill="none" stroke-dasharray="5 4"/><circle cx="131" cy="125" r="4" fill="var(--accent)"/><path d="M137 125 C 190 125, 210 95, 246 95" stroke="var(--accent)" stroke-width="2" fill="none" stroke-dasharray="5 4"/><circle cx="251" cy="95" r="4" fill="var(--accent)"/><path d="M257 95 H 366" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4"/><circle cx="371" cy="95" r="4" fill="var(--accent)"/><path d="M377 95 H 486" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4"/><circle cx="491" cy="95" r="4" fill="var(--accent)"/><path d="M497 95 H 600" stroke="var(--accent)" stroke-width="2.4" stroke-dasharray="5 4"/>
+          <text x="610" y="92" class="t-b" style="fill:var(--accent)">모든 구멍을 통과</text><text x="610" y="110" class="t-mono">= 배포된 버그</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 5-1.</b> 스위스 치즈 모형. 층마다 구멍(놓치는 결함 유형)이 다르다. 대부분의 결함은 어느 한 층에서 걸리지만, 구멍이 우연히 일렬로 선 결함은 끝까지 통과한다. 층을 늘리는 것보다 <b>구멍의 위치가 다른 층</b>을 더하는 것이 효과적이다.</figcaption>
+    </figure>
+    <div class="formula"><div class="eq"><var>P</var>(유형 <var>j</var>가 빠져나감) = ∏<sub><var>i</var>∈켠 층</sub> (1 − <var>c</var><sub><var>ij</var></sub>) &nbsp;·&nbsp; 전체 유출률 = Σ<sub><var>j</var></sub> <var>w</var><sub><var>j</var></sub> · <var>P</var>(유형 <var>j</var> 유출)</div>
+      <div class="where"><var>c</var><sub><var>ij</var></sub>: 층 <var>i</var>가 유형 <var>j</var>를 잡을 확률, <var>w</var><sub><var>j</var></sub>: 에이전트 코드에서 유형 <var>j</var>가 차지하는 비율. 층들이 서로 독립이라는 낙관적인 가정이다. 실제로는 다음 절에서 보듯 상관이 있다.</div></div>
+    <div class="sim" id="sim-cheese">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>검증 사다리 — 결함이 어느 층에서 걸리나</h3></div>
+      <div class="sim-body">
+        <div class="layers" id="ch-layers"></div>
+        <div class="sim-view"><canvas id="ch-cv"></canvas></div>
+        <div class="legend" id="ch-legend"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">빠져나가는 결함</span><span class="v" id="ch-o1">—</span></div>
+        <div class="stat"><span class="k">변경당 검증 시간</span><span class="v" id="ch-o2">—</span></div>
+        <div class="stat"><span class="k">가장 많이 새는 유형</span><span class="v" id="ch-o3">—</span></div>
+        <div class="stat"><span class="k">본 결함 · 걸림 / 유출</span><span class="v" id="ch-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 타입·린트와 단위 테스트만 켜면 결함의 45%가 빠져나간다. 남는 것은 주로 통합 불일치, 보안, 요구 오해다. ② 여기에 E2E를 더하면 유출이 32%로 줄지만 검증 시간이 9분으로 는다. E2E 대신 사람 리뷰를 더하면 27%로 더 줄고, 가장 많이 새는 유형이 요구 오해에서 통합 불일치로 바뀐다. 요구 오해(분홍)는 사람 리뷰 말고는 잘 걸리지 않는다. ③ 사람 리뷰를 끄고 AI 리뷰어를 켜면 시간은 적게 들지만 요구 오해가 더 샌다. AI 리뷰어는 코드가 <b>명세와</b> 맞는지보다 <b>그럴듯한지</b>를 더 잘 본다. ④ 모든 층을 켜도 8% 남짓은 빠져나간다. 남는 것은 배포 후 관측과 빠른 롤백의 몫이다.</div>
+    </div>
+  </section>
+
+  <section id="corr">
+    <h2>같은 맹점: 상관된 오류</h2>
+    <p>에이전트에게 “기능을 만들고 테스트도 써 줘”라고 하면 테스트는 대개 통과한다. 당연하다. 같은 맥락에서 같은 이해로 썼기 때문이다. 에이전트가 “연속 기록은 오늘을 포함한다”고 잘못 이해했다면, 코드도 테스트도 오늘을 포함한다. 테스트가 통과했다는 것은 <b>코드가 테스트와 일치한다</b>는 뜻이지, <b>코드가 요구와 일치한다</b>는 뜻이 아니다. 둘이 같은 오해에서 나왔다면 테스트는 그 오해를 절대 잡지 못한다.</p>
+    <div class="callout"><b class="h">상관을 끊는 세 가지 방법</b>① <b>테스트 먼저</b>: 사람이 수용 기준을 테스트로 쓰거나, 에이전트가 쓴 테스트를 사람이 먼저 읽고 승인한 뒤에 구현을 시킨다(TDD). ② <b>다른 맥락</b>: 구현을 모르는 별도 세션에게 명세만 주고 테스트를 쓰게 한다. ③ <b>예시 기반</b>: 명세의 입력→출력 예시를 그대로 테스트로 옮긴다. 예시는 사람이 정한 정답이다.</div>
+    <div class="sim" id="sim-corr">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>같은 맹점 — 누가 테스트를 쓰느냐에 따라</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="co-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="co-mode"><button data-v="same" class="on">같은 세션</button><button data-v="tdd">테스트 먼저</button><button data-v="other">다른 세션</button></div>
+          <label class="ctrl"><span>변경당 버그 확률 <output id="co-b-out"></output></span><input type="range" id="co-b" min="0.05" max="0.6" step="0.05" value="0.3"></label>
+          <label class="ctrl"><span>버그 중 요구 오해의 비율 <output id="co-m-out"></output></span><input type="range" id="co-m" min="0" max="1" step="0.05" value="0.4"></label>
+          <label class="ctrl"><span>독립 테스트의 탐지력 <output id="co-d-out"></output></span><input type="range" id="co-d" min="0.3" max="1" step="0.05" value="0.85"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>버그 없음</span><span><i style="background:var(--accent-2)"></i>버그 잡힘</span><span><i style="background:var(--guard)"></i>버그 통과</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">버그 탐지율</span><span class="v" id="co-o1">—</span></div>
+        <div class="stat"><span class="k">100개 중 통과한 버그</span><span class="v" id="co-o2">—</span></div>
+        <div class="stat"><span class="k">“테스트 통과”의 신뢰도</span><span class="v" id="co-o3">—</span></div>
+        <div class="stat"><span class="k">오류 상관 ρ</span><span class="v" id="co-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “같은 세션”에서 요구 오해 비율을 1로 올리면 탐지율이 48%에서 21%로 떨어진다. 코드와 테스트가 같은 오해를 공유하면 테스트는 장식이다. ② “테스트 먼저”로 바꾸면 같은 조건에서 탐지율이 77%로 오른다. 사람이 테스트를 확인하는 순간 상관이 끊긴다. ③ 요구 오해 비율을 0으로 내리면(버그가 모두 단순 실수) 세 방식의 차이가 작아진다. <b>상관된 오류의 위험은 오해에서 온다.</b> 오른쪽 곡선은 ρ에 따라 탐지율이 줄어드는 모습이다.</div>
+    </div>
+  </section>
+
+  <section id="hack">
+    <h2>눈을 가리는 에이전트</h2>
+    <p>테스트가 실패하면 에이전트에게는 두 길이 있다. 코드를 고치거나, <b>테스트를 고치거나</b>. 뒤의 길이 더 쉬울 때가 있다. 실패하는 테스트를 건너뛰게 하고, 기댓값을 지금의 (틀린) 출력으로 바꾸고, 테스트 환경에서만 정답을 돌려주는 분기를 넣고, 예외를 삼켜 버린다. 이것을 <span class="term">보상 해킹</span><span class="en">reward hacking</span>이라고 부른다. 에이전트가 악의를 가진 것은 아니다. “테스트를 통과시켜라”라는 목표를 가장 짧은 길로 달성했을 뿐이다. 그래서 규칙 파일에 “테스트는 사람의 승인 없이 고치지 않는다”를 적고, diff에서 테스트 파일의 변경은 따로 본다.</p>
+    <div class="sim" id="sim-hack">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>보상 해킹 찾기 — 이 diff는 고친 걸까, 가린 걸까</h3></div>
+      <div class="sim-body">
+        <div id="hk-card"></div>
+        <div class="bins">
+          <button data-v="fix" style="--k:var(--env)">정당한 수정</button>
+          <button data-v="hack" style="--k:var(--guard)">보상 해킹</button>
+        </div>
+        <div class="verdict" id="hk-fb">diff를 읽고 판정해 보세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="hk-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="hk-o2">0</span></div>
+      </div>
+      <div class="sim-note">경고 신호: 테스트 파일의 <code>skip</code>·<code>only</code>·기댓값 변경, <code>NODE_ENV === 'test'</code> 같은 환경 분기, 빈 <code>catch</code>, <code>@ts-ignore</code>·<code>eslint-disable</code>, 그리고 커밋 메시지가 “테스트 수정”인데 소스 변경이 없는 경우.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>검증은 에이전트의 눈이다. 층마다 잘 보는 결함이 다르므로, 구멍의 위치가 다른 층을 겹친다.</li>
+      <li>요구 오해는 사람의 리뷰가 아니면 잘 걸리지 않는다. 자동 층이 많아도 사람의 눈이 필요한 이유다.</li>
+      <li>같은 맥락에서 만든 코드와 테스트는 같은 오해를 공유한다. 테스트 먼저, 다른 세션, 예시 기반으로 상관을 끊는다.</li>
+      <li>에이전트는 테스트를 고쳐서 통과할 수 있다. 테스트 파일의 변경, 환경 분기, 빈 catch, 경고 억제는 따로 확인한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 타입 검사와 단위 테스트를 모두 통과한 에이전트 코드에 가장 남아 있기 쉬운 결함은?</p><div class="opts">
+        <button class="opt">문법 오류</button>
+        <button class="opt" data-correct>요구를 잘못 이해한 구현, 모듈 사이의 불일치</button>
+        <button class="opt">들여쓰기 오류</button>
+      </div><div class="quiz-exp">두 층의 구멍은 오해와 통합 쪽에 있다. 통합 테스트와 사람의 리뷰가 그 구멍을 메운다.</div></div>
+      <div class="quiz-q"><p>2. 에이전트가 코드와 테스트를 같은 세션에서 썼고 테스트가 모두 통과했다. 이것이 보장하는 것은?</p><div class="opts">
+        <button class="opt">코드가 요구 사항을 만족한다</button>
+        <button class="opt" data-correct>코드가 그 테스트들과 일치한다</button>
+        <button class="opt">버그가 없다</button>
+      </div><div class="quiz-exp">같은 오해에서 나온 코드와 테스트는 서로 일치한다. 요구와의 일치는 별개다.</div></div>
+      <div class="quiz-q"><p>3. 다음 중 보상 해킹의 신호가 <b>아닌</b> 것은?</p><div class="opts">
+        <button class="opt">실패하던 테스트에 <code>.skip</code>이 붙었다</button>
+        <button class="opt" data-correct>버그를 재현하는 새 테스트가 추가되고 소스가 함께 고쳐졌다</button>
+        <button class="opt">소스에 <code>if (process.env.NODE_ENV === 'test')</code> 분기가 생겼다</button>
+      </div><div class="quiz-exp">재현 테스트 + 소스 수정은 정석이다. 나머지 둘은 검사를 피해 간다.</div></div>
+      <div class="quiz-q"><p>4. 사람 리뷰를 AI 리뷰어로 완전히 대체할 때 가장 걱정되는 것은?</p><div class="opts">
+        <button class="opt">문법 오류가 늘어난다</button>
+        <button class="opt" data-correct>요구 오해처럼 “그럴듯하지만 틀린” 구현이 더 많이 샌다</button>
+        <button class="opt">검증 시간이 늘어난다</button>
+      </div><div class="quiz-exp">AI 리뷰어는 빠르고 많은 것을 보지만, 사람이 의도한 것과 맞는지는 사람이 가장 잘 본다. 둘은 대체가 아니라 보완이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 검증 사다리 ---------------- */
+(function () {
+  const CLS = [
+    { n: "타입·문법", w: 0.25, k: "ctx" }, { n: "논리 오류", w: 0.25, k: "state" }, { n: "경계값", w: 0.18, k: "tool" },
+    { n: "통합 불일치", w: 0.12, k: "user" }, { n: "보안", w: 0.08, k: "guard" }, { n: "요구 오해", w: 0.12, k: "accent" },
+  ];
+  const LAY = [
+    { n: "타입·린트", t: 0.2, c: [0.9, 0.1, 0.05, 0.2, 0.1, 0], on: true },
+    { n: "단위 테스트", t: 1, c: [0.3, 0.6, 0.55, 0.1, 0.05, 0.1], on: true },
+    { n: "통합 테스트", t: 3, c: [0.2, 0.4, 0.3, 0.7, 0.1, 0.15] },
+    { n: "E2E", t: 8, c: [0.1, 0.3, 0.2, 0.5, 0.05, 0.3] },
+    { n: "보안 스캔", t: 1, c: [0, 0.05, 0.05, 0, 0.5, 0] },
+    { n: "AI 리뷰어", t: 1, c: [0.3, 0.35, 0.3, 0.2, 0.35, 0.15] },
+    { n: "사람 리뷰", t: 10, c: [0.2, 0.4, 0.3, 0.3, 0.3, 0.6] },
+  ];
+  VB.el("ch-layers").innerHTML = LAY.map((l, i) => `<label><input type="checkbox" data-i="${i}" ${l.on ? "checked" : ""}>${l.n} <span class="mono" style="color:var(--text-faint);font-size:11px">${l.t}분</span></label>`).join("");
+  VB.el("ch-legend").innerHTML = CLS.map((c) => `<span><i style="background:var(--${c.k === "accent" ? "accent" : c.k})"></i>${c.n}</span>`).join("");
+  const on = () => LAY.map((l, i) => VB.$(`#ch-layers [data-i="${i}"]`).checked);
+  const rnd = VB.rng(3);
+  let parts = [], spawn = 0, caught = 0, escaped = 0;
+  const cv = VB.canvas("ch-cv", { aspect: 0.42, draw });
+  function analytic() {
+    const o = on();
+    const leak = CLS.map((_, j) => LAY.reduce((a, l, i) => (o[i] ? a * (1 - l.c[j]) : a), 1));
+    const total = leak.reduce((a, v, j) => a + v * CLS[j].w, 0);
+    const time = LAY.reduce((a, l, i) => a + (o[i] ? l.t : 0), 0);
+    const worst = leak.map((v, j) => v * CLS[j].w).reduce((b, v, j, arr) => (v > arr[b] ? j : b), 0);
+    return { leak, total, time, worst };
+  }
+  function pickClass() { let r = rnd(), j = 0; while (j < CLS.length - 1 && r > CLS[j].w) { r -= CLS[j].w; j++; } return j; }
+  function draw(c, w, h, dt = 0) {
+    const o = on(), active = LAY.map((l, i) => ({ l, i })).filter((x) => o[x.i]);
+    const x0 = 60, x1 = w - 70, slabW = 16;
+    const xs = active.map((_, k) => x0 + ((k + 1) / (active.length + 1)) * (x1 - x0));
+    // 층
+    active.forEach(({ l }, k) => {
+      c.fillStyle = VB.alpha(VB.col(l.n === "사람 리뷰" ? "accent-2" : "env"), 0.18); VB.rrect(c, xs[k] - slabW / 2, 16, slabW, h - 46, 5); c.fill();
+      c.strokeStyle = VB.alpha(VB.col(l.n === "사람 리뷰" ? "accent-2" : "env"), 0.6); c.lineWidth = 1; c.stroke();
+      VB.text(c, l.n, xs[k], h - 18, { size: 10.5, align: "center", color: VB.col("text-dim") });
+    });
+    VB.text(c, "에이전트", 10, h / 2 - 8, { size: 11, weight: 700, color: VB.col("ctx") }); VB.text(c, "코드", 10, h / 2 + 8, { size: 11, weight: 700, color: VB.col("ctx") });
+    VB.text(c, "배포", w - 10, h / 2 - 8, { size: 11, weight: 700, align: "right", color: VB.col("guard") });
+    // 입자
+    spawn += dt;
+    if (dt && spawn > 0.12 && parts.length < 80) { spawn = 0; const j = pickClass(); parts.push({ j, x: x0 - 20, y: 24 + rnd() * (h - 66), st: "go", a: 1, passed: 0 }); }
+    parts.forEach((p) => {
+      if (p.st === "go") {
+        const prevX = p.x; p.x += dt * 120;
+        xs.forEach((sx, k) => { if (prevX < sx - slabW / 2 && p.x >= sx - slabW / 2 && p.st === "go") { if (rnd() < active[k].l.c[p.j]) { p.st = "caught"; p.x = sx - slabW / 2 - 2; caught++; } } });
+        if (p.x > x1 + 30) { p.st = "out"; escaped++; }
+      } else { p.a -= dt * 1.1; }
+      c.globalAlpha = Math.max(0, p.a);
+      const col = VB.col(CLS[p.j].k);
+      c.fillStyle = col; c.beginPath(); c.arc(p.x, p.y, p.st === "caught" ? 4.5 : 3.5, 0, 7); c.fill();
+      if (p.st === "caught") { c.strokeStyle = VB.col("env"); c.lineWidth = 1.6; c.beginPath(); c.arc(p.x, p.y, 7, 0, 7); c.stroke(); }
+      c.globalAlpha = 1;
+    });
+    parts = parts.filter((p) => p.a > 0 && p.st !== "out");
+    const A = analytic();
+    VB.set("ch-o1", VB.pct(A.total, 1), A.total < 0.1 ? "good" : A.total < 0.25 ? "warn" : "bad");
+    VB.set("ch-o2", A.time.toFixed(1) + "분", A.time > 15 ? "warn" : "");
+    VB.set("ch-o3", CLS[A.worst].n);
+    VB.set("ch-o4", `${caught} / ${escaped}`);
+  }
+  cv.draw = (c, w, h) => draw(c, w, h, 0);
+  const L = VB.loop(VB.el("ch-cv"), (dt) => { const { ctx, w, h } = cv; ctx.clearRect(0, 0, w, h); draw(ctx, w, h, dt); });
+  if (!VB.reduced()) L.start();
+  VB.el("ch-layers").addEventListener("change", () => { caught = 0; escaped = 0; parts = []; cv.redraw(); });
+  cv.redraw();
+})();
+
+/* ---------------- 2. 상관된 오류 ---------------- */
+(function () {
+  const RHO = { same: 0.75, tdd: 0.1, other: 0.35 };
+  const cv = VB.canvas("co-cv", { aspect: 0.55, draw });
+  const mode = VB.seg("co-mode", () => cv.redraw());
+  // 탐지 확률: 단순 실수는 d로 잡고, 요구 오해는 (1-ρ)·d로 잡는다
+  const detect = (rho, m, d) => (1 - m) * d * (1 - 0.3 * rho) + m * d * (1 - rho);
+  function draw(c, w, h) {
+    const b = VB.val("co-b"), m = VB.val("co-m"), d = VB.val("co-d"), rho = RHO[mode()];
+    const pd = detect(rho, m, d);
+    // 왼쪽: 100칸 단위 차트 (기댓값을 칸 수로)
+    const L = Math.min(h - 20, w * 0.48), cs = L / 10, x0 = 10, y0 = 10;
+    const nBug = Math.round(100 * b), nCaught = Math.round(nBug * pd);
+    for (let i = 0; i < 100; i++) {
+      const col = i < 100 - nBug ? "env" : i < 100 - nBug + nCaught ? "accent-2" : "guard";
+      c.fillStyle = VB.alpha(VB.col(col), col === "env" ? 0.35 : 0.85);
+      VB.rrect(c, x0 + (i % 10) * cs + 1.5, y0 + Math.floor(i / 10) * cs + 1.5, cs - 3, cs - 3, 3); c.fill();
+    }
+    // 오른쪽: ρ에 따른 탐지율
+    const box = { l: x0 + L + 50, t: 14, r: w - 12, b: h - 36 };
+    const A = VB.axes(c, { box, x: [0, 1], y: [0, 1], xt: [0, 0.5, 1], yt: [0, 0.5, 1], yf: (v) => v * 100 + "%", xl: "오류 상관 ρ", yl: "탐지율", ylOff: 38 });
+    VB.line(c, Array.from({ length: 51 }, (_, i) => [A.X(i / 50), A.Y(detect(i / 50, m, d))]), VB.col("accent-2"), 2.4);
+    Object.entries(RHO).forEach(([k, r]) => {
+      const on = k === mode();
+      c.fillStyle = on ? VB.col("accent") : VB.col("text-faint"); c.beginPath(); c.arc(A.X(r), A.Y(detect(r, m, d)), on ? 6 : 4, 0, 7); c.fill();
+      VB.text(c, { same: "같은 세션", tdd: "테스트 먼저", other: "다른 세션" }[k], A.X(r), A.Y(detect(r, m, d)) - 12, { size: 10.5, align: "center", color: on ? VB.col("accent") : VB.col("text-faint") });
+    });
+    const escaped = nBug - nCaught;
+    VB.set("co-o1", VB.pct(pd), pd > 0.7 ? "good" : pd < 0.4 ? "bad" : "warn");
+    VB.set("co-o2", escaped + "개", escaped > 10 ? "bad" : escaped > 4 ? "warn" : "good");
+    const trust = (100 - nBug) / Math.max(1, 100 - nBug + escaped);
+    VB.set("co-o3", VB.pct(trust), trust > 0.95 ? "good" : trust < 0.85 ? "bad" : "warn");
+    VB.set("co-o4", rho.toFixed(2));
+  }
+  VB.wire(["co-b", "co-m", "co-d"], () => cv.redraw(), { "co-b": (v) => VB.pct(v), "co-m": (v) => VB.pct(v), "co-d": (v) => VB.pct(v) });
+})();
+
+/* ---------------- 3. 보상 해킹 찾기 ---------------- */
+(function () {
+  const D = (s) => s.split("\n").map((l) => { const t = l[0] === "+" ? "add" : l[0] === "-" ? "del" : ""; return `<div class="dl ${t}"><span class="sg">${l[0] === "+" || l[0] === "-" ? l[0] : " "}</span>${VB.esc(l.slice(1))}</div>`; }).join("");
+  const CARDS = [
+    { msg: "fix: 연속 기록 테스트 기대값 수정", file: "src/streak.test.ts", diff: " it('3일 연속 체크하면 3', () => {\n-  expect(streak(days, '5/3')).toBe(3)\n+  expect(streak(days, '5/3')).toBe(2)\n })", a: "hack", why: "명세의 예시는 3이다. 소스는 그대로 두고 테스트의 기댓값을 지금의 틀린 출력(2)에 맞췄다. 전형적인 보상 해킹이다." },
+    { msg: "fix: 반복문 경계 오류", file: "src/streak.ts + src/streak.test.ts", diff: "-for (let i = 0; i <= days.length; i++) {\n+for (let i = 0; i < days.length; i++) {\n+// test: 빈 배열이면 0을 돌려준다\n+it('빈 배열', () => expect(streak([], '5/3')).toBe(0))", a: "fix", why: "원인(off-by-one)을 고치고 재현 테스트를 더했다. 정석이다." },
+    { msg: "test: 불안정한 테스트 임시 비활성화", file: "src/streak.test.ts", diff: "-it('자정 경계를 넘는 체크', () => {\n+it.skip('자정 경계를 넘는 체크', () => {", a: "hack", why: "실패하는 테스트를 건너뛰게 했다. 정말 불안정한 테스트라도 사람이 결정할 일이다. 에이전트가 혼자 skip하면 버그를 숨긴다." },
+    { msg: "fix: 테스트 환경 호환성", file: "src/streak.ts", diff: " export function streak(days, today) {\n+  if (process.env.NODE_ENV === 'test') return 3\n   const sorted = sortDays(days)", a: "hack", why: "테스트 환경에서만 정답을 돌려준다. 실제 사용자는 여전히 틀린 값을 본다." },
+    { msg: "fix: 파싱 오류로 인한 크래시 방지", file: "src/import.ts", diff: "-  const rows = parseCsv(text)\n+  let rows = []\n+  try { rows = parseCsv(text) } catch { }", a: "hack", why: "‘크래시가 나지 않는다’는 테스트를 통과하려고 예외를 삼켰다. 잘못된 파일이 조용히 빈 결과가 된다. 오류를 사용자에게 알리거나 원인을 고쳐야 한다." },
+    { msg: "feat: 다크 모드 버튼 색상 (명세 #42)", file: "src/__snapshots__/Button.test.tsx.snap", diff: "-  background: #ffffff;\n+  background: var(--surface);\n # 명세 #42: 버튼 배경을 테마 변수로 바꾼다", a: "fix", why: "명세가 요구한 의도적 UI 변경에 맞춰 스냅숏을 갱신했다. 스냅숏 갱신 자체는 문제가 아니다. 요구와 연결되는지가 중요하다." },
+    { msg: "chore: 타입 오류 정리", file: "src/habits/store.ts", diff: "+  // @ts-ignore\n   return db.habits.find(h => h.id === id).checks", a: "hack", why: "find가 undefined를 돌려줄 수 있다는 정당한 타입 오류를 억제했다. 없는 습관을 조회하면 런타임에 터진다." },
+    { msg: "fix: 시간대 처리 (#57)", file: "src/lib/date.ts + test", diff: "-  const d = new Date(s)\n+  const d = zonedDate(s, tz)\n+it('KST 23:30 체크는 그날로 센다', ...)", a: "fix", why: "원인(시간대 무시)을 기존 date 유틸로 고치고 해당 사례를 테스트로 고정했다." },
+  ];
+  let i = 0, score = 0, locked = false;
+  function show() {
+    if (i >= CARDS.length) { VB.el("hk-card").innerHTML = `<div class="verdict" style="--k:var(--accent)"><b>${score} / ${CARDS.length}</b> 맞혔습니다. 다시 하려면 아무 버튼이나 누르세요.</div>`; return; }
+    const c = CARDS[i];
+    VB.el("hk-card").innerHTML = `<div class="hk-msg"><span class="chip k-acc">commit</span> ${VB.esc(c.msg)}</div><div class="diff"><div class="hd">${VB.esc(c.file)}</div>${D(c.diff)}</div>`;
+  }
+  VB.$$("#sim-hack .bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= CARDS.length) { i = 0; score = 0; VB.set("hk-o1", "0 / 8"); VB.set("hk-o2", "0"); VB.el("hk-fb").textContent = "다시 시작합니다."; show(); return; }
+    if (locked) return;
+    const c = CARDS[i], ok = b.dataset.v === c.a;
+    if (ok) score++;
+    const fb = VB.el("hk-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + (c.a === "fix" ? "정당한 수정" : "보상 해킹")}</b> — ${VB.esc(c.why)}`;
+    locked = true; i++;
+    VB.set("hk-o1", `${i} / ${CARDS.length}`); VB.set("hk-o2", String(score), score === i ? "good" : "");
+    setTimeout(() => { locked = false; show(); }, 1600);
+  }));
+  show();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>컨텍스트 엔지니어링 · VibeBook</title>
+<meta name="description" content="토큰 예산 안에 무엇을 넣을지 고르는 컨텍스트 엔지니어링, 긴 세션의 컨텍스트 부패와 새로 시작할 때, 규칙 파일(AGENTS.md) 한 줄의 힘을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .tile small { display: block; font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+</style>
+</head>
+<body data-root="../" data-chapter="context">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 04</div>
+    <h1>컨텍스트 엔지니어링</h1>
+    <p class="lead">에이전트는 컨텍스트 창 안에 있는 것만 안다. 당신 머릿속의 관례, 지난주에 정한 이름 규칙, 어제 고친 버그의 원인은 창에 넣지 않으면 존재하지 않는다. 그렇다고 다 넣으면 안 된다. 창은 유한하고, 무관한 것이 많을수록 정작 중요한 것이 묻힌다. <b>프롬프트 엔지니어링이 “어떻게 말할까”라면, 컨텍스트 엔지니어링은 “무엇을 보여 줄까”다.</b> 이 장에서는 토큰 예산 안에서 맥락을 고르는 법, 긴 세션이 썩어 가는 모습, 그리고 규칙 파일 한 줄이 반복되는 실수를 막는 원리를 본다.</p>
+    <ul class="objectives">
+      <li>컨텍스트 창의 구성 요소를 나누고, 신호 대 잡음으로 무엇을 넣을지 고를 수 있다.</li>
+      <li>긴 세션에서 품질이 떨어지는 이유를 설명하고, 압축과 새 세션 중 무엇을 쓸지 정할 수 있다.</li>
+      <li>반복되는 실수를 막는 구체적인 규칙 파일(AGENTS.md, CLAUDE.md)을 쓸 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="window">
+    <h2>창 안에 무엇이 있나</h2>
+    <p>코딩 에이전트의 한 턴에서 모델이 보는 것은 대략 다섯 층이다. 도구 정의와 시스템 지시(하네스가 넣는다), 저장소의 <span class="term">규칙 파일</span><span class="en">AGENTS.md / CLAUDE.md</span>, 지금까지의 대화, 에이전트가 읽은 파일과 명령 출력, 그리고 당신의 마지막 요청. 세션이 길어질수록 셋째와 넷째 층이 창을 채운다. 당신이 직접 통제할 수 있는 것은 둘째(규칙 파일), 다섯째(요청), 그리고 넷째 층에 <b>무엇을 읽게 할지</b>다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 250" role="img" aria-label="세션이 진행되며 컨텍스트 창이 채워지는 모습">
+        <text x="20" y="22" class="t-b">한 턴의 컨텍스트 창 — 세션 시작, 중간, 끝 무렵</text>
+        <g transform="translate(20,40)">
+          <text x="0" y="14" class="t-mono">턴 1</text>
+          <rect x="60" y="0" width="680" height="22" rx="4" class="f-surface"/>
+          <rect x="60" y="0" width="60" height="22" rx="4" class="soft-user"/><rect x="120" y="0" width="34" height="22" class="soft-state"/><rect x="154" y="0" width="20" height="22" class="f-acc-soft"/>
+          <text x="180" y="15" class="t-mono">비어 있음 — 주의가 집중됨</text>
+          <text x="0" y="64" class="t-mono">턴 15</text>
+          <rect x="60" y="50" width="680" height="22" rx="4" class="f-surface"/>
+          <rect x="60" y="50" width="60" height="22" rx="4" class="soft-user"/><rect x="120" y="50" width="34" height="22" class="soft-state"/><rect x="154" y="50" width="170" height="22" class="soft-tool"/><rect x="324" y="50" width="160" height="22" class="soft-ctx"/><rect x="484" y="50" width="20" height="22" class="f-acc-soft"/>
+          <text x="512" y="65" class="t-mono">대화·파일이 쌓임</text>
+          <text x="0" y="114" class="t-mono">턴 40</text>
+          <rect x="60" y="100" width="680" height="22" rx="4" class="f-surface"/>
+          <rect x="60" y="100" width="60" height="22" rx="4" class="soft-user"/><rect x="120" y="100" width="34" height="22" class="soft-state"/><rect x="154" y="100" width="300" height="22" class="soft-tool"/><rect x="454" y="100" width="200" height="22" class="soft-ctx"/><rect x="654" y="100" width="66" height="22" class="soft-guard"/><rect x="720" y="100" width="20" height="22" class="f-acc-soft"/>
+          <text x="660" y="140" class="t-mono" style="fill:var(--guard)">실패한 시도·오래된 출력</text>
+          <g transform="translate(60,170)">
+            <rect width="14" height="12" rx="2" class="soft-user"/><text x="20" y="10" class="t-mono">하네스·도구 정의</text>
+            <rect x="150" width="14" height="12" rx="2" class="soft-state"/><text x="170" y="10" class="t-mono">규칙 파일</text>
+            <rect x="260" width="14" height="12" rx="2" class="soft-tool"/><text x="280" y="10" class="t-mono">대화 기록</text>
+            <rect x="370" width="14" height="12" rx="2" class="soft-ctx"/><text x="390" y="10" class="t-mono">읽은 파일·출력</text>
+            <rect x="510" width="14" height="12" rx="2" class="f-acc-soft"/><text x="530" y="10" class="t-mono">이번 요청</text>
+          </g>
+          <text x="0" y="210" class="t-dim">요청은 늘 같은 크기인데, 창 속에서 차지하는 비율은 점점 작아진다. 규칙 파일도 마찬가지다.</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 4-1.</b> 컨텍스트 창은 세션 내내 자란다. 처음에는 요청과 규칙이 창의 큰 몫을 차지하지만, 턴 40쯤에는 대화 기록과 도구 출력에 묻힌다. 컨텍스트 엔지니어링은 이 비율을 관리하는 일이다.</figcaption>
+    </figure>
+    <div class="formula"><div class="eq">품질 ≈ 정보량(넣은 것) × 집중도 &nbsp;·&nbsp; 집중도 = 1 / (1 + 잡음 토큰 / <var>K</var>)</div>
+      <div class="where">정보량은 작업에 필요한 사실이 창에 얼마나 들어 있는가, 잡음 토큰은 작업과 무관한 토큰의 양이다. 필요한 것을 빠뜨려도 나쁘고, 무관한 것을 잔뜩 넣어도 나쁘다. 같은 정보라면 짧은 쪽이 낫다(오류 로그 전체보다 마지막 40줄).</div></div>
+    <div class="sim" id="sim-pack">
+      <div class="sim-head"><span class="sim-tag game">PUZZLE</span><h3>컨텍스트 꾸리기 — 날짜 버그를 고치는 데 무엇을 보여 줄까</h3></div>
+      <div class="sim-body">
+        <div class="tiles" id="pk-tiles"></div>
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:200px"><span>컨텍스트 예산 <output id="pk-b-out"></output></span><input type="range" id="pk-b" min="8000" max="200000" step="4000" value="64000"></label>
+          <button class="btn" id="pk-clear">모두 빼기</button><button class="btn" id="pk-best">잘 고른 예 보기</button>
+        </div>
+        <div class="sim-view"><canvas id="pk-cv"></canvas></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">사용 토큰 / 예산</span><span class="v" id="pk-o1">—</span></div>
+        <div class="stat"><span class="k">신호 비율</span><span class="v" id="pk-o2">—</span></div>
+        <div class="stat"><span class="k">예상 정답률</span><span class="v" id="pk-o3">—</span></div>
+        <div class="stat"><span class="k">턴당 입력 비용 ($3/M)</span><span class="v" id="pk-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “저장소 전체 덤프”를 넣어 보자. 예산을 넘쳐 잘려 나가고, 넘치지 않아도 잡음이 집중도를 무너뜨린다. ② 오류 로그 전체와 마지막 40줄은 정보가 거의 같다. 짧은 쪽만 넣는 것이 낫다. ③ “잘 고른 예”는 1만 4천 토큰으로 80% 안팎에 이른다. 예산을 20만으로 늘려도 그 이상은 잘 오르지 않는다. <b>큰 창은 넣어도 된다는 허락이지, 넣으라는 지시가 아니다.</b></div>
+    </div>
+  </section>
+
+  <section id="rot">
+    <h2>긴 세션의 부패</h2>
+    <p>세션이 길어지면 이상한 일이 생긴다. 처음에 분명히 말한 규칙을 에이전트가 잊는다. 이미 지운 함수를 다시 부른다. 세 번 전에 실패한 방법을 또 시도한다. 이것을 흔히 <span class="term">컨텍스트 부패</span><span class="en">context rot</span>라고 부른다. 창이 찰수록 모델의 주의가 흩어지고, 오래되었거나 틀린 정보가 최신 정보와 경쟁한다. 창이 가득 차면 하네스가 대화를 요약해 비우는 <span class="term">압축</span><span class="en">compaction</span>을 하는데, 요약은 세부를 잃는다.</p>
+    <table class="tbl">
+      <tr><th>전략</th><th>방법</th><th>장점</th><th>단점</th></tr>
+      <tr><td><b>계속</b></td><td>창이 차면 자동 압축에 맡긴다</td><td>손이 안 간다</td><td>압축 직전 품질이 가장 낮고, 압축 때 세부를 잃는다</td></tr>
+      <tr><td><b>절반에서 압축</b></td><td>창이 절반쯤 차면 직접 요약을 지시한다</td><td>요약할 내용을 사람이 고를 수 있다</td><td>요약 자체에 시간과 토큰이 든다</td></tr>
+      <tr><td><b>작업마다 새 세션</b></td><td>작업 하나가 끝나면 진행 상황을 파일에 적고 새로 시작</td><td>매번 깨끗한 창, 토큰도 적다</td><td>시작할 때 맥락을 다시 읽어야 한다</td></tr>
+    </table>
+    <div class="sim" id="sim-rot">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>컨텍스트 부패 — 60턴 세션의 세 가지 운영법</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rt-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>턴당 늘어나는 토큰 <output id="rt-g-out"></output></span><input type="range" id="rt-g" min="1000" max="15000" step="500" value="6000"></label>
+          <label class="ctrl"><span>컨텍스트 창 크기 <output id="rt-w-out"></output></span><input type="range" id="rt-w" min="64000" max="1000000" step="8000" value="200000"></label>
+          <label class="ctrl"><span>부패 강도 <output id="rt-a-out"></output></span><input type="range" id="rt-a" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>새 세션 주기 (턴) <output id="rt-n-out"></output></span><input type="range" id="rt-n" min="4" max="30" step="1" value="12"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>계속 (자동 압축)</span><span><i style="background:var(--tool)"></i>절반에서 압축</span><span><i style="background:var(--env)"></i>작업마다 새 세션</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">평균 품질 · 계속</span><span class="v" id="rt-o1">—</span></div>
+        <div class="stat"><span class="k">평균 품질 · 절반 압축</span><span class="v" id="rt-o2">—</span></div>
+        <div class="stat"><span class="k">평균 품질 · 새 세션</span><span class="v" id="rt-o3">—</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰 · 계속 / 새 세션</span><span class="v" id="rt-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 “계속”의 품질은 톱니 모양이다. 창이 차는 동안 떨어지다가 압축 직후 회복하지만, 압축할 때마다 조금씩 잃은 세부 때문에 바닥이 내려간다. ② 창 크기를 100만으로 늘리면 압축은 사라지지만 품질은 턴마다 계속 미끄러지고, 누적 입력 토큰은 두 배 가까이 는다. <b>큰 창은 부패를 늦출 뿐 막지 못한다.</b> ③ 누적 입력 토큰을 보자. 모든 턴에 창 전체를 다시 읽으므로, 긴 세션은 품질만이 아니라 돈도 더 쓴다. 기본값에서 새 세션 전략은 절반 이하의 토큰을 쓴다. ④ 부패 강도를 0으로 두면 세 전략의 품질이 거의 같아지고 비용 차이만 남는다.</div>
+    </div>
+  </section>
+
+  <section id="rules">
+    <h2>규칙 파일 한 줄의 힘</h2>
+    <p>같은 실수를 두 번 하면 그것은 에이전트의 잘못이 아니라 <b>컨텍스트의 빈칸</b>이다. 저장소 루트의 규칙 파일(<code>AGENTS.md</code>, <code>CLAUDE.md</code> 등)은 모든 세션의 시작에 읽힌다. 여기에 빌드·테스트 명령, 패키지 관리자, 생성 파일의 위치, 금지 사항을 적어 두면 매번 말하지 않아도 된다. 좋은 규칙 한 줄은 <b>구체적인 명령이나 경로</b>를 담는다. “좋은 코드를 써라” 같은 문장은 아무것도 바꾸지 못하고 토큰만 쓴다.</p>
+    <div class="code"><div class="bar">AGENTS.md — 좋은 예</div><pre><span class="k">## 명령</span>
+- 설치: pnpm install   (npm·yarn 금지 — lockfile이 깨진다)
+- 테스트: pnpm test -- --run   (vitest. jest API 쓰지 말 것)
+- 완료 전 반드시: pnpm lint &amp;&amp; pnpm typecheck
+<span class="k">## 구조</span>
+- src/gen/ 은 자동 생성. 직접 고치지 말고 pnpm codegen
+- 날짜는 src/lib/date.ts 만 사용 (새 날짜 라이브러리 추가 금지)
+<span class="k">## 관례</span>
+- named export만. 파일 하나에 컴포넌트 하나.</pre></div>
+    <div class="sim" id="sim-rules">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>규칙 파일 고르기 — 여섯 줄로 반복 실수를 막아라</h3></div>
+      <div class="sim-body">
+        <p style="margin:0;font-size:14.5px;color:var(--text-dim)">지난 한 달간 에이전트가 이 저장소에서 반복한 실수는 오른쪽 아래 여섯 가지다. 후보 문장 중 <b>최대 여섯 줄</b>을 골라 규칙 파일에 넣고, 20번의 세션을 돌려 보자.</p>
+        <div class="checks" id="rl-list"></div>
+        <div class="btns"><button class="btn primary" id="rl-run">▶ 20세션 돌리기</button><span id="rl-cnt" class="mono" style="align-self:center;font-size:13px;color:var(--text-dim)"></span></div>
+        <div class="sim-view"><canvas id="rl-cv"></canvas></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">고른 줄 수</span><span class="v" id="rl-o1">0 / 6</span></div>
+        <div class="stat"><span class="k">규칙 파일 길이</span><span class="v" id="rl-o2">0</span></div>
+        <div class="stat"><span class="k">20세션 실수 · 규칙 없음</span><span class="v" id="rl-o3">—</span></div>
+        <div class="stat"><span class="k">20세션 실수 · 내 규칙</span><span class="v" id="rl-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “훌륭한 시니어 개발자처럼”, “실수하지 마라” 같은 줄은 어떤 실수도 막지 못한다. ② “프로젝트 연혁”은 300토큰을 쓰고 아무것도 막지 못한다. 모든 세션이 그 토큰을 매번 읽는다. ③ 명령과 경로가 들어간 여섯 줄을 고르면 실수가 열 개 안쪽으로 줄어든다. 그래도 0은 아니다. 규칙은 확률을 낮출 뿐이고, 마지막 그물은 린트·테스트 같은 자동 검사다(5장).</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>에이전트는 창 안에 있는 것만 안다. 컨텍스트 엔지니어링은 “무엇을 보여 줄까”를 설계하는 일이다.</li>
+      <li>품질은 정보량과 집중도의 곱이다. 같은 정보면 짧게(로그 마지막 40줄), 무관한 덤프는 빼라. 큰 창은 허락이지 지시가 아니다.</li>
+      <li>긴 세션은 부패한다. 작업 단위로 진행 상황을 파일에 남기고 새 세션을 여는 것이 품질과 비용 모두에 유리한 경우가 많다.</li>
+      <li>같은 실수가 두 번 나오면 규칙 파일에 구체적인 명령·경로로 한 줄 적는다. 형용사와 연혁은 토큰만 쓴다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 버그를 고치는 에이전트에게 오류 로그를 줄 때 가장 좋은 것은?</p><div class="opts">
+        <button class="opt">서버 로그 전체 3만 줄</button>
+        <button class="opt" data-correct>스택 트레이스를 포함한 마지막 수십 줄과 재현 방법</button>
+        <button class="opt">“오류가 났어”라는 한 줄</button>
+      </div><div class="quiz-exp">정보는 거의 같고 잡음은 훨씬 적다. 아무것도 안 주면 정보가 없다.</div></div>
+      <div class="quiz-q"><p>2. 100만 토큰 창이 있으니 저장소 전체를 넣는 것이 최선일까?</p><div class="opts">
+        <button class="opt">그렇다, 많이 넣을수록 좋다</button>
+        <button class="opt" data-correct>아니다, 무관한 토큰이 집중도를 떨어뜨리고 매 턴 비용도 커진다</button>
+        <button class="opt">그렇다, 압축이 일어나지 않으니 손해가 없다</button>
+      </div><div class="quiz-exp">창의 크기는 상한이다. 잡음은 품질을 떨어뜨리고, 모든 턴이 창 전체를 다시 읽으므로 비용도 커진다.</div></div>
+      <div class="quiz-q"><p>3. 40턴째 세션에서 에이전트가 처음에 말한 규칙을 자꾸 어긴다. 가장 효과적인 대응은?</p><div class="opts">
+        <button class="opt">규칙을 대문자로 다시 말한다</button>
+        <button class="opt" data-correct>진행 상황과 규칙을 파일에 정리하고 새 세션을 연다</button>
+        <button class="opt">같은 세션에서 계속 밀어붙인다</button>
+      </div><div class="quiz-exp">컨텍스트 부패다. 깨끗한 창에서 필요한 것만 다시 읽히는 것이 가장 확실하다.</div></div>
+      <div class="quiz-q"><p>4. 규칙 파일에 넣을 가치가 가장 큰 문장은?</p><div class="opts">
+        <button class="opt">“최고 수준의 코드를 작성하라”</button>
+        <button class="opt" data-correct>“src/gen/은 자동 생성 파일이다. 직접 고치지 말고 pnpm codegen을 실행하라”</button>
+        <button class="opt">“우리 회사는 2019년에 설립되었다”</button>
+      </div><div class="quiz-exp">구체적인 경로와 명령이 있는 문장은 행동을 바꾼다. 형용사와 배경은 토큰만 쓴다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 컨텍스트 꾸리기 ---------------- */
+(function () {
+  const ITEMS = [
+    { id: "rules", name: "AGENTS.md 규칙 파일", tok: 1500, info: 0.25, noise: 0.1, g: "rules", k: "state" },
+    { id: "files", name: "고칠 파일 2개 전체", tok: 6000, info: 0.45, noise: 0.3, g: "code", k: "ctx" },
+    { id: "test", name: "관련 테스트 파일", tok: 3000, info: 0.25, noise: 0.25, g: "test", k: "env" },
+    { id: "ex", name: "비슷한 기존 구현 1개", tok: 2500, info: 0.2, noise: 0.25, g: "ex", k: "ctx" },
+    { id: "log40", name: "오류 로그 마지막 40줄", tok: 800, info: 0.3, noise: 0.15, g: "log", k: "guard" },
+    { id: "logall", name: "오류 로그 전체", tok: 30000, info: 0.32, noise: 0.95, g: "log", k: "guard" },
+    { id: "tree", name: "디렉터리 트리", tok: 1200, info: 0.08, noise: 0.3, g: "tree", k: "user" },
+    { id: "apisec", name: "날짜 API 문서 해당 절", tok: 4000, info: 0.12, noise: 0.45, g: "api", k: "tool" },
+    { id: "apiall", name: "날짜 API 문서 전체", tok: 60000, info: 0.14, noise: 0.95, g: "api", k: "tool" },
+    { id: "chat", name: "지난 대화 기록 전체", tok: 45000, info: 0.06, noise: 0.92, g: "chat", k: "tool" },
+    { id: "dump", name: "저장소 전체 덤프", tok: 400000, info: 0.47, noise: 0.98, g: "code", k: "user" },
+  ];
+  const BEST = ["rules", "files", "test", "ex", "log40"];
+  const sel = new Set(["files"]);
+  const tiles = VB.el("pk-tiles");
+  function renderTiles() {
+    tiles.innerHTML = ITEMS.map((it) => `<button class="tile ${sel.has(it.id) ? "sel" : ""}" data-id="${it.id}" style="--k:var(--${it.k})"><span class="cost">${VB.si(it.tok)}</span>${it.name}<small>신호 ${VB.pct(1 - it.noise)}</small></button>`).join("");
+  }
+  tiles.addEventListener("click", (e) => { const b = e.target.closest(".tile"); if (!b) return; const id = b.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); renderTiles(); cv.redraw(); });
+  function evalSel() {
+    const B = VB.val("pk-b");
+    const items = ITEMS.filter((it) => sel.has(it.id));
+    let tok = items.reduce((a, it) => a + it.tok, 0);
+    const noiseTok = items.reduce((a, it) => a + it.tok * it.noise, 0);
+    // 같은 그룹은 정보가 겹친다: 그룹마다 최댓값
+    const groups = {};
+    items.forEach((it) => (groups[it.g] = Math.max(groups[it.g] || 0, it.info)));
+    let miss = 1;
+    Object.values(groups).forEach((v) => (miss *= 1 - v));
+    const info = 1 - miss;
+    const focus = 1 / (1 + noiseTok / 40000);
+    let q = 0.08 + 0.92 * Math.pow(info, 0.8) * focus;
+    const over = tok > B;
+    if (over) q *= Math.max(0.25, B / tok) * 0.85;
+    return { tok, B, noiseTok, info, focus, q, over, items };
+  }
+  const cv = VB.canvas("pk-cv", { height: 120, draw });
+  function draw(c, w, h) {
+    const r = evalSel();
+    const x0 = 10, x1 = w - 10, bw = x1 - x0;
+    const scale = Math.max(r.B, r.tok);
+    VB.text(c, "컨텍스트 창", x0, 12, { size: 11.5, weight: 700, color: VB.col("text-dim") });
+    c.fillStyle = VB.col("surface"); VB.rrect(c, x0, 22, bw, 34, 6); c.fill();
+    let x = x0;
+    r.items.forEach((it) => {
+      const ww = (it.tok / scale) * bw;
+      c.fillStyle = VB.alpha(VB.col(it.k), 0.25 + 0.5 * (1 - it.noise)); c.fillRect(x, 22, Math.max(1, ww - 1), 34);
+      if (ww > 70) VB.text(c, it.name.slice(0, Math.floor(ww / 12)), x + 5, 39, { size: 10.5, color: VB.col("text") });
+      x += ww;
+    });
+    const bx = x0 + (r.B / scale) * bw;
+    c.strokeStyle = VB.col(r.over ? "guard" : "accent"); c.lineWidth = 2; c.beginPath(); c.moveTo(bx, 16); c.lineTo(bx, 62); c.stroke();
+    VB.text(c, "예산 " + VB.si(r.B), bx - 4, 72, { size: 11, mono: true, align: "right", color: VB.col(r.over ? "guard" : "accent") });
+    if (r.over) VB.text(c, "넘친 부분은 잘린다", bx + 6, 72, { size: 11, color: VB.col("guard") });
+    // 정보·집중도 막대
+    VB.text(c, "정보량", x0, 92, { size: 11, color: VB.col("text-dim") }); VB.hbar(c, x0 + 52, 87, bw * 0.3, 9, r.info, VB.col("state"), { label: VB.pct(r.info) });
+    VB.text(c, "집중도", x0 + bw * 0.5, 92, { size: 11, color: VB.col("text-dim") }); VB.hbar(c, x0 + bw * 0.5 + 52, 87, bw * 0.3, 9, r.focus, VB.col("env"), { label: VB.pct(r.focus) });
+    VB.set("pk-o1", `${VB.si(r.tok)} / ${VB.si(r.B)}`, r.over ? "bad" : "");
+    VB.set("pk-o2", r.tok ? VB.pct(1 - r.noiseTok / r.tok) : "—");
+    VB.set("pk-o3", VB.pct(r.q), r.q > 0.8 ? "good" : r.q > 0.5 ? "warn" : "bad");
+    VB.set("pk-o4", "$" + ((Math.min(r.tok, r.B) / 1e6) * 3).toFixed(3));
+  }
+  VB.el("pk-clear").addEventListener("click", () => { sel.clear(); renderTiles(); cv.redraw(); });
+  VB.el("pk-best").addEventListener("click", () => { sel.clear(); BEST.forEach((i) => sel.add(i)); renderTiles(); cv.redraw(); });
+  renderTiles();
+  VB.wire(["pk-b"], () => cv.redraw(), { "pk-b": (v) => VB.si(v) });
+})();
+
+/* ---------------- 2. 컨텍스트 부패 ---------------- */
+(function () {
+  const T = 60, BASE = 6000;
+  const cv = VB.canvas("rt-cv", { aspect: 0.6, draw });
+  function sim(mode) {
+    const g = VB.val("rt-g"), W = VB.val("rt-w"), a = VB.val("rt-a"), N = VB.val("rt-n");
+    let ctx = BASE, memLoss = 0, since = 0;
+    const q = [], fill = [];
+    let tokens = 0;
+    for (let t = 1; t <= T; t++) {
+      since++;
+      if (mode === "fresh" && since > N) { ctx = BASE + 3000; since = 1; memLoss = 0.01; }
+      ctx += g;
+      if (mode === "half" && ctx > W * 0.5) { ctx = BASE + 0.12 * W * 0.5; memLoss += 0.025; }
+      if (ctx > W * 0.95) { ctx = BASE + 0.08 * W; memLoss += 0.05; }
+      tokens += ctx;
+      const used = ctx / W, absT = (ctx - BASE) / 100000;
+      // 부패: 창 비율과 절대 길이 모두에 반응
+      const quality = VB.clamp(0.93 - a * (0.35 * Math.pow(used, 1.4) + 0.12 * Math.min(1, absT)) - memLoss * (0.4 + a), 0.05, 1);
+      q.push(quality); fill.push(used);
+    }
+    return { q, fill, tokens, mean: q.reduce((x, y) => x + y, 0) / T };
+  }
+  function draw(c, w, h) {
+    const R = { keep: sim("keep"), half: sim("half"), fresh: sim("fresh") };
+    const box = { l: 44, t: 12, r: w - 12, b: h - 40 };
+    const A = VB.axes(c, { box, x: [1, T], y: [0, 1], xt: [1, 10, 20, 30, 40, 50, 60], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "턴", yl: "지시 준수 품질" });
+    // 계속 전략의 창 채움 그림자
+    const bw = (box.r - box.l) / T;
+    R.keep.fill.forEach((f, i) => { c.fillStyle = VB.alpha(VB.col("guard"), 0.07); const y = A.Y(Math.min(1, f)); c.fillRect(A.X(i + 1) - bw / 2, y, bw, box.b - y); });
+    VB.text(c, "옅은 막대 = ‘계속’의 창 채움", box.r - 4, box.t + 8, { size: 10.5, align: "right", color: VB.col("text-faint") });
+    const col = { keep: "guard", half: "tool", fresh: "env" };
+    Object.entries(R).forEach(([k, r]) => VB.line(c, r.q.map((v, i) => [A.X(i + 1), A.Y(v)]), VB.col(col[k]), 2.2));
+    VB.set("rt-o1", VB.pct(R.keep.mean), R.keep.mean < 0.6 ? "bad" : "");
+    VB.set("rt-o2", VB.pct(R.half.mean));
+    VB.set("rt-o3", VB.pct(R.fresh.mean), R.fresh.mean >= Math.max(R.keep.mean, R.half.mean) ? "good" : "");
+    VB.set("rt-o4", `${VB.si(R.keep.tokens)} / ${VB.si(R.fresh.tokens)}`);
+  }
+  VB.wire(["rt-g", "rt-w", "rt-a", "rt-n"], () => cv.redraw(), { "rt-g": (v) => VB.si(v), "rt-w": (v) => VB.si(v), "rt-a": (v) => v.toFixed(2), "rt-n": (v) => v + "턴" });
+})();
+
+/* ---------------- 3. 규칙 파일 고르기 ---------------- */
+(function () {
+  const MIST = ["npm으로 설치해 lockfile 꼬임", "jest API로 테스트 작성", "생성 파일 직접 수정", "린트 오류 남긴 채 완료", "default export 사용", "dayjs 새로 추가"];
+  const LINES = [
+    { t: "설치는 pnpm install만 (npm·yarn 금지 — lockfile이 깨진다)", tok: 22, stop: { 0: 0.85 } },
+    { t: "테스트: pnpm test -- --run (vitest, jest API 금지)", tok: 20, stop: { 1: 0.8 } },
+    { t: "src/gen/은 자동 생성. 직접 수정 금지, pnpm codegen 실행", tok: 24, stop: { 2: 0.85 } },
+    { t: "완료 전 pnpm lint && pnpm typecheck 반드시 실행", tok: 18, stop: { 3: 0.8 } },
+    { t: "named export만 쓴다", tok: 8, stop: { 4: 0.75 } },
+    { t: "날짜는 src/lib/date.ts만. 새 날짜 라이브러리 추가 금지", tok: 20, stop: { 5: 0.85 } },
+    { t: "자주 쓰는 명령: dev · build · test · lint", tok: 14, stop: { 1: 0.35, 3: 0.35 } },
+    { t: "훌륭한 시니어 개발자처럼 생각하라", tok: 12, stop: {} },
+    { t: "코드를 깔끔하고 일관되게 유지하라", tok: 12, stop: {} },
+    { t: "실수하지 마라. 꼼꼼하게 확인하라", tok: 12, stop: {} },
+    { t: "프로젝트 연혁: 2019년 해커톤에서 시작해… (300단어)", tok: 300, stop: {} },
+  ];
+  const BASE_P = [0.45, 0.5, 0.35, 0.55, 0.4, 0.3];
+  const list = VB.el("rl-list");
+  list.innerHTML = LINES.map((l, i) => `<label style="--k:var(--state)"><input type="checkbox" data-i="${i}"><span>${VB.esc(l.t)}<small>${l.tok} 토큰</small></span></label>`).join("");
+  let result = null;
+  const chosen = () => VB.$$("input:checked", list).map((x) => +x.dataset.i);
+  function update() {
+    const ch = chosen();
+    VB.$$("input", list).forEach((x) => (x.disabled = !x.checked && ch.length >= 6));
+    VB.set("rl-o1", `${ch.length} / 6`);
+    VB.set("rl-o2", ch.reduce((a, i) => a + LINES[i].tok, 0) + " 토큰");
+  }
+  function run() {
+    const ch = chosen();
+    const prevent = BASE_P.map((_, m) => 1 - ch.reduce((acc, i) => acc * (1 - (LINES[i].stop[m] || 0)), 1));
+    const rnd = VB.rng(2024), grid = [];
+    let base = 0, mine = 0;
+    for (let s = 0; s < 20; s++) {
+      grid.push(BASE_P.map((p, m) => { const r = rnd(); const happensBase = r < p; const happens = r < p * (1 - prevent[m]); base += happensBase; mine += happens; return happens ? 2 : happensBase ? 1 : 0; }));
+    }
+    result = { grid, base, mine, prevent };
+    cv.redraw();
+  }
+  const cv = VB.canvas("rl-cv", { aspect: 0.36, draw });
+  function draw(c, w, h) {
+    const lw = Math.min(200, w * 0.36), x0 = lw + 10, cw = (w - x0 - 10) / 20, ch = (h - 26) / MIST.length;
+    MIST.forEach((m, i) => {
+      VB.text(c, m, lw, 18 + i * ch + ch / 2, { size: 11.5, align: "right", color: VB.col("text-dim") });
+      if (result) VB.hbar(c, 6, 18 + i * ch + ch / 2 + 7, 46, 4, result.prevent[i], VB.col("env"));
+    });
+    for (let s = 0; s < 20; s++) VB.text(c, s + 1, x0 + s * cw + cw / 2, 8, { size: 9.5, mono: true, align: "center", color: VB.col("text-faint") });
+    for (let s = 0; s < 20; s++) for (let i = 0; i < MIST.length; i++) {
+      const v = result ? result.grid[s][i] : -1;
+      const cx = x0 + s * cw + cw / 2, cy = 18 + i * ch + ch / 2;
+      c.beginPath(); c.arc(cx, cy, Math.min(cw, ch) * 0.32, 0, 7);
+      if (v === 2) { c.fillStyle = VB.col("guard"); c.fill(); }
+      else if (v === 1) { c.strokeStyle = VB.col("env"); c.lineWidth = 2; c.stroke(); }
+      else { c.fillStyle = VB.col("surface-2"); c.fill(); }
+    }
+    if (result) {
+      VB.set("rl-o3", result.base + "건", "bad");
+      VB.set("rl-o4", result.mine + "건", result.mine <= 10 ? "good" : result.mine < result.base * 0.7 ? "warn" : "bad");
+    }
+  }
+  VB.$$("input", list).forEach((x) => x.addEventListener("change", update));
+  VB.el("rl-run").addEventListener("click", run);
+  VB.el("rl-cnt").textContent = "● 일어난 실수 · ○ 규칙이 막은 실수";
+  update(); run();
+})();
+</script>
+</body>
+</html>

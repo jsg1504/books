@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>명세와 계획 먼저 · VibeBook</title>
+<meta name="description" content="모호한 프롬프트가 만드는 구현의 부채꼴, 좋은 명세의 요소와 지나친 명세, 계획 후 실행이 재작업을 줄이는 원리를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  #fn-cv { cursor: pointer; }
+  #sb-pane { min-height: 200px; max-height: 300px; }
+</style>
+</head>
+<body data-root="../" data-chapter="spec">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>명세와 계획 먼저</h1>
+    <p class="lead">“할 일 앱 만들어 줘.” 에이전트는 바로 만든다. 문제는 <b>무엇을</b> 만드느냐다. 로그인이 있는지, 데이터는 어디에 저장하는지, 마감일이 있는지, 모바일에서 쓰는지. 말하지 않은 수십 가지 결정을 에이전트가 대신 내린다. 그 결정은 대개 <b>가장 흔한 답</b>이고, 당신이 원한 답과 다를 수 있다. 이 장에서는 프롬프트의 모호함이 구현을 얼마나 넓게 흩뿌리는지, 좋은 명세에는 무엇이 들어가고 무엇이 빠져야 하는지, 그리고 코드를 쓰기 전에 계획을 확인하는 단계가 왜 싸게 먹히는지를 본다.</p>
+    <ul class="objectives">
+      <li>모호한 요청이 구현의 분산을 키우고 재작업 횟수를 늘리는 원리를 설명할 수 있다.</li>
+      <li>목표·인터페이스·수용 기준·제약·비목표·예시로 에이전트용 명세를 쓸 수 있다.</li>
+      <li>계획 후 실행이 바로 실행보다 나은 조건과 그렇지 않은 조건을 구분할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="fan">
+    <h2>모호함의 부채꼴</h2>
+    <p>같은 프롬프트를 열 번 주면 열 개의 조금씩 다른 구현이 나온다. 프롬프트가 모호할수록 그 차이는 커진다. 이것을 <b>설계 공간</b> 위의 점들로 그려 보자. 한 점은 한 번의 구현이다. 가로축과 세로축은 UI 방식, 데이터 모델처럼 구현이 갈라지는 방향이다. 모호한 프롬프트의 점들은 넓게 퍼지고, 그 중심은 모델이 학습한 <b>가장 흔한 구현</b> 쪽으로 끌린다. 원하는 것이 흔한 것과 다르면, 명세 없이 그 근처에 떨어질 확률은 아주 작다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 230" role="img" aria-label="모호한 요청은 구현을 넓게 흩뿌리고, 명세는 원하는 쪽으로 좁힌다">
+        <g transform="translate(20,20)">
+          <rect width="350" height="190" rx="12" class="f-surface"/>
+          <text x="16" y="24" class="t-b">"할 일 앱 만들어 줘"</text>
+          <circle cx="250" cy="120" r="20" fill="none" stroke="var(--env)" stroke-width="2.4" stroke-dasharray="4 3"/><text x="250" y="156" text-anchor="middle" class="t-mono" style="fill:var(--env)">원한 것</text>
+          <g fill="var(--ctx)" opacity=".75"><circle cx="110" cy="70" r="5"/><circle cx="140" cy="100" r="5"/><circle cx="90" cy="110" r="5"/><circle cx="170" cy="60" r="5"/><circle cx="60" cy="80" r="5"/><circle cx="130" cy="140" r="5"/><circle cx="200" cy="90" r="5"/><circle cx="80" cy="150" r="5"/><circle cx="160" cy="130" r="5"/><circle cx="120" cy="50" r="5"/><circle cx="220" cy="150" r="5"/></g>
+          <circle cx="125" cy="100" r="7" fill="none" stroke="var(--text-dim)" stroke-width="2"/><text x="125" y="176" text-anchor="middle" class="t-mono">가장 흔한 구현 쪽으로 끌림</text>
+        </g>
+        <path d="M384 115 H 406" stroke="var(--state)" stroke-width="2.4"/><text x="395" y="104" text-anchor="middle" class="t-mono" style="fill:var(--state)">명세</text>
+        <g transform="translate(410,20)">
+          <rect width="350" height="190" rx="12" class="f-surface"/>
+          <text x="16" y="24" class="t-b">명세 + 수용 기준 + 예시</text>
+          <circle cx="250" cy="120" r="20" fill="none" stroke="var(--env)" stroke-width="2.4" stroke-dasharray="4 3"/>
+          <g fill="var(--ctx)" opacity=".8"><circle cx="246" cy="116" r="5"/><circle cx="258" cy="124" r="5"/><circle cx="240" cy="128" r="5"/><circle cx="262" cy="110" r="5"/><circle cx="232" cy="112" r="5"/><circle cx="252" cy="134" r="5"/><circle cx="276" cy="126" r="5"/></g>
+          <text x="250" y="170" text-anchor="middle" class="t-mono" style="fill:var(--env)">대부분 원하는 곳 근처</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 3-1.</b> 모호함의 부채꼴. 명세는 구현의 <b>분산</b>을 줄이고 <b>중심</b>을 원하는 쪽으로 옮긴다. 둘 다 재시도 횟수를 줄인다.</figcaption>
+    </figure>
+    <div class="formula"><div class="eq">E[시도 횟수] = 1 / <var>P</var>(원하는 곳에 떨어짐) &nbsp;·&nbsp; 총 시간 = 명세 작성 시간 + E[시도] × 시도당 시간</div>
+      <div class="where">명세에 시간을 더 쓰면 <var>P</var>가 커져 시도 횟수가 준다. 하지만 명세 작성 자체도 시간이 든다. 그래서 총 시간은 명세의 구체성에 대해 U자를 그린다. 아래 실험의 오른쪽 곡선이 그 U자다.</div></div>
+    <div class="sim" id="sim-fan">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>모호함의 부채꼴 — 명세의 구체성과 시도 횟수</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="fn-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>명세의 구체성 <output id="fn-s-out"></output></span><input type="range" id="fn-s" min="0" max="1" step="0.05" value="0.15"></label>
+          <label class="ctrl"><span>원하는 것이 흔한 것과 다른 정도 <output id="fn-d-out"></output></span><input type="range" id="fn-d" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="check"><input type="checkbox" id="fn-ex"> 입력→출력 예시 2개 포함</label>
+          <label class="ctrl"><span>시도 1회의 비용 (분) <output id="fn-c-out"></output></span><input type="range" id="fn-c" min="2" max="60" step="1" value="15"></label>
+          <div class="btns"><button class="btn primary" id="fn-roll">구현 20개 뽑기</button></div>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>구현 1회</span><span><i style="background:var(--env)"></i>원한 것</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">한 번에 맞을 확률</span><span class="v" id="fn-o1">—</span></div>
+        <div class="stat"><span class="k">기대 시도 횟수</span><span class="v" id="fn-o2">—</span></div>
+        <div class="stat"><span class="k">명세 작성 + 시도 시간</span><span class="v" id="fn-o3">—</span></div>
+        <div class="stat"><span class="k">최적 구체성</span><span class="v" id="fn-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 원하는 것이 흔한 것과 다른 정도를 0으로 내려 보자. 구체성 0.15에서도 한 번에 맞을 확률이 38%이고 최적 구체성은 0.38로 낮다. 흔한 것을 원하면 바이브로 충분하다. ② 다시 0.6으로 올리면 최적 구체성이 0.7로 오른다. 구체성을 0에서 1까지 밀어 보면 오른쪽 곡선이 U자를 그린다. 완벽한 명세(1.0)는 오히려 손해다. ③ 예시 두 개를 켜면 분산이 줄고 중심이 원하는 쪽으로 옮겨, 최적 구체성이 0.45로 내려간다. <b>예시는 가장 싼 명세다.</b> ④ 시도 비용을 60분으로 올리면 최적점이 0.8로, 2분으로 내리면 0.42로 간다. 한 번 만드는 데 오래 걸리는 일일수록 명세에 시간을 더 쓸 가치가 있다.</div>
+    </div>
+  </section>
+
+  <section id="anatomy">
+    <h2>좋은 명세의 해부</h2>
+    <p>에이전트용 명세는 사람에게 주는 기획서보다 짧고 날카로워야 한다. 에이전트는 모든 문장을 지시로 받아들인다. 모호한 형용사(“깔끔하게”, “잘”)는 아무것도 바꾸지 못하고, 관련 없는 배경은 주의를 흩뜨린다. 반대로 <b>검사할 수 있는 문장</b>은 에이전트가 스스로 확인하며 일하게 만든다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 290" role="img" aria-label="에이전트용 명세의 여섯 요소">
+        <rect x="20" y="14" width="400" height="262" rx="12" class="f-elev"/>
+        <text x="36" y="38" class="t-mono" style="fill:var(--state)"># SPEC: 습관 연속 기록</text>
+        <g transform="translate(36,52)">
+          <rect width="368" height="30" rx="6" class="soft-state"/><text x="10" y="19" class="t-mono">목표: 매일 체크한 습관의 연속 일수를 보여 준다</text>
+          <rect y="36" width="368" height="30" rx="6" class="soft-ctx"/><text x="10" y="55" class="t-mono">인터페이스: streak(checks: Date[], tz) → number</text>
+          <rect y="72" width="368" height="46" rx="6" class="soft-env"/><text x="10" y="90" class="t-mono">수용 기준: 오늘 체크 안 했으면 어제까지 센다</text><text x="10" y="108" class="t-mono">          자정 경계는 사용자 시간대 기준</text>
+          <rect y="124" width="368" height="30" rx="6" class="soft-tool"/><text x="10" y="143" class="t-mono">제약: 새 의존성 금지 · 기존 date.ts 사용</text>
+          <rect y="160" width="368" height="30" rx="6" class="soft-guard"/><text x="10" y="179" class="t-mono">비목표: 알림, 통계 화면은 이번에 안 함</text>
+          <rect y="196" width="368" height="24" rx="6" class="f-acc-soft"/><text x="10" y="212" class="t-mono">예시: [5/1,5/2,5/3] @5/3 → 3 · @5/5 → 0</text>
+        </g>
+        <g transform="translate(440,20)">
+          <text x="0" y="20" class="t-b">각 요소가 막는 실패</text>
+          <g class="t"><text x="0" y="56" class="t" style="fill:var(--state)">목표</text><text x="74" y="56" class="t-dim">엉뚱한 문제를 푼다</text>
+          <text x="0" y="92" class="t" style="fill:var(--ctx)">인터페이스</text><text x="74" y="92" class="t-dim">다른 코드와 안 맞는다</text>
+          <text x="0" y="136" class="t" style="fill:var(--env)">수용 기준</text><text x="74" y="136" class="t-dim">“다 했다”의 기준이 없다 → 테스트로</text>
+          <text x="0" y="180" class="t" style="fill:var(--tool)">제약</text><text x="74" y="180" class="t-dim">불필요한 라이브러리, 패턴 위반</text>
+          <text x="0" y="216" class="t" style="fill:var(--guard)">비목표</text><text x="74" y="216" class="t-dim">범위가 부풀고 diff가 커진다</text>
+          <text x="0" y="250" class="t" style="fill:var(--accent)">예시</text><text x="74" y="250" class="t-dim">말로는 모호한 규칙을 못 박는다</text></g>
+        </g>
+      </svg>
+      <figcaption><b>그림 3-2.</b> 에이전트용 명세의 여섯 요소. 여섯 줄 남짓이면 충분하다. 수용 기준은 그대로 테스트가 되고(5장), 비목표는 diff를 작게 지켜 리뷰를 가능하게 한다(6·7장).</figcaption>
+    </figure>
+    <div class="sim" id="sim-spec">
+      <div class="sim-head"><span class="sim-tag game">BUILDER</span><h3>명세 조립기 — 무엇을 넣고 무엇을 뺄까</h3></div>
+      <div class="sim-body">
+        <div class="checks" id="sb-list"></div>
+        <div class="two">
+          <div class="sim-view"><canvas id="sb-cv"></canvas></div>
+          <div class="pane" id="sb-pane"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">첫 시도 수락 확률</span><span class="v" id="sb-o1">—</span></div>
+        <div class="stat"><span class="k">기대 재작업 횟수</span><span class="v" id="sb-o2">—</span></div>
+        <div class="stat"><span class="k">범위 확장 위험</span><span class="v" id="sb-o3">—</span></div>
+        <div class="stat"><span class="k">명세 길이</span><span class="v" id="sb-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 여섯 요소(목표·인터페이스·수용 기준·제약·비목표·예시)만 켜면 첫 시도 수락 확률이 80%를 넘는다. ② “깔끔하고 좋은 코드로”를 켜 보자. 아무것도 바뀌지 않는다. 검사할 수 없는 형용사는 지시가 아니다. ③ “구현을 줄 단위로 지시”나 “회의록 전체 붙여넣기”를 켜면 길이는 크게 늘고 확률은 오히려 떨어진다. <b>명세는 무엇을·왜를 말하고, 어떻게는 맡긴다.</b> ④ 비목표를 끄면 범위 확장 위험이 ‘높음’이 된다. 에이전트는 요청하지 않은 기능도 기꺼이 덧붙인다.</div>
+    </div>
+  </section>
+
+  <section id="plan">
+    <h2>계획 먼저, 코드는 나중</h2>
+    <p>명세를 써도 에이전트가 그것을 잘못 이해할 수 있다. 이 오해를 가장 싸게 잡는 곳은 <b>코드가 생기기 전</b>이다. 많은 코딩 에이전트에는 <span class="term">계획 모드</span><span class="en">plan mode</span>가 있다. 에이전트가 저장소를 읽고, 무엇을 어떤 순서로 고칠지 계획만 내놓는다. 사람이 그 계획을 1–2분 읽고 고친 뒤에야 실행한다. 계획 단계에서 발견한 오해는 문장 하나 고치면 끝나지만, 코드 300줄이 생긴 뒤 발견한 오해는 그 300줄을 버리게 만든다.</p>
+    <div class="callout"><b class="h">계획을 읽을 때 볼 것</b>① 고칠 파일 목록이 예상과 맞는가(엉뚱한 파일, 빠진 파일). ② 새로 만들겠다는 것이 이미 저장소에 있지 않은가. ③ 테스트를 언제 어떻게 돌리는가. ④ 비목표를 건드리지 않는가. 넷 중 하나라도 어긋나면 실행 전에 고친다.</div>
+    <div class="sim" id="sim-plan">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>바로 실행 대 계획 후 실행 — 오해를 언제 잡을까</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="pl-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>에이전트가 오해할 확률 <output id="pl-m-out"></output></span><input type="range" id="pl-m" min="0" max="0.8" step="0.05" value="0.4"></label>
+          <label class="ctrl"><span>계획 + 검토 시간 (분) <output id="pl-p-out"></output></span><input type="range" id="pl-p" min="1" max="20" step="1" value="4"></label>
+          <label class="ctrl"><span>실행 시간 (분) <output id="pl-e-out"></output></span><input type="range" id="pl-e" min="5" max="90" step="5" value="30"></label>
+          <label class="ctrl"><span>계획 검토가 오해를 잡을 확률 <output id="pl-r-out"></output></span><input type="range" id="pl-r" min="0" max="1" step="0.05" value="0.8"></label>
+          <div class="btns"><button class="btn primary" id="pl-play">▶ 새 표본 6개</button></div>
+          <div class="legend"><span><i style="background:var(--state)"></i>계획·검토</span><span><i style="background:var(--ctx)"></i>실행</span><span><i style="background:var(--guard)"></i>버린 실행</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">평균 시간 · 바로 실행</span><span class="v" id="pl-o1">—</span></div>
+        <div class="stat"><span class="k">평균 시간 · 계획 후</span><span class="v" id="pl-o2">—</span></div>
+        <div class="stat"><span class="k">버린 실행 시간 · 바로</span><span class="v" id="pl-o3">—</span></div>
+        <div class="stat"><span class="k">손익분기 오해 확률</span><span class="v" id="pl-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 오해 확률이 0이면 계획은 순수한 비용이다. 단순하고 분명한 작업에는 계획 모드가 필요 없다. ② 기본값(오해 확률 0.4, 계획 4분)에서는 계획 후 실행이 평균 37분으로 바로 실행(40분)보다 빠르다. 바로 실행은 가끔 실행 하나를 통째로 버린다(빨간 막대). ③ 실행 시간을 90분으로 늘리면 손익분기 오해 확률이 25%에서 7%로 내려간다. <b>오래 걸리는 작업일수록, 오해 한 번의 값이 비싸서 계획이 싸진다.</b> ④ 검토가 오해를 잡을 확률을 0으로 내리면(계획을 읽지 않고 승인) 계획 단계는 시간만 쓴다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>모호한 프롬프트는 구현을 넓게 흩뿌리고 그 중심을 가장 흔한 구현 쪽으로 끈다. 원하는 것이 흔하지 않을수록 명세의 값이 커진다.</li>
+      <li>총 시간은 명세의 구체성에 대해 U자를 그린다. 완벽한 명세가 아니라 충분한 명세가 목표이고, 예시는 가장 싼 명세다.</li>
+      <li>좋은 명세는 목표·인터페이스·수용 기준·제약·비목표·예시로 된 짧고 검사 가능한 문장이다. 형용사와 구현 지시와 배경 덤프는 빼라.</li>
+      <li>오해는 코드가 생기기 전에 잡는 것이 가장 싸다. 실행이 오래 걸리고 오해 확률이 높을수록 계획 후 실행이 이긴다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 모호한 프롬프트에서 나온 구현들이 “가장 흔한 구현” 쪽으로 몰리는 이유는?</p><div class="opts">
+        <button class="opt">에이전트가 게을러서</button>
+        <button class="opt" data-correct>말하지 않은 결정을 모델이 학습 데이터에서 가장 흔했던 선택으로 채우기 때문에</button>
+        <button class="opt">프롬프트가 짧으면 무작위로 고르기 때문에</button>
+      </div><div class="quiz-exp">빈칸은 모델의 기본값으로 채워진다. 원하는 것이 흔한 것이면 문제없지만, 다르면 명세로 빈칸을 직접 채워야 한다.</div></div>
+      <div class="quiz-q"><p>2. 다음 중 에이전트용 명세에 넣을 가치가 가장 낮은 문장은?</p><div class="opts">
+        <button class="opt">“자정 경계는 사용자 시간대 기준으로 계산한다”</button>
+        <button class="opt" data-correct>“가독성 좋고 깔끔한 코드로 작성한다”</button>
+        <button class="opt">“이번 작업에서 알림 기능은 만들지 않는다”</button>
+      </div><div class="quiz-exp">검사할 수 없는 형용사는 행동을 바꾸지 못한다. 첫째는 수용 기준, 셋째는 비목표다.</div></div>
+      <div class="quiz-q"><p>3. 계획 모드가 가장 큰 이득을 주는 작업은?</p><div class="opts">
+        <button class="opt">오타 하나 고치기</button>
+        <button class="opt" data-correct>여러 파일을 고치고 실행에 한 시간 넘게 걸리며 요구가 복잡한 작업</button>
+        <button class="opt">변수 이름 하나 바꾸기</button>
+      </div><div class="quiz-exp">오해 확률과 실행 시간이 클수록, 오해를 실행 전에 잡는 값이 크다.</div></div>
+      <div class="quiz-q"><p>4. 명세에 구현 방법을 줄 단위로 지시하면 생기는 문제는?</p><div class="opts">
+        <button class="opt">에이전트가 더 빨라진다</button>
+        <button class="opt" data-correct>명세가 길어지고, 지시가 틀렸을 때 에이전트가 더 나은 방법을 찾지 못한다</button>
+        <button class="opt">아무 문제도 없다</button>
+      </div><div class="quiz-exp">명세는 무엇을·왜를 고정하고 어떻게는 맡긴다. 어떻게까지 지시하면 사람이 코딩하는 것과 다르지 않고, 지시의 실수까지 그대로 구현된다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 모호함의 부채꼴 ---------------- */
+(function () {
+  const TARGET_R = 0.12, DEFAULT = [0.32, 0.6];
+  let shown = [], seed = 1;
+  const cv = VB.canvas("fn-cv", { aspect: 0.5, draw });
+  function params(s) {
+    const d = VB.val("fn-d"), ex = VB.el("fn-ex").checked;
+    const target = [DEFAULT[0] + d * 0.45, DEFAULT[1] - d * 0.32];
+    const f = Math.min(1, s * 1.15 + (ex ? 0.3 : 0));
+    const mu = [VB.lerp(DEFAULT[0], target[0], f), VB.lerp(DEFAULT[1], target[1], f)];
+    const sig = (0.11 * (1 - s) + 0.03) * (ex ? 0.6 : 1);
+    return { target, mu, sig };
+  }
+  // 원 안에 떨어질 확률: 2차원 정규분포를 수치 적분
+  function hitP(s) {
+    const { target, mu, sig } = params(s);
+    let acc = 0; const N = 24;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const r = TARGET_R * Math.sqrt((i + 0.5) / N), a = ((j + 0.5) / N) * Math.PI * 2;
+      const x = target[0] + r * Math.cos(a) - mu[0], y = target[1] + r * Math.sin(a) - mu[1];
+      acc += Math.exp(-(x * x + y * y) / (2 * sig * sig));
+    }
+    return Math.min(0.995, (acc / (N * N)) * (Math.PI * TARGET_R * TARGET_R) / (2 * Math.PI * sig * sig));
+  }
+  const total = (s) => { const c = VB.val("fn-c"); return 60 * s * s + (1 / Math.max(hitP(s), 1e-4)) * c; };
+  function roll() {
+    const s = VB.val("fn-s"), { mu, sig } = params(s), r = VB.rng(seed++);
+    shown = Array.from({ length: 20 }, () => [mu[0] + VB.normal(r) * sig, mu[1] + VB.normal(r) * sig]);
+    cv.redraw();
+  }
+  function draw(c, w, h) {
+    const s = VB.val("fn-s");
+    const { target, mu, sig } = params(s);
+    const L = Math.min(h - 20, w * 0.48), x0 = 10, y0 = 10;
+    c.fillStyle = VB.col("surface"); VB.rrect(c, x0, y0, L, L, 10); c.fill();
+    const P = (p) => [x0 + p[0] * L, y0 + p[1] * L];
+    VB.text(c, "설계 공간", x0 + 8, y0 + 12, { size: 11, color: VB.col("text-faint") });
+    // 분포 구름
+    const [mx, my] = P(mu);
+    for (let k = 3; k >= 1; k--) { c.fillStyle = VB.alpha(VB.col("ctx"), 0.07); c.beginPath(); c.arc(mx, my, Math.min(L, sig * L * k), 0, 7); c.fill(); }
+    const [dx, dy] = P(DEFAULT);
+    c.strokeStyle = VB.col("text-faint"); c.lineWidth = 1.5; c.beginPath(); c.arc(dx, dy, 6, 0, 7); c.stroke();
+    VB.text(c, "흔한 구현", dx, dy + 15, { size: 10.5, align: "center", color: VB.col("text-faint") });
+    const [tx, ty] = P(target);
+    c.save(); c.strokeStyle = VB.col("env"); c.lineWidth = 2.4; c.setLineDash([4, 3]); c.beginPath(); c.arc(tx, ty, TARGET_R * L, 0, 7); c.stroke(); c.restore();
+    VB.text(c, "원한 것", tx, ty - TARGET_R * L - 8, { size: 11, weight: 700, align: "center", color: VB.col("env") });
+    c.save(); c.beginPath(); VB.rrect(c, x0, y0, L, L, 10); c.clip();
+    shown.forEach((p) => { const [px, py] = P(p); const hit = Math.hypot(p[0] - target[0], p[1] - target[1]) < TARGET_R; c.fillStyle = hit ? VB.col("env") : VB.alpha(VB.col("ctx"), 0.8); c.beginPath(); c.arc(px, py, hit ? 5 : 4, 0, 7); c.fill(); });
+    c.restore();
+    // 오른쪽: 총 시간 곡선
+    const box = { l: x0 + L + 56, t: 18, r: w - 12, b: h - 38 };
+    const xs = Array.from({ length: 41 }, (_, i) => i / 40), ts = xs.map(total);
+    const best = xs[ts.indexOf(Math.min(...ts))];
+    const ymax = Math.min(600, Math.max(60, Math.ceil(Math.max(...ts.slice(0, 41).filter((v) => v < 2000)) / 60) * 60));
+    const A = VB.axes(c, { box, x: [0, 1], y: [0, ymax], xt: [0, 0.5, 1], yt: [0, ymax / 2, ymax], xl: "명세의 구체성", yl: "총 시간 (분)", ylOff: 40 });
+    VB.line(c, xs.map((x, i) => [A.X(x), A.Y(Math.min(ymax, ts[i]))]), VB.col("state"), 2.4);
+    const cur = total(s);
+    c.fillStyle = VB.col("accent"); c.beginPath(); c.arc(A.X(s), A.Y(Math.min(ymax, cur)), 5, 0, 7); c.fill();
+    c.strokeStyle = VB.col("env"); c.lineWidth = 1.5; c.beginPath(); c.arc(A.X(best), A.Y(Math.min(ymax, total(best))), 7, 0, 7); c.stroke();
+    VB.text(c, "최적", A.X(best), A.Y(Math.min(ymax, total(best))) - 14, { size: 10.5, align: "center", color: VB.col("env") });
+    const p = hitP(s);
+    VB.set("fn-o1", VB.pct(p, 1), p > 0.5 ? "good" : p < 0.1 ? "bad" : "warn");
+    VB.set("fn-o2", (1 / Math.max(p, 1e-4)).toFixed(1) + "회");
+    VB.set("fn-o3", Math.round(cur) + "분", cur > total(best) * 1.5 ? "bad" : "");
+    VB.set("fn-o4", best.toFixed(2));
+  }
+  VB.el("fn-roll").addEventListener("click", roll);
+  VB.el("fn-ex").addEventListener("change", () => { shown = []; cv.redraw(); });
+  VB.wire(["fn-s", "fn-d", "fn-c"], () => { shown = []; cv.redraw(); }, { "fn-s": (v) => v.toFixed(2), "fn-d": (v) => v.toFixed(2), "fn-c": (v) => v + "분" });
+  roll();
+})();
+
+/* ---------------- 2. 명세 조립기 ---------------- */
+(function () {
+  const ITEMS = [
+    { id: "goal", k: "state", name: "목표 한 문장", tok: 30, e: 0.1, line: "목표: 매일 체크한 습관의 연속 일수를 보여 준다", on: true },
+    { id: "if", k: "ctx", name: "인터페이스 · 입출력 형식", tok: 40, e: 0.12, line: "인터페이스: streak(checks: Date[], tz: string) → number" },
+    { id: "ac", k: "env", name: "수용 기준 3–5개", tok: 90, e: 0.18, line: "수용 기준:\n  - 오늘 체크 안 했으면 어제까지 센다\n  - 자정 경계는 사용자 시간대 기준\n  - 같은 날 중복 체크는 하루로 센다" },
+    { id: "con", k: "tool", name: "제약 (의존성·패턴)", tok: 35, e: 0.08, line: "제약: 새 의존성 금지 · 기존 src/lib/date.ts 사용" },
+    { id: "ng", k: "guard", name: "비목표", tok: 25, e: 0.07, line: "비목표: 알림, 통계 화면은 이번에 만들지 않는다" },
+    { id: "ex", k: "acc", name: "입력→출력 예시 2개", tok: 45, e: 0.12, line: "예시: [5/1,5/2,5/3] 기준일 5/3 → 3 · 기준일 5/5 → 0" },
+    { id: "loc", k: "ctx", name: "관련 파일·기존 패턴 위치", tok: 30, e: 0.08, line: "참고: src/habits/store.ts 의 체크 저장 형식을 따른다" },
+    { id: "edge", k: "env", name: "엣지 케이스 목록", tok: 40, e: 0.06, line: "엣지: 빈 배열 → 0 · 미래 날짜는 무시 · 서머타임 전환일" },
+    { id: "vague", k: "user", name: "“깔끔하고 좋은 코드로”", tok: 15, e: 0, line: "깔끔하고 가독성 좋은 코드로 작성할 것", bad: "검사할 수 없는 형용사" },
+    { id: "how", k: "user", name: "구현을 줄 단위로 지시", tok: 420, e: -0.06, line: "1. for 루프로 날짜를 정렬하고\n2. 각 날짜에 대해 prev를 ... (40줄 생략)", bad: "어떻게까지 강요" },
+    { id: "dump", k: "user", name: "회의록 3개월 치 붙여넣기", tok: 9000, e: -0.08, line: "[회의록 2026-06-02] ... (9,000토큰 생략)", bad: "관련 없는 배경" },
+  ];
+  const BASE = 0.22;
+  const list = VB.el("sb-list");
+  list.innerHTML = ITEMS.map((it) => `<label style="--k:var(--${it.k === "acc" ? "accent" : it.k})"><input type="checkbox" data-id="${it.id}" ${it.on ? "checked" : ""}><span>${it.name}<small>${it.bad ? "⚠ " + it.bad + " · " : ""}${VB.si(it.tok)} 토큰</small></span></label>`).join("");
+  const cv = VB.canvas("sb-cv", { aspect: 0.62, draw });
+  const on = () => ITEMS.filter((it) => list.querySelector(`[data-id=${it.id}]`).checked);
+  function score() {
+    const s = on();
+    const p = VB.clamp(BASE + s.reduce((a, it) => a + it.e, 0), 0.05, 0.95);
+    const tok = s.reduce((a, it) => a + it.tok, 0);
+    return { s, p, tok };
+  }
+  function draw(c, w, h) {
+    const { s, p, tok } = score();
+    // 폭포 막대: 기본값 → 각 요소의 기여 → 최종
+    const rows = [{ name: "기본 (한 줄 요청)", v: BASE, base: 0, k: "user" }];
+    let acc = BASE;
+    s.forEach((it) => { rows.push({ name: it.name.replace(/[“”]/g, ""), v: it.e, base: acc, k: it.k === "acc" ? "accent" : it.k }); acc += it.e; });
+    const box = { l: 130, t: 8, r: w - 40, b: h - 22 };
+    const rh = Math.min(20, (box.b - box.t) / (rows.length + 1) - 4);
+    const X = (v) => box.l + VB.clamp(v, 0, 1) * (box.r - box.l);
+    c.strokeStyle = VB.col("grid"); [0, 0.25, 0.5, 0.75, 1].forEach((v) => { c.beginPath(); c.moveTo(X(v), box.t); c.lineTo(X(v), box.b); c.stroke(); VB.text(c, v * 100 + "%", X(v), box.b + 10, { size: 10, mono: true, align: "center", color: VB.col("text-faint") }); });
+    rows.forEach((r, i) => {
+      const y = box.t + i * (rh + 4);
+      VB.text(c, r.name.length > 12 ? r.name.slice(0, 12) + "…" : r.name, box.l - 6, y + rh / 2, { size: 11, align: "right", color: VB.col("text-dim") });
+      const a = X(Math.min(r.base, r.base + r.v)), b = X(Math.max(r.base, r.base + r.v));
+      c.fillStyle = r.v < 0 ? VB.col("guard") : r.v === 0 ? VB.col("text-faint") : VB.alpha(VB.col(r.k), 0.8);
+      VB.rrect(c, a, y, Math.max(2, b - a), rh, 3); c.fill();
+      if (i) VB.text(c, (r.v >= 0 ? "+" : "") + Math.round(r.v * 100), b + 4, y + rh / 2, { size: 10.5, mono: true, color: r.v < 0 ? VB.col("guard") : VB.col("text-faint") });
+    });
+    const y = box.t + rows.length * (rh + 4);
+    VB.text(c, "첫 시도 수락", box.l - 6, y + rh / 2, { size: 11, weight: 700, align: "right" });
+    c.fillStyle = VB.col(p > 0.7 ? "env" : p > 0.45 ? "tool" : "guard"); VB.rrect(c, X(0), y, X(p) - X(0), rh, 3); c.fill();
+    VB.text(c, VB.pct(p), X(p) + 4, y + rh / 2, { size: 11, mono: true, weight: 700 });
+    const ids = new Set(s.map((it) => it.id));
+    VB.set("sb-o1", VB.pct(p), p > 0.7 ? "good" : p > 0.45 ? "warn" : "bad");
+    VB.set("sb-o2", ((1 - p) / p).toFixed(2) + "회");
+    VB.set("sb-o3", ids.has("ng") ? (ids.has("ac") ? "낮음" : "보통") : "높음", ids.has("ng") ? (ids.has("ac") ? "good" : "warn") : "bad");
+    VB.set("sb-o4", VB.si(tok) + " 토큰", tok > 2000 ? "bad" : tok > 500 ? "warn" : "");
+    VB.el("sb-pane").innerHTML = `<div class="dim"># SPEC.md — 습관 연속 기록</div>` + (s.length ? s.map((it) => `<div class="ln k-${it.k}" style="${it.bad ? "opacity:.7;text-decoration:line-through" : ""}">${VB.esc(it.line)}</div>`).join("") : `<div class="dim">(비어 있음 — “연속 기록 기능 넣어 줘” 한 줄)</div>`);
+  }
+  list.addEventListener("change", () => cv.redraw());
+  cv.redraw();
+})();
+
+/* ---------------- 3. 계획 후 실행 ---------------- */
+(function () {
+  const RUNS = 3000;
+  let samples = null, seed = 7, t = 0, playing = false, stats = null;
+  const cv = VB.canvas("pl-cv", { aspect: 0.62, draw });
+  function one(mode, m, P, E, r, rnd) {
+    const segs = []; // [종류, 길이]
+    let mis = rnd() < m;
+    if (mode === "plan") {
+      segs.push(["plan", P]);
+      if (mis && rnd() < r) { segs.push(["plan", P * 0.5]); mis = rnd() < m * 0.2; }
+    }
+    if (mis) { const f = 0.5 + rnd() * 0.5; segs.push(["waste", E * f]); mis = rnd() < m * 0.3; if (mis) segs.push(["waste", E * (0.5 + rnd() * 0.5)]); }
+    segs.push(["exec", E]);
+    return segs;
+  }
+  function compute() {
+    const m = VB.val("pl-m"), P = VB.val("pl-p"), E = VB.val("pl-e"), r = VB.val("pl-r");
+    const res = {};
+    ["direct", "plan"].forEach((mode, i) => {
+      const rnd = VB.rng(31 + i);
+      let sum = 0, waste = 0;
+      for (let k = 0; k < RUNS; k++) { const s = one(mode, m, P, E, r, rnd); sum += s.reduce((a, x) => a + x[1], 0); waste += s.filter((x) => x[0] === "waste").reduce((a, x) => a + x[1], 0); }
+      res[mode] = { mean: sum / RUNS, waste: waste / RUNS };
+    });
+    // 손익분기 m: 이분 탐색 (해석식 근사)
+    const expT = (mode, mm) => {
+      // E[waste] ≈ mm·0.75E·(1 + mm·0.3·... ) 근사 대신 표본
+      const rnd = VB.rng(77); let s = 0; for (let k = 0; k < 1500; k++) s += one(mode, mm, P, E, r, rnd).reduce((a, x) => a + x[1], 0); return s / 1500;
+    };
+    let lo = 0, hi = 1, be = null;
+    if (expT("plan", 1) < expT("direct", 1)) { for (let it = 0; it < 14; it++) { const mid = (lo + hi) / 2; if (expT("plan", mid) < expT("direct", mid)) hi = mid; else lo = mid; } be = hi; }
+    res.be = be;
+    return res;
+  }
+  function newSamples() {
+    const m = VB.val("pl-m"), P = VB.val("pl-p"), E = VB.val("pl-e"), r = VB.val("pl-r");
+    const rnd = VB.rng(seed++);
+    samples = { direct: Array.from({ length: 6 }, () => one("direct", m, P, E, r, rnd)), plan: Array.from({ length: 6 }, () => one("plan", m, P, E, r, rnd)) };
+    t = 0;
+  }
+  function draw(c, w, h) {
+    if (!samples) newSamples();
+    if (!stats) stats = compute();
+    const maxT = Math.max(...[...samples.direct, ...samples.plan].map((s) => s.reduce((a, x) => a + x[1], 0)));
+    const box = { l: 74, t: 22, r: w - 12, b: h - 30 };
+    const X = (v) => box.l + (v / maxT) * (box.r - box.l);
+    const rows = 12 + 1, rh = (box.b - box.t) / rows;
+    VB.text(c, "바로 실행", 8, box.t + rh * 3, { size: 12, weight: 700, color: VB.col("text-dim") });
+    VB.text(c, "계획 후", 8, box.t + rh * 10, { size: 12, weight: 700, color: VB.col("text-dim") });
+    const COL = { plan: "state", exec: "ctx", waste: "guard" };
+    [["direct", 0], ["plan", 7]].forEach(([mode, off]) => {
+      samples[mode].forEach((segs, i) => {
+        let x = 0; const y = box.t + (off + i) * rh + 2;
+        segs.forEach(([k, len]) => {
+          const vis = VB.clamp(t - x, 0, len);
+          if (vis > 0) { c.fillStyle = VB.alpha(VB.col(COL[k]), k === "waste" ? 0.6 : 0.75); VB.rrect(c, X(x), y, Math.max(1.5, X(x + vis) - X(x) - 1), rh - 5, 3); c.fill(); if (k === "waste" && vis >= len) { c.strokeStyle = VB.col("guard"); c.lineWidth = 1.2; c.beginPath(); c.moveTo(X(x), y); c.lineTo(X(x + len) - 1, y + rh - 5); c.stroke(); } }
+          x += len;
+        });
+        if (t >= x) VB.text(c, Math.round(x) + "분", X(x) + 4, y + (rh - 5) / 2, { size: 10, mono: true, color: VB.col("text-faint") });
+      });
+    });
+    c.strokeStyle = VB.col("accent"); c.lineWidth = 1.4; c.beginPath(); c.moveTo(X(Math.min(t, maxT)), box.t - 6); c.lineTo(X(Math.min(t, maxT)), box.b); c.stroke();
+    VB.set("pl-o1", Math.round(stats.direct.mean) + "분", stats.direct.mean < stats.plan.mean ? "good" : "");
+    VB.set("pl-o2", Math.round(stats.plan.mean) + "분", stats.plan.mean <= stats.direct.mean ? "good" : "");
+    VB.set("pl-o3", Math.round(stats.direct.waste) + "분", stats.direct.waste > 5 ? "bad" : "");
+    VB.set("pl-o4", stats.be == null ? "없음" : VB.pct(stats.be));
+  }
+  const L = VB.loop(VB.el("pl-cv"), (dt) => {
+    if (!playing) return;
+    t += dt * 40; cv.redraw();
+    const maxT = Math.max(...[...samples.direct, ...samples.plan].map((s) => s.reduce((a, x) => a + x[1], 0)));
+    if (t > maxT) { playing = false; }
+  });
+  L.start();
+  VB.el("pl-play").addEventListener("click", () => { newSamples(); playing = true; if (VB.reduced()) { t = 1e9; playing = false; cv.redraw(); } });
+  VB.wire(["pl-m", "pl-p", "pl-e", "pl-r"], () => { stats = null; newSamples(); t = 1e9; cv.redraw(); }, { "pl-m": (v) => VB.pct(v), "pl-p": (v) => v + "분", "pl-e": (v) => v + "분", "pl-r": (v) => VB.pct(v) });
+})();
+</script>
+</body>
+</html>

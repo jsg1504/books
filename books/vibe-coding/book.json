@@ -1,0 +1,14 @@
+{
+  "title": "바이브 코딩과 에이전틱 엔지니어링 전략 교과서",
+  "topic": "인공지능",
+  "description": "말로 시키고 느낌으로 수락하는 바이브 코딩은 어디까지 통할까요? 프로토타입에서 프로덕션까지, 명세·컨텍스트·검증·작업 분해·리뷰·병렬 에이전트·기술 부채·보안·팀 전략을 애니메이션 도해와 실험으로 배우는 AI 코딩 전략서입니다.",
+  "published": true,
+  "format": "custom",
+  "cover": "cover.svg",
+  "details": ["12개 장", "36개 실험", "3D 코드 타워"],
+  "links": [
+    {"label": "바이브 허용 지도", "href": "chapters/spectrum.html#sim-map", "kind": "첫 실험"},
+    {"label": "AI diff 버그 찾기", "href": "chapters/review.html#sim-diff", "kind": "게임"},
+    {"label": "전략 플레이그라운드", "href": "chapters/playbook.html#sim-play", "kind": "종합"}
+  ]
+}

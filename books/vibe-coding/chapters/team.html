@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>팀과 조직의 전략 · VibeBook</title>
+<meta name="description" content="AI 코딩 도구의 토큰 비용 대 사람 시간, 처리량과 배포 안정성(DORA), 주니어 개발자의 학습 곡선을 실험으로 따져 보고 팀 차원의 도입 전략을 세운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="team">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 11</div>
+    <h1>팀과 조직의 전략</h1>
+    <p class="lead">개인에게 AI 코딩은 생산성 도구다. 팀과 조직에게는 <b>운영 방식의 변화</b>다. 돈이 든다(좌석과 토큰). 측정이 어렵다(무엇이 빨라졌나). 안정성이 흔들릴 수 있다(변경이 커지고 많아진다). 그리고 사람이 자라는 방식이 바뀐다(주니어는 무엇으로 배우나). 이 장에서는 리드와 관리자가 내려야 하는 세 가지 판단, 비용 대비 효과, 속도 대비 안정성, 오늘의 생산성 대비 내일의 역량을 실험으로 따져 본다.</p>
+    <ul class="objectives">
+      <li>토큰·좌석 비용과 절약된 시간, 추가된 리뷰·재작업 시간을 함께 넣어 순효과를 계산할 수 있다.</li>
+      <li>처리량과 안정성을 함께 보는 DORA 지표로 AI 도입의 효과를 읽을 수 있다.</li>
+      <li>주니어 개발자가 AI와 함께 일할 때 학습이 줄어드는 조건과 늘어나는 조건을 구분할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="roi">
+    <h2>토큰 비용 대 사람 시간</h2>
+    <p>AI 코딩 도구의 비용은 눈에 잘 보인다. 좌석 요금과 토큰 청구서. 효과는 잘 보이지 않는다. 그래서 두 가지 실수가 흔하다. 하나는 “토큰이 비싸다”며 아끼는 것이다. 개발자 한 시간의 비용과 비교하면 대부분의 작업에서 토큰은 싸다. 다른 하나는 <b>절약된 작성 시간만 세는 것</b>이다. AI가 쓴 코드를 읽고 고치는 시간, 나중에 다시 하는 재작업, 그리고 그 코드를 유지하는 시간도 세야 한다.</p>
+    <div class="formula"><div class="eq">주당 순효과 = 작업 수 × (절약된 작성 시간 − 추가 리뷰 시간 − 재작업률 × 작업 시간) × 시급 − 토큰 비용 − 좌석 비용</div>
+      <div class="where">모든 항이 개발자 한 명 기준이다. 절약 시간은 작업마다 크게 다르다. 반복적인 코드, 테스트 작성, 낯선 언어의 문법 찾기는 많이 줄고, 복잡한 설계 판단은 거의 줄지 않는다.</div></div>
+    <div class="sim" id="sim-roi">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>순효과 계산기 — 개발자 한 명, 한 주</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ro-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>주당 작업 수 <output id="ro-n-out"></output></span><input type="range" id="ro-n" min="5" max="50" step="1" value="15"></label>
+          <label class="ctrl"><span>작업당 절약된 작성 시간 <output id="ro-s-out"></output></span><input type="range" id="ro-s" min="0" max="180" step="5" value="45"></label>
+          <label class="ctrl"><span>작업당 추가 리뷰·수정 시간 <output id="ro-r-out"></output></span><input type="range" id="ro-r" min="0" max="90" step="5" value="15"></label>
+          <label class="ctrl"><span>재작업률 <output id="ro-w-out"></output></span><input type="range" id="ro-w" min="0" max="0.4" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>작업당 토큰 비용 <output id="ro-t-out"></output></span><input type="range" id="ro-t" min="0" max="30" step="0.5" value="3"></label>
+          <label class="ctrl"><span>개발자 시간당 비용 <output id="ro-h-out"></output></span><input type="range" id="ro-h" min="20" max="200" step="5" value="70"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">주당 순절약 시간</span><span class="v" id="ro-o1">—</span></div>
+        <div class="stat"><span class="k">주당 순효과</span><span class="v" id="ro-o2">—</span></div>
+        <div class="stat"><span class="k">비용 대비 효과</span><span class="v" id="ro-o3">—</span></div>
+        <div class="stat"><span class="k">손익분기 절약 시간</span><span class="v" id="ro-o4">—</span></div>
+      </div>
+      <div class="sim-note">작업 기본 시간은 2시간, 좌석 비용은 주 $10로 두었다. 해볼 것: ① 기본값의 순효과는 주 $302다. 토큰 비용을 $3에서 $6로 두 배 올리면 $45가 줄어든다. 반면 추가 리뷰 시간을 15분에서 30분으로 늘리면 $262가 사라진다. 45분이면 마이너스다. <b>AI 도입의 성패는 토큰이 아니라 검토 시간에서 갈린다.</b> ② 그렇다고 토큰이 공짜는 아니다. 작업당 $15를 쓰면 순효과가 $122로 준다. 긴 세션과 큰 컨텍스트는 돈이다(4장). ③ 재작업률을 0.25로 올려 보자. 바이브로 만든 코드가 나중에 다시 손봐야 할 일이 되면 절약이 사라진다. ④ 절약 시간을 0으로 두면 7장의 METR 실험과 같은 상황이다. 도구가 있다는 것만으로 이득이 생기지 않는다.</div>
+    </div>
+  </section>
+
+  <section id="dora">
+    <h2>처리량과 안정성</h2>
+    <p>DORA(DevOps Research and Assessment)는 소프트웨어 전달 성과를 네 지표로 잰다. <b>배포 빈도</b>와 <b>변경 리드타임</b>(처리량), <b>변경 실패율</b>과 <b>복구 시간</b>(안정성). 핵심은 둘을 <b>함께</b> 본다는 점이다. 2024년 DORA 보고서는 AI 도입이 개인의 체감 생산성과 코드 품질 인식을 높이는 것과 함께, 도입이 늘수록 소프트웨어 전달의 처리량과 안정성이 오히려 조금 낮아지는 연관을 보고했다. 연구진이 꼽은 가설 하나는 <b>배치 크기</b>다. 코드를 만들기 쉬워지면 한 번에 바뀌는 양이 커지고, 큰 변경은 더 자주 실패한다.</p>
+    <div class="sim" id="sim-dora">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>16주 배포 기록 — 5주차에 AI 도입</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="do-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>도입 후 변경 크기 배수 <output id="do-b-out"></output></span><input type="range" id="do-b" min="1" max="3" step="0.1" value="2"></label>
+          <label class="ctrl"><span>도입 후 작업 속도 배수 <output id="do-v-out"></output></span><input type="range" id="do-v" min="1" max="2.5" step="0.1" value="1.6"></label>
+          <label class="ctrl"><span>자동 테스트 수준 <output id="do-t-out"></output></span><input type="range" id="do-t" min="0" max="1" step="0.05" value="0.4"></label>
+          <label class="check"><input type="checkbox" id="do-small"> 작은 배치 정책 (PR 크기 상한)</label>
+          <div class="legend"><span><i style="background:var(--env)"></i>성공한 배포</span><span><i style="background:var(--guard)"></i>실패한 배포</span><span><i style="background:var(--tool)"></i>장애 시간</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">주당 배포 · 전 → 후</span><span class="v" id="do-o1">—</span></div>
+        <div class="stat"><span class="k">변경 실패율 · 전 → 후</span><span class="v" id="do-o2">—</span></div>
+        <div class="stat"><span class="k">주당 장애 시간 · 전 → 후</span><span class="v" id="do-o3">—</span></div>
+        <div class="stat"><span class="k">주당 기능 전달 · 전 → 후</span><span class="v" id="do-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 AI 도입 후 기능 전달은 늘지만 변경 실패율과 장애 시간도 함께 오른다. 처리량만 보면 성공, 안정성까지 보면 다른 이야기다. ② “작은 배치 정책”을 켜 보자. 같은 속도로 만들되 작게 나눠 자주 배포하니 실패율이 도입 전 수준으로 돌아온다. ③ 작은 배치 정책을 끄고 자동 테스트 수준을 0.9로 올리면 도입 후 실패율이 13%에서 8%로 내려간다. 실패할 변경이 배포 전에 걸러진다. <b>AI가 만드는 속도는 작은 배치와 자동 검증이라는 그릇에 담아야 안정성을 잃지 않는다.</b></div>
+    </div>
+  </section>
+
+  <section id="learn">
+    <h2>주니어의 학습 곡선</h2>
+    <p>AI는 주니어 개발자에게 양날의 칼이다. 모르는 것을 바로 물어볼 수 있는 선생이 생겼다. 동시에 <b>스스로 해 보지 않아도 되는</b> 지름길도 생겼다. 학습은 애써서 떠올리고, 틀리고, 고치는 과정에서 일어난다. AI에게 다 맡기면 오늘의 결과물은 좋아지지만 내일의 실력은 자라지 않는다. 그 실력은 AI가 틀렸을 때, 지평선 밖의 문제를 만났을 때, 리뷰어가 되어야 할 때 필요하다.</p>
+    <table class="tbl">
+      <tr><th>방식</th><th>예</th><th>배움</th></tr>
+      <tr><td style="color:var(--accent);font-weight:700">AI 대행</td><td>“이거 만들어 줘” → 수락</td><td>작음. 결과는 있지만 과정이 없다</td></tr>
+      <tr><td style="color:var(--accent-2);font-weight:700">AI 튜터</td><td>먼저 시도 → AI에게 설명·리뷰 요청 → 직접 고침</td><td>큼. 막힐 때 바로 도움을 받으며 직접 한다</td></tr>
+      <tr><td style="color:var(--user);font-weight:700">AI 없음</td><td>문서와 검색, 동료에게 묻기</td><td>보통. 막히는 시간이 길다</td></tr>
+    </table>
+    <div class="sim" id="sim-learn">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>52주 학습 곡선 — 실력과 생산성</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ln-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="ln-show"><button data-v="skill" class="on">실력 (AI 없이)</button><button data-v="prod">생산성 (AI 포함)</button></div>
+          <label class="ctrl"><span>AI가 메워 주는 정도 <output id="ln-a-out"></output></span><input type="range" id="ln-a" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>대행 모드의 직접 해 보는 비율 <output id="ln-d-out"></output></span><input type="range" id="ln-d" min="0" max="0.6" step="0.05" value="0.2"></label>
+          <label class="ctrl"><span>학습 속도 <output id="ln-r-out"></output></span><input type="range" id="ln-r" min="0.02" max="0.12" step="0.005" value="0.05"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>AI 대행</span><span><i style="background:var(--accent-2)"></i>AI 튜터</span><span><i style="background:var(--user)"></i>AI 없음</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">52주 실력 · 대행</span><span class="v" id="ln-o1">—</span></div>
+        <div class="stat"><span class="k">52주 실력 · 튜터</span><span class="v" id="ln-o2">—</span></div>
+        <div class="stat"><span class="k">4주차 생산성 · 대행 / 튜터</span><span class="v" id="ln-o3">—</span></div>
+        <div class="stat"><span class="k">튜터가 대행을 추월 (생산성)</span><span class="v" id="ln-o4">—</span></div>
+      </div>
+      <div class="sim-note">실력은 0(입문)에서 1(숙련) 사이, 생산성은 실력에 AI가 메워 주는 몫을 더한 값이다. 해볼 것: ① “생산성”을 보면 처음 몇 주는 대행이 가장 높다. 관리자가 보기에 가장 좋은 방식처럼 보인다. ② “실력”으로 바꾸면 52주 뒤 대행은 0.47, 튜터는 0.97이다. 생산성에서도 튜터가 7주째에 대행을 추월한다. ③ AI가 메워 주는 정도를 1로 올리면(AI가 거의 모든 걸 대신하는 미래) 생산성 추월은 52주 안에 오지 않는다. 그래도 AI가 틀렸을 때 알아볼 실력은 튜터에게만 있다. <b>주니어에게는 결과물이 아니라 과정을 남기는 사용법을 가르친다.</b></div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>AI 도입의 비용 대부분은 토큰이 아니라 사람 시간이다. 절약된 작성 시간에서 리뷰·재작업 시간을 빼야 순효과가 나온다.</li>
+      <li>처리량과 안정성을 함께 본다. AI로 변경이 커지면 실패율이 오른다. 작은 배치와 자동 검증으로 속도를 담는다.</li>
+      <li>주니어가 AI에게 결과를 맡기면 오늘의 생산성은 오르지만 실력은 자라지 않는다. 먼저 시도하고 AI에게 설명과 리뷰를 받는 방식이 장기적으로 이긴다.</li>
+      <li>조직은 체감이 아니라 측정으로 판단한다. 도입 전후의 DORA 지표와 재작업률을 함께 추적한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 시급 $70 개발자가 작업당 토큰 $3을 쓰고 작성 시간 45분을 아꼈지만 리뷰에 15분이 더 들었다. 이 작업의 순효과에 가장 큰 영향을 주는 것은?</p><div class="opts">
+        <button class="opt">토큰 비용 $3</button>
+        <button class="opt" data-correct>절약된 시간과 늘어난 리뷰 시간의 차이 (30분 ≈ $35)</button>
+        <button class="opt">모델의 이름</button>
+      </div><div class="quiz-exp">30분의 사람 시간은 $35, 토큰은 $3이다. 사람 시간이 훨씬 크다.</div></div>
+      <div class="quiz-q"><p>2. AI 도입 후 배포 빈도는 올랐지만 변경 실패율도 올랐다. 가장 먼저 의심할 원인은?</p><div class="opts">
+        <button class="opt">서버가 느려졌다</button>
+        <button class="opt" data-correct>변경 하나의 크기(배치)가 커졌다</button>
+        <button class="opt">개발자 수가 줄었다</button>
+      </div><div class="quiz-exp">만들기 쉬워지면 한 번에 바뀌는 양이 커진다. 큰 변경은 더 자주 실패하고 원인을 찾기도 어렵다.</div></div>
+      <div class="quiz-q"><p>3. 주니어에게 권할 AI 사용법은?</p><div class="opts">
+        <button class="opt">모든 코드를 AI에게 맡기고 결과만 확인한다</button>
+        <button class="opt" data-correct>먼저 직접 시도하고, 막히면 AI에게 설명을 듣고, 고친 코드를 AI에게 리뷰받는다</button>
+        <button class="opt">AI를 전혀 쓰지 않는다</button>
+      </div><div class="quiz-exp">애써서 떠올리는 과정이 학습이다. 튜터처럼 쓰면 막히는 시간은 줄이고 학습은 남긴다.</div></div>
+      <div class="quiz-q"><p>4. 팀의 AI 도입 효과를 평가하는 가장 좋은 방법은?</p><div class="opts">
+        <button class="opt">개발자 설문으로 체감 생산성을 묻는다</button>
+        <button class="opt" data-correct>도입 전후의 처리량·안정성 지표와 재작업률을 함께 비교한다</button>
+        <button class="opt">작성된 코드 줄 수를 센다</button>
+      </div><div class="quiz-exp">체감은 측정과 다를 수 있다(7장). 코드 줄 수는 AI 시대에 특히 무의미하다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 순효과 계산기 ---------------- */
+(function () {
+  const BASE = 120, SEAT = 10;
+  const cv = VB.canvas("ro-cv", { aspect: 0.62, draw });
+  function calc(o = {}) {
+    const n = o.n ?? VB.val("ro-n"), s = o.s ?? VB.val("ro-s"), r = VB.val("ro-r"), w = VB.val("ro-w"), t = VB.val("ro-t"), h = VB.val("ro-h");
+    const saved = (n * s) / 60, review = (n * r) / 60, rework = (n * w * BASE) / 60;
+    const netH = saved - review - rework;
+    const tokens = n * t, cost = tokens + SEAT;
+    const net = netH * h - cost;
+    return { saved, review, rework, netH, tokens, cost, net, gross: saved * h };
+  }
+  function draw(c, w, h) {
+    const R = calc(), rate = VB.val("ro-h");
+    // 폭포: 절약 → −리뷰 → −재작업 → −토큰 → −좌석 → 순효과 ($)
+    const steps = [["절약된 작성", R.saved * rate, "env"], ["리뷰·수정", -R.review * rate, "accent-2"], ["재작업", -R.rework * rate, "guard"], ["토큰", -R.tokens, "tool"], ["좌석", -SEAT, "tool"]];
+    const vals = [0]; let acc = 0; steps.forEach(([, v]) => { acc += v; vals.push(acc); });
+    const ymin = Math.min(0, ...vals), ymax = Math.max(10, ...vals);
+    const box = { l: 56, t: 16, r: w - 12, b: h - 44 };
+    const span = ymax - ymin || 1;
+    const Y = (v) => box.b - ((v - ymin) / span) * (box.b - box.t);
+    const bw = (box.r - box.l) / (steps.length + 1.4);
+    c.strokeStyle = VB.col("axis"); c.beginPath(); c.moveTo(box.l, Y(0)); c.lineTo(box.r, Y(0)); c.stroke();
+    [ymin, 0, ymax].forEach((v) => VB.text(c, "$" + Math.round(v), box.l - 6, Y(v), { size: 10.5, mono: true, align: "right", color: VB.col("text-faint") }));
+    let run = 0;
+    steps.forEach(([name, v, k], i) => {
+      const x = box.l + 8 + i * bw;
+      const a = Y(run), b = Y(run + v);
+      c.fillStyle = VB.alpha(VB.col(k), 0.78); VB.rrect(c, x, Math.min(a, b), bw - 12, Math.max(2, Math.abs(b - a)), 4); c.fill();
+      VB.text(c, (v >= 0 ? "+" : "−") + "$" + Math.abs(Math.round(v)), x + (bw - 12) / 2, Math.min(a, b) - 9, { size: 10.5, mono: true, align: "center", color: VB.col("text-dim") });
+      VB.text(c, name, x + (bw - 12) / 2, box.b + 14, { size: 10.5, align: "center", color: VB.col("text-dim") });
+      run += v;
+    });
+    const x = box.l + 8 + steps.length * bw;
+    c.fillStyle = VB.col(run >= 0 ? "env" : "guard"); VB.rrect(c, x, Math.min(Y(0), Y(run)), bw * 1.2 - 12, Math.max(2, Math.abs(Y(run) - Y(0))), 4); c.fill();
+    VB.text(c, "순효과", x + (bw * 1.2 - 12) / 2, box.b + 14, { size: 11, weight: 700, align: "center" });
+    VB.text(c, (run >= 0 ? "+$" : "−$") + Math.abs(Math.round(run)), x + (bw * 1.2 - 12) / 2, Math.min(Y(0), Y(run)) - 9, { size: 11.5, mono: true, weight: 700, align: "center", color: VB.col(run >= 0 ? "env" : "guard") });
+    VB.set("ro-o1", R.netH.toFixed(1) + "시간", R.netH > 0 ? "good" : "bad");
+    VB.set("ro-o2", (R.net >= 0 ? "+$" : "−$") + Math.abs(Math.round(R.net)), R.net > 0 ? "good" : "bad");
+    VB.set("ro-o3", R.cost > 0 ? (R.netH * rate / R.cost).toFixed(1) + "×" : "—", R.netH * rate / R.cost > 3 ? "good" : "warn");
+    // 손익분기: 순효과 0이 되는 절약 시간 (분/작업)
+    const n = VB.val("ro-n"), rr = VB.val("ro-r"), ww = VB.val("ro-w"), t = VB.val("ro-t");
+    const be = rr + ww * BASE + ((n * t + SEAT) / rate) * 60 / n;
+    VB.set("ro-o4", Math.round(be) + "분/작업");
+  }
+  VB.wire(["ro-n", "ro-s", "ro-r", "ro-w", "ro-t", "ro-h"], () => cv.redraw(), { "ro-n": (v) => v + "개", "ro-s": (v) => v + "분", "ro-r": (v) => v + "분", "ro-w": (v) => VB.pct(v), "ro-t": (v) => "$" + v, "ro-h": (v) => "$" + v });
+})();
+
+/* ---------------- 2. DORA ---------------- */
+(function () {
+  const WEEKS = 16, ADOPT = 5;
+  const cv = VB.canvas("do-cv", { aspect: 0.62, draw });
+  function sim() {
+    const b = VB.val("do-b"), v = VB.val("do-v"), T = VB.val("do-t"), small = VB.el("do-small").checked;
+    const rnd = VB.rng(9);
+    const out = [];
+    for (let wk = 1; wk <= WEEKS; wk++) {
+      const ai = wk >= ADOPT;
+      const work = 10 * (ai ? v : 1); // 주당 만드는 변경량 (기능 단위)
+      const batch = ai ? (small ? 1 : b) : 1; // 배포 하나당 기능 수
+      const deploys = Math.max(1, Math.round(work / batch));
+      const cfr0 = 0.1 * Math.pow(batch, 1.1) * (1 - 0.6 * T); // 변경 실패율: 배치가 클수록, 테스트가 약할수록
+      let fails = 0;
+      for (let d = 0; d < deploys; d++) if (rnd() < Math.min(0.9, cfr0)) fails++;
+      const mttr = 1.5 * Math.pow(batch, 0.8) * (ai && !small ? 1.2 : 1); // 큰 변경은 원인 찾기도 오래 걸림 (시간)
+      out.push({ wk, deploys, fails, outage: fails * mttr, features: work * (1 - 0.5 * (fails / deploys)), ai });
+    }
+    return out;
+  }
+  function draw(c, w, h) {
+    const S = sim();
+    const box = { l: 40, t: 14, r: w - 40, b: h - 40 };
+    const dmax = Math.max(10, ...S.map((s) => s.deploys));
+    const omax = Math.max(4, ...S.map((s) => s.outage));
+    const bw = (box.r - box.l) / WEEKS;
+    const Y = (v) => box.b - (v / dmax) * (box.b - box.t);
+    const Y2 = (v) => box.b - (v / omax) * (box.b - box.t);
+    c.fillStyle = VB.alpha(VB.col("accent"), 0.06); c.fillRect(box.l + (ADOPT - 1) * bw, box.t, (WEEKS - ADOPT + 1) * bw, box.b - box.t);
+    VB.text(c, "AI 도입", box.l + (ADOPT - 1) * bw + 4, box.t + 8, { size: 11, weight: 700, color: VB.col("accent") });
+    S.forEach((s, i) => {
+      const x = box.l + i * bw + 3, ww = bw - 6;
+      c.fillStyle = VB.alpha(VB.col("env"), 0.6); c.fillRect(x, Y(s.deploys), ww, Y(s.fails) - Y(s.deploys));
+      c.fillStyle = VB.alpha(VB.col("guard"), 0.8); c.fillRect(x, Y(s.fails), ww, box.b - Y(s.fails));
+      if (i % 2 === 0) VB.text(c, s.wk, x + ww / 2, box.b + 10, { size: 10, mono: true, align: "center", color: VB.col("text-faint") });
+    });
+    VB.line(c, S.map((s, i) => [box.l + i * bw + bw / 2, Y2(s.outage)]), VB.col("tool"), 2.2);
+    c.strokeStyle = VB.col("axis"); c.beginPath(); c.moveTo(box.l, box.t); c.lineTo(box.l, box.b); c.lineTo(box.r, box.b); c.stroke();
+    VB.text(c, "배포 수", box.l - 6, box.t + 4, { size: 10.5, align: "right", color: VB.col("text-dim") });
+    VB.text(c, dmax, box.l - 6, Y(dmax) + 12, { size: 10, mono: true, align: "right", color: VB.col("text-faint") });
+    VB.text(c, "장애 " + omax.toFixed(0) + "h", box.r + 4, Y2(omax) + 6, { size: 10, mono: true, color: VB.col("tool") });
+    VB.text(c, "주", (box.l + box.r) / 2, box.b + 26, { size: 11, align: "center", color: VB.col("text-dim") });
+    const avg = (arr, f) => arr.reduce((a, s) => a + f(s), 0) / arr.length;
+    const pre = S.filter((s) => !s.ai), post = S.filter((s) => s.ai);
+    const cfr = (arr) => arr.reduce((a, s) => a + s.fails, 0) / arr.reduce((a, s) => a + s.deploys, 0);
+    VB.set("do-o1", `${avg(pre, (s) => s.deploys).toFixed(1)} → ${avg(post, (s) => s.deploys).toFixed(1)}`);
+    const c0 = cfr(pre), c1 = cfr(post);
+    VB.set("do-o2", `${VB.pct(c0)} → ${VB.pct(c1)}`, c1 > c0 * 1.3 ? "bad" : c1 < c0 * 1.1 ? "good" : "warn");
+    const o0 = avg(pre, (s) => s.outage), o1 = avg(post, (s) => s.outage);
+    VB.set("do-o3", `${o0.toFixed(1)}h → ${o1.toFixed(1)}h`, o1 > o0 * 1.3 ? "bad" : "good");
+    VB.set("do-o4", `${avg(pre, (s) => s.features).toFixed(1)} → ${avg(post, (s) => s.features).toFixed(1)}`);
+  }
+  VB.el("do-small").addEventListener("change", () => cv.redraw());
+  VB.wire(["do-b", "do-v", "do-t"], () => cv.redraw(), { "do-b": (v) => v.toFixed(1) + "×", "do-v": (v) => v.toFixed(1) + "×", "do-t": (v) => VB.pct(v) });
+})();
+
+/* ---------------- 3. 학습 곡선 ---------------- */
+(function () {
+  const WEEKS = 52;
+  const cv = VB.canvas("ln-cv", { aspect: 0.62, draw });
+  const show = VB.seg("ln-show", () => cv.redraw());
+  function sim(mode) {
+    const a = VB.val("ln-a"), dself = VB.val("ln-d"), r = VB.val("ln-r");
+    let s = 0.1;
+    const skill = [], prod = [];
+    for (let wk = 0; wk <= WEEKS; wk++) {
+      const effort = mode === "none" ? 1 : mode === "tutor" ? 1.25 : dself; // 튜터는 막힘 없이 더 많이 연습
+      const boost = mode === "none" ? 0 : mode === "tutor" ? a * 0.55 : a;
+      skill.push(s);
+      prod.push(Math.min(1.2, s + boost * (1 - s) * (mode === "tutor" ? 1 : 1)));
+      s = Math.min(1, s + r * effort * (1 - s) * (mode === "none" ? 0.85 : 1));
+    }
+    return { skill, prod };
+  }
+  function draw(c, w, h) {
+    const R = { deleg: sim("deleg"), tutor: sim("tutor"), none: sim("none") };
+    const key = show() === "skill" ? "skill" : "prod";
+    const box = { l: 44, t: 14, r: w - 14, b: h - 42 };
+    const A = VB.axes(c, { box, x: [0, WEEKS], y: [0, key === "skill" ? 1 : 1.2], xt: [0, 13, 26, 39, 52], yt: key === "skill" ? [0, 0.5, 1] : [0, 0.4, 0.8, 1.2], xl: "주", yl: key === "skill" ? "AI 없이 해내는 실력" : "생산성" });
+    const col = { deleg: "accent", tutor: "accent-2", none: "user" };
+    Object.entries(R).forEach(([m, r]) => VB.line(c, r[key].map((v, i) => [A.X(i), A.Y(v)]), VB.col(col[m]), 2.6));
+    VB.set("ln-o1", R.deleg.skill[WEEKS].toFixed(2), R.deleg.skill[WEEKS] < 0.5 ? "bad" : "");
+    VB.set("ln-o2", R.tutor.skill[WEEKS].toFixed(2), "good");
+    VB.set("ln-o3", `${R.deleg.prod[4].toFixed(2)} / ${R.tutor.prod[4].toFixed(2)}`);
+    let cross = null;
+    for (let i = 1; i <= WEEKS; i++) if (R.tutor.prod[i] > R.deleg.prod[i] && R.tutor.prod[i - 1] <= R.deleg.prod[i - 1]) { cross = i; break; }
+    VB.set("ln-o4", cross != null ? cross + "주째" : R.tutor.prod[0] > R.deleg.prod[0] ? "처음부터" : "52주 안에 없음", cross ? "" : "warn");
+  }
+  VB.wire(["ln-a", "ln-d", "ln-r"], () => cv.redraw(), { "ln-a": (v) => VB.pct(v), "ln-d": (v) => VB.pct(v), "ln-r": (v) => v.toFixed(3) });
+})();
+</script>
+</body>
+</html>

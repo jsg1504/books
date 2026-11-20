@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보안과 공급망 · VibeBook</title>
+<meta name="description" content="모델이 지어낸 패키지 이름을 노리는 슬롭스쿼팅, 수상한 설치 요청 가려내기, 에이전트 자동 승인 설정의 폭발 반경을 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .pkg { border: 1px solid var(--border); background: var(--bg); border-radius: 12px; padding: 14px 16px; font-size: 14.5px; }
+  .pkg h4 { margin: 0 0 6px; font-family: var(--mono); font-size: 16px; }
+  .pkg dl { display: grid; grid-template-columns: 110px 1fr; gap: 3px 10px; margin: 0; font-size: 13.5px; }
+  .pkg dt { color: var(--text-faint); } .pkg dd { margin: 0; }
+  .perm { display: flex; flex-wrap: wrap; gap: 6px; }
+  .perm label { display: flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; cursor: pointer; background: var(--bg); }
+  .perm label:has(input:checked) { border-color: var(--guard); background: color-mix(in srgb, var(--guard) 9%, var(--bg)); }
+  .perm label.safe:has(input:checked) { border-color: var(--env); background: color-mix(in srgb, var(--env) 10%, var(--bg)); }
+</style>
+</head>
+<body data-root="../" data-chapter="security">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 10</div>
+    <h1>보안과 공급망</h1>
+    <p class="lead">바이브 코딩의 가장 비싼 사고는 대개 보안 사고다. API 키가 프런트엔드 코드에 박혀 배포되고, 데이터베이스가 누구나 읽을 수 있게 열리고, 에이전트가 존재하지도 않는 패키지를 설치하려 한다. 마지막 것은 새로운 공격의 문이 되었다. 공격자가 그 이름을 먼저 등록해 두면 되기 때문이다. 그리고 에이전트에게 명령 실행 권한을 통째로 주는 자동 승인 모드는, 편리한 만큼 사고의 반경을 넓힌다. 이 장에서는 AI 코딩이 만든 세 가지 보안 문제를 시뮬레이션으로 본다.</p>
+    <ul class="objectives">
+      <li>패키지 환각과 슬롭스쿼팅의 원리를 설명하고, 설치 관문의 어떤 방어가 실제로 효과가 있는지 구분할 수 있다.</li>
+      <li>패키지 설치 요청에서 위험 신호(신생, 낮은 다운로드, 설치 스크립트, 오타 이름, 사내 이름)를 알아볼 수 있다.</li>
+      <li>에이전트 권한 설정이 만드는 폭발 반경을 그리고, 확인 피로와 위험 사이에서 설정을 고를 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="slop">
+    <h2>지어낸 패키지, 먼저 등록한 공격자</h2>
+    <p>코드 생성 모델은 가끔 <b>존재하지 않는 패키지</b>를 자신 있게 import한다. 2024–2025년에 발표된 한 연구는 여러 코드 생성 모델이 만든 코드 샘플 수십만 개를 분석해, 추천된 패키지 다섯 개 중 하나꼴(약 20%)이 실제로 없는 이름이라고 보고했다. 상용 모델은 그 비율이 훨씬 낮았고, 공개 모델은 더 높았다. 더 중요한 발견은 같은 프롬프트에서 같은 가짜 이름이 <b>반복해서</b> 나온다는 점이다. 반복되는 이름은 예측할 수 있고, 예측할 수 있는 이름은 공격자가 미리 등록할 수 있다. 이것을 <span class="term">슬롭스쿼팅</span><span class="en">slopsquatting</span>이라고 부른다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 200" role="img" aria-label="슬롭스쿼팅의 흐름: 모델이 가짜 이름을 지어내고, 공격자가 그 이름을 등록하고, 에이전트가 설치한다">
+        <defs><marker id="m10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--axis)"/></marker></defs>
+        <g transform="translate(20,40)"><rect width="150" height="90" rx="12" class="soft-ctx"/><text x="75" y="30" text-anchor="middle" class="t-b">에이전트</text><text x="75" y="54" text-anchor="middle" class="t-mono">import fastcsv_x</text><text x="75" y="72" text-anchor="middle" class="t-mono" style="fill:var(--guard)">← 없는 이름</text></g>
+        <path d="M172 85 H 300" stroke="var(--axis)" stroke-width="1.6" marker-end="url(#m10)"/><text x="236" y="76" text-anchor="middle" class="t-mono">npm/pip install</text>
+        <g transform="translate(306,30)"><rect width="170" height="110" rx="12" class="f-surface"/><text x="85" y="26" text-anchor="middle" class="t-b">공개 레지스트리</text>
+          <rect x="16" y="40" width="138" height="24" rx="6" class="soft-guard"/><text x="85" y="57" text-anchor="middle" class="t-mono">fastcsv_x (3일 전 등록)</text>
+          <text x="85" y="92" text-anchor="middle" class="t-dim">공격자가 미리 등록</text></g>
+        <g transform="translate(560,20)"><circle cx="40" cy="30" r="22" class="soft-guard"/><text x="40" y="35" text-anchor="middle" class="t-b" style="fill:var(--guard)">!</text><text x="40" y="70" text-anchor="middle" class="t-mono">공격자</text></g>
+        <path d="M560 50 C 520 50, 500 60, 478 70" stroke="var(--guard)" stroke-width="1.6" fill="none" stroke-dasharray="4 4" marker-end="url(#m10)"/>
+        <path d="M478 110 H 600" stroke="var(--guard)" stroke-width="2" marker-end="url(#m10)"/>
+        <g transform="translate(606,90)"><rect width="160" height="70" rx="12" class="soft-guard"/><text x="80" y="28" text-anchor="middle" class="t-b">postinstall 실행</text><text x="80" y="50" text-anchor="middle" class="t-mono">.env · SSH 키 유출</text></g>
+        <text x="20" y="186" class="t-dim">존재 확인만으로는 막지 못한다. 공격자가 등록했으니 “존재”하기 때문이다.</text>
+      </svg>
+      <figcaption><b>그림 10-1.</b> 슬롭스쿼팅. 환각으로 생긴 이름 자체는 무해하다(설치가 실패할 뿐). 위험은 그 이름을 누군가 먼저 등록했을 때 시작된다. 설치 스크립트는 설치하는 순간 실행된다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-gate">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>설치 관문 — 1,000번의 설치 제안이 어디로 흘러가나</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:180px"><span>환각 비율 <output id="gt-h-out"></output></span><input type="range" id="gt-h" min="0" max="0.3" step="0.01" value="0.1"></label>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>가짜 이름 중 공격자가 등록한 비율 <output id="gt-a-out"></output></span><input type="range" id="gt-a" min="0" max="0.6" step="0.02" value="0.2"></label>
+        </div>
+        <div class="perm" id="gt-def">
+          <label class="safe"><input type="checkbox" data-d="exist"> 레지스트리 존재 확인</label>
+          <label class="safe"><input type="checkbox" data-d="age"> 나이·다운로드 수 검사</label>
+          <label class="safe"><input type="checkbox" data-d="allow"> 잠금 파일 + 허용 목록 (새 의존성은 사람 승인)</label>
+          <label class="safe"><input type="checkbox" data-d="sandbox"> 비밀 없는 샌드박스에서 설치</label>
+        </div>
+        <div class="sim-view"><canvas id="gt-cv"></canvas></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">악성 패키지 설치</span><span class="v" id="gt-o1">—</span></div>
+        <div class="stat"><span class="k">실제 피해 (비밀 유출)</span><span class="v" id="gt-o2">—</span></div>
+        <div class="stat"><span class="k">사람 승인 요청</span><span class="v" id="gt-o3">—</span></div>
+        <div class="stat"><span class="k">잘못 막은 정상 패키지</span><span class="v" id="gt-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 방어 없이 기본값이면 1,000번 중 스무 번 악성 패키지가 설치된다. ② “존재 확인”만 켜 보자. 악성 설치는 <b>하나도 줄지 않는다</b>. 등록되지 않은 가짜 이름은 어차피 설치에 실패하고, 위험한 것은 등록된 가짜 이름이다. ③ “나이·다운로드 검사”가 실제로 효과가 있다. 갓 등록되어 아무도 쓰지 않는 패키지가 바로 공격자의 패키지다. ④ 허용 목록만 켜면 악성 설치의 70%를 사람이 거르지만, 1,000번 중 235번 승인 요청이 온다. 존재 확인과 함께 켜면 없는 이름은 기계가 먼저 걸러 요청이 줄어든다. ⑤ 샌드박스는 설치를 막지 않지만, 설치되어도 훔쳐 갈 비밀이 없게 만든다. <b>여러 겹을 섞어야 한다.</b></div>
+    </div>
+  </section>
+
+  <section id="vet">
+    <h2>설치 요청 심사</h2>
+    <p>에이전트가 “이 패키지를 설치할게요”라고 할 때 사람이 볼 것은 몇 가지뿐이다. <b>언제 생겼나</b>, <b>얼마나 쓰이나</b>, <b>소스 저장소가 있나</b>, <b>설치 스크립트가 있나</b>, 그리고 <b>이름이 유명한 패키지와 한 글자 다르거나, 우리 회사 내부 패키지 이름과 같지 않은가</b>. 마지막 경우를 의존성 혼동(dependency confusion)이라 부른다. 아래 카드의 패키지 중 일부는 이 게임을 위해 지어낸 <b>가상의 이름</b>이다.</p>
+    <div class="sim" id="sim-vet">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>설치 요청 심사 — 승인할까, 거절할까</h3></div>
+      <div class="sim-body">
+        <div id="vt-card"></div>
+        <div class="bins">
+          <button data-v="ok" style="--k:var(--env)">승인</button>
+          <button data-v="no" style="--k:var(--guard)">거절</button>
+        </div>
+        <div class="verdict" id="vt-fb">에이전트의 설치 요청을 심사해 보세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="vt-o1">0 / 7</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="vt-o2">0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="blast">
+    <h2>자동 승인의 폭발 반경</h2>
+    <p>코딩 에이전트는 파일을 고치고 셸 명령을 실행한다. 매 행동마다 사람에게 확인을 받으면 안전하지만 피곤하다. 확인 요청이 한 시간에 수십 번 오면 사람은 읽지 않고 “허용”을 누르게 된다(확인 피로). 그래서 많은 사람이 <span class="term">자동 승인</span><span class="en">auto-approve</span> 모드를 켠다. 문제는 에이전트가 무엇을 <b>할 수 있느냐</b>다. 에이전트가 읽은 웹 페이지나 이슈 본문에 숨은 지시(프롬프트 주입)가 있으면, 그 지시는 에이전트의 권한으로 실행된다. 폭발 반경은 에이전트에게 준 권한이 정한다.</p>
+    <div class="callout"><b class="h">권한 설계의 원칙</b>① 에이전트는 운영 자격 증명을 갖지 않는다. 운영 배포는 파이프라인이 한다. ② 셸 명령은 컨테이너나 샌드박스 안에서. ③ 네트워크는 필요한 도메인(패키지 레지스트리 등)만. ④ 자동 승인은 허용 목록(테스트·린트·빌드 명령)부터 시작한다.</div>
+    <div class="sim" id="sim-blast">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>폭발 반경 — 권한과 승인 방식의 조합</h3></div>
+      <div class="sim-body">
+        <div class="perm" id="bl-perm">
+          <label><input type="checkbox" data-p="write" checked> 저장소 파일 쓰기</label>
+          <label><input type="checkbox" data-p="shell" checked> 셸 명령</label>
+          <label><input type="checkbox" data-p="net" checked> 임의 네트워크</label>
+          <label><input type="checkbox" data-p="secrets"> 로컬 .env·SSH 키 접근</label>
+          <label><input type="checkbox" data-p="prod"> 운영 DB 자격 증명</label>
+          <label><input type="checkbox" data-p="cloud"> 클라우드 관리자 키</label>
+          <label class="safe"><input type="checkbox" data-p="sandbox"> 컨테이너 샌드박스</label>
+        </div>
+        <div class="seg" id="bl-mode"><button data-v="ask">매번 확인</button><button data-v="allow" class="on">허용 목록만 자동</button><button data-v="yolo">전부 자동</button></div>
+        <div class="sim-view"><canvas id="bl-cv"></canvas></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">닿는 가장 바깥 고리</span><span class="v" id="bl-o1">—</span></div>
+        <div class="stat"><span class="k">세션 100개당 기대 피해</span><span class="v" id="bl-o2">—</span></div>
+        <div class="stat"><span class="k">시간당 확인 요청</span><span class="v" id="bl-o3">—</span></div>
+        <div class="stat"><span class="k">확인이 실제로 막는 비율</span><span class="v" id="bl-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “전부 자동”에 운영 DB 자격 증명을 켜 보자. 고리가 운영 데이터까지 닿고 기대 피해가 치솟는다. ② “매번 확인”으로 바꾸면 피해가 줄 것 같지만, 시간당 확인 요청이 많아 확인 피로로 막는 비율이 떨어진다. 권한이 많을수록 확인이 무력해진다. ③ 운영·클라우드 키를 끄고, 샌드박스를 켜고, “허용 목록만 자동”으로 두자. 요청도 적고 피해도 작다. <b>안전은 확인 버튼이 아니라 권한의 크기에서 나온다.</b></div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>모델은 없는 패키지를 지어내고, 같은 가짜 이름을 반복한다. 공격자는 그 이름을 먼저 등록한다(슬롭스쿼팅).</li>
+      <li>존재 확인은 슬롭스쿼팅을 막지 못한다. 나이·다운로드 검사, 허용 목록, 비밀 없는 샌드박스를 겹쳐 쓴다.</li>
+      <li>설치 요청에서는 신생 여부, 사용량, 소스 저장소, 설치 스크립트, 오타 이름, 사내 이름 충돌을 본다.</li>
+      <li>자동 승인의 위험은 권한의 크기가 정한다. 확인 요청이 많으면 사람은 읽지 않는다. 권한을 줄이고 샌드박스에 가두는 것이 먼저다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 에이전트가 설치하려는 패키지가 레지스트리에 존재하는지만 확인하면 슬롭스쿼팅을 막을 수 있을까?</p><div class="opts">
+        <button class="opt">그렇다, 가짜 이름은 존재하지 않으니까</button>
+        <button class="opt" data-correct>아니다, 공격자가 그 가짜 이름을 이미 등록했다면 “존재”한다</button>
+        <button class="opt">그렇다, 레지스트리가 악성 패키지를 모두 지운다</button>
+      </div><div class="quiz-exp">슬롭스쿼팅의 정의가 가짜 이름을 실제로 등록하는 것이다. 존재 확인은 오히려 통과시킨다.</div></div>
+      <div class="quiz-q"><p>2. 다음 중 설치 요청에서 가장 강한 위험 신호는?</p><div class="opts">
+        <button class="opt">10년 된 패키지, 주간 다운로드 수백만</button>
+        <button class="opt" data-correct>3일 전 등록, 다운로드 12회, 소스 저장소 없음, postinstall 스크립트 있음</button>
+        <button class="opt">MIT 라이선스</button>
+      </div><div class="quiz-exp">신생·무사용·출처 불명·설치 시 코드 실행. 공격용 패키지의 전형적인 모습이다.</div></div>
+      <div class="quiz-q"><p>3. 회사 내부 패키지 이름이 <code>@acme/auth</code>인데 에이전트가 공개 레지스트리의 같은 이름을 설치하려 한다. 이것은?</p><div class="opts">
+        <button class="opt">정상, 같은 이름이니 같은 패키지다</button>
+        <button class="opt" data-correct>의존성 혼동 공격일 수 있다. 사내 스코프는 사내 레지스트리로만 받도록 고정해야 한다</button>
+        <button class="opt">타입 정의 패키지다</button>
+      </div><div class="quiz-exp">공개 레지스트리에 사내 이름을 등록해 빌드가 그것을 받게 만드는 공격이다.</div></div>
+      <div class="quiz-q"><p>4. 에이전트 권한 설계에서 가장 먼저 할 일은?</p><div class="opts">
+        <button class="opt">모든 행동에 확인을 요구한다</button>
+        <button class="opt" data-correct>운영 자격 증명을 빼고, 샌드박스에 가두고, 네트워크를 필요한 곳으로 제한한다</button>
+        <button class="opt">자동 승인을 켜고 로그만 남긴다</button>
+      </div><div class="quiz-exp">확인은 피로로 무력해진다. 할 수 있는 일 자체를 줄이는 것이 폭발 반경을 줄인다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 설치 관문 ---------------- */
+(function () {
+  const N = 1000;
+  const cv = VB.canvas("gt-cv", { aspect: 0.42, draw });
+  const def = () => Object.fromEntries(VB.$$("#gt-def input").map((x) => [x.dataset.d, x.checked]));
+  function flow() {
+    const h = VB.val("gt-h"), a = VB.val("gt-a"), d = def();
+    const real = N * (1 - h), fake = N * h, squat = fake * a, unreg = fake - squat;
+    // 정상 패키지 중 새로 추가되는 것(허용 목록 대상)과 신생 패키지(나이 검사 오탐)
+    const realNew = real * 0.15, realYoung = real * 0.03;
+    let mal = squat, blockedAge = 0, fp = 0, approvals = 0, blockedAllow = 0;
+    if (d.age) { blockedAge = mal * 0.9; mal -= blockedAge; fp += realYoung; }
+    if (d.allow) { approvals = realNew + mal + (d.exist ? 0 : unreg); blockedAllow = mal * 0.7; mal -= blockedAllow; }
+    const breach = mal * (d.sandbox ? 0.15 : 1);
+    return { real, fake, squat, unreg, mal, breach, fp, approvals, blockedAge, blockedAllow, d };
+  }
+  function draw(c, w, h) {
+    const F = flow();
+    const cols = [16, w * 0.28, w * 0.54, w * 0.8];
+    const H = h - 40, y0 = 22;
+    const bar = (x, y, val, col, label, wide = 22) => {
+      const hh = Math.max(val > 0 ? 2 : 0, (val / N) * H);
+      c.fillStyle = VB.alpha(VB.col(col), 0.75); VB.rrect(c, x, y, wide, hh, 3); c.fill();
+      if (label) VB.text(c, label, x + wide + 6, y + Math.max(hh, 10) / 2, { size: 11, color: VB.col("text-dim") });
+      return hh;
+    };
+    VB.text(c, "설치 제안 1,000", cols[0], 10, { size: 11, weight: 700, color: VB.col("text-dim") });
+    bar(cols[0], y0, N, "ctx", "");
+    // 1단: 진짜 / 가짜
+    let y = y0;
+    const hr = bar(cols[1], y, F.real, "env", `실제 패키지 ${Math.round(F.real)}`); y += hr + 6;
+    const hu = bar(cols[1], y, F.unreg, "user", `없는 이름 ${Math.round(F.unreg)} → 설치 실패`); y += hu + 6;
+    const hs = bar(cols[1], y, F.squat, "guard", `공격자가 등록 ${Math.round(F.squat)}`);
+    const ysq = y;
+    // 2단: 관문
+    let y2 = ysq;
+    if (F.blockedAge > 0) { const hb = bar(cols[2], y2, F.blockedAge, "env", `나이 검사 차단 ${Math.round(F.blockedAge)}`); y2 += hb + 4; }
+    if (F.blockedAllow > 0) { const hb = bar(cols[2], y2, F.blockedAllow, "accent-2", `사람이 거절 ${Math.round(F.blockedAllow)}`); y2 += hb + 4; }
+    const hm = bar(cols[2], y2, F.mal, "guard", `설치됨 ${Math.round(F.mal)}`);
+    // 3단: 피해
+    if (F.d.sandbox && F.mal > 0) { bar(cols[3], y2, F.mal - F.breach, "env", `샌드박스가 가둠 ${Math.round(F.mal - F.breach)}`, 16); }
+    bar(cols[3], y2 + (F.d.sandbox ? Math.max(2, ((F.mal - F.breach) / N) * H) + 4 : 0), F.breach, "guard", `비밀 유출 ${F.breach.toFixed(1)}`, 16);
+    // 흐름선
+    c.strokeStyle = VB.alpha(VB.col("guard"), 0.35); c.lineWidth = 1.2; c.setLineDash([3, 3]);
+    c.beginPath(); c.moveTo(cols[1] + 22, ysq + hs / 2); c.lineTo(cols[2], y2 + hm / 2); c.stroke(); c.setLineDash([]);
+    VB.set("gt-o1", F.mal.toFixed(1) + "건", F.mal > 5 ? "bad" : F.mal > 1 ? "warn" : "good");
+    VB.set("gt-o2", F.breach.toFixed(1) + "건", F.breach > 3 ? "bad" : F.breach > 0.5 ? "warn" : "good");
+    VB.set("gt-o3", Math.round(F.approvals) + "번", F.approvals > 100 ? "warn" : "");
+    VB.set("gt-o4", Math.round(F.fp) + "개", F.fp > 20 ? "warn" : "");
+  }
+  VB.el("gt-def").addEventListener("change", () => cv.redraw());
+  VB.wire(["gt-h", "gt-a"], () => cv.redraw(), { "gt-h": (v) => VB.pct(v), "gt-a": (v) => VB.pct(v) });
+})();
+
+/* ---------------- 2. 설치 요청 심사 ---------------- */
+(function () {
+  const CARDS = [
+    { name: "date-fns", fic: false, why: "날짜 계산", meta: [["등록", "10년 가까이 전"], ["사용량", "매우 널리 쓰임"], ["저장소", "공개 GitHub, 활발한 유지보수"], ["설치 스크립트", "없음"]], a: "ok", exp: "오래되고 널리 쓰이는 유명 패키지다. 그래도 프로젝트에 이미 날짜 유틸이 있다면 규칙 파일에 따라 거절할 수 있다." },
+    { name: "react-streak-calendar-utils", fic: true, why: "연속 기록 달력", meta: [["등록", "3일 전"], ["사용량", "다운로드 12회"], ["저장소", "링크 없음"], ["설치 스크립트", "postinstall: node setup.js"]], a: "no", exp: "신생 · 무사용 · 출처 불명 · 설치 시 코드 실행. 에이전트가 지어낸 이름을 누군가 등록한 전형적인 모습이다." },
+    { name: "expres", fic: true, why: "웹 서버", meta: [["등록", "2주 전"], ["사용량", "다운로드 300회"], ["저장소", "express 저장소 링크를 그대로 복사"], ["설치 스크립트", "있음"]], a: "no", exp: "유명 패키지(express)와 한 글자 다른 타이포스쿼팅이다. 저장소 링크까지 흉내 낸다." },
+    { name: "@acme/auth-client", fic: true, why: "사내 인증 SDK", meta: [["레지스트리", "공개 npm"], ["등록", "어제"], ["버전", "99.0.0"], ["비고", "회사 내부 패키지와 같은 이름"]], a: "no", exp: "의존성 혼동. 공개 레지스트리에 사내 이름을 높은 버전으로 올려 빌드가 그것을 받게 만든다. 사내 스코프는 사내 레지스트리로 고정한다." },
+    { name: "zod", fic: false, why: "입력 검증 스키마", meta: [["등록", "수년 전"], ["사용량", "매우 널리 쓰임"], ["저장소", "공개 GitHub"], ["설치 스크립트", "없음"]], a: "ok", exp: "널리 쓰이는 검증 라이브러리다. 출처와 사용량이 분명하다." },
+    { name: "fastcsv-parse-pro", fic: true, why: "CSV 파싱", meta: [["등록", "5주 전"], ["사용량", "다운로드 40회"], ["저장소", "있음, 커밋 1개"], ["비고", "에이전트가 같은 이름을 세 번째 제안"]], a: "no", exp: "같은 가짜 이름이 반복된다는 것이 슬롭스쿼팅을 가능하게 하는 바로 그 성질이다. 신생에 사용량이 없다." },
+    { name: "papaparse", fic: false, why: "CSV 파싱", meta: [["등록", "10년 넘게 전"], ["사용량", "널리 쓰임"], ["저장소", "공개 GitHub"], ["설치 스크립트", "없음"]], a: "ok", exp: "오래된 유명 CSV 파서다. 같은 목적이라면 앞 카드 대신 이것을 쓰라고 에이전트에게 말하면 된다." },
+  ];
+  let i = 0, score = 0, locked = false;
+  function show() {
+    if (i >= CARDS.length) { VB.el("vt-card").innerHTML = `<div class="verdict" style="--k:var(--accent)"><b>${score} / ${CARDS.length}</b> 맞혔습니다. 다시 하려면 아무 버튼이나 누르세요.</div>`; return; }
+    const c = CARDS[i];
+    VB.el("vt-card").innerHTML = `<div class="pkg"><div class="hk-msg" style="font-size:13.5px;color:var(--text-dim);margin-bottom:6px"><span class="chip k-ctx">agent</span> “${VB.esc(c.why)}에 이 패키지를 설치할게요.”</div><h4>${VB.esc(c.name)} ${c.fic ? '<span class="chip k-user" style="font-size:11px">가상의 이름</span>' : ""}</h4><dl>${c.meta.map(([k, v]) => `<dt>${k}</dt><dd>${VB.esc(v)}</dd>`).join("")}</dl></div>`;
+  }
+  VB.$$("#sim-vet .bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= CARDS.length) { i = 0; score = 0; VB.set("vt-o1", "0 / 7"); VB.set("vt-o2", "0"); VB.el("vt-fb").textContent = "다시 시작합니다."; show(); return; }
+    if (locked) return;
+    const c = CARDS[i], ok = b.dataset.v === c.a;
+    if (ok) score++;
+    const fb = VB.el("vt-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + (c.a === "ok" ? "승인" : "거절")}</b> — ${VB.esc(c.exp)}`;
+    locked = true; i++;
+    VB.set("vt-o1", `${i} / ${CARDS.length}`); VB.set("vt-o2", String(score), score === i ? "good" : "");
+    setTimeout(() => { locked = false; show(); }, 1600);
+  }));
+  show();
+})();
+
+/* ---------------- 3. 폭발 반경 ---------------- */
+(function () {
+  const RINGS = [
+    { n: "저장소", dmg: 1, k: "ctx" }, { n: "내 컴퓨터", dmg: 4, k: "tool" }, { n: "비밀 유출", dmg: 8, k: "accent" },
+    { n: "운영 데이터", dmg: 15, k: "guard" }, { n: "클라우드 전체", dmg: 25, k: "guard" },
+  ];
+  const cv = VB.canvas("bl-cv", { aspect: 0.48, draw });
+  const mode = VB.seg("bl-mode", () => cv.redraw());
+  const perms = () => Object.fromEntries(VB.$$("#bl-perm input").map((x) => [x.dataset.p, x.checked]));
+  function model() {
+    const p = perms(), m = mode();
+    const sb = p.sandbox;
+    const reach = [
+      p.write,
+      p.shell && !sb,
+      (p.net && (p.secrets || (p.shell && !sb))) || (p.secrets && p.net),
+      p.prod && (p.shell || p.net),
+      p.cloud && (p.shell || p.net),
+    ];
+    const nCaps = ["write", "shell", "net", "secrets", "prod", "cloud"].filter((k) => p[k]).length;
+    const prompts = m === "ask" ? 12 * nCaps : m === "allow" ? 1.5 * nCaps : 0;
+    const catchP = m === "ask" ? VB.clamp(0.92 - prompts * 0.009, 0.2, 0.92) : m === "allow" ? 0.55 : 0;
+    // 세션당 사고 유발 확률: 에이전트 실수 + 주입(네트워크로 신뢰할 수 없는 내용을 읽을 때)
+    const trig = 0.02 + (p.net ? 0.015 : 0.004);
+    let dmg = 0;
+    reach.forEach((r, i) => { if (r) dmg += 100 * trig * (1 - catchP) * RINGS[i].dmg * (i === 0 ? 0.3 : i === 1 ? 0.25 : 0.12); });
+    const outer = reach.lastIndexOf(true);
+    return { reach, prompts, catchP, dmg, outer };
+  }
+  function draw(c, w, h) {
+    const M = model();
+    const cx = h * 0.62, cy = h / 2, R = h * 0.46;
+    for (let i = RINGS.length - 1; i >= 0; i--) {
+      const r = R * ((i + 1) / RINGS.length);
+      const on = M.reach[i];
+      c.beginPath(); c.arc(cx, cy, r, 0, 7);
+      c.fillStyle = on ? VB.alpha(VB.col(RINGS[i].k), 0.22 + i * 0.04) : VB.col(i % 2 ? "surface" : "bg-elev"); c.fill();
+      c.strokeStyle = on ? VB.col(RINGS[i].k) : VB.col("border"); c.lineWidth = on ? 2 : 1; c.stroke();
+      VB.text(c, RINGS[i].n, cx, cy - r + 11, { size: 11, weight: on ? 700 : 400, align: "center", color: on ? VB.col("text") : VB.col("text-faint") });
+    }
+    VB.node(c, cx, cy + 8, 11, "code", null, { fill: 0.4 });
+    VB.text(c, "에이전트", cx, cy + 28, { size: 10.5, align: "center", color: VB.col("text-dim") });
+    // 오른쪽: 위험 대 확인 피로
+    const box = { l: h * 1.3 + 30, t: 18, r: w - 14, b: h - 36 };
+    if (box.r - box.l > 120) {
+      const A = VB.axes(c, { box, x: [0, 80], y: [0, 40], xt: [0, 20, 40, 60, 80], yt: [0, 20, 40], xl: "시간당 확인 요청", yl: "기대 피해", ylOff: 34 });
+      c.fillStyle = VB.alpha(VB.col("env"), 0.12); c.fillRect(A.X(0), A.Y(8), A.X(15) - A.X(0), A.Y(0) - A.Y(8));
+      VB.text(c, "목표 구역", A.X(1), A.Y(8) + 10, { size: 10.5, color: VB.col("env") });
+      c.fillStyle = VB.col("accent"); c.beginPath(); c.arc(A.X(Math.min(80, M.prompts)), A.Y(Math.min(40, M.dmg)), 7, 0, 7); c.fill();
+      VB.text(c, "지금", A.X(Math.min(80, M.prompts)) + 10, A.Y(Math.min(40, M.dmg)), { size: 11, weight: 700, color: VB.col("accent") });
+    }
+    VB.set("bl-o1", M.outer < 0 ? "없음" : RINGS[M.outer].n, M.outer >= 3 ? "bad" : M.outer >= 2 ? "warn" : "good");
+    VB.set("bl-o2", M.dmg.toFixed(1), M.dmg > 10 ? "bad" : M.dmg > 4 ? "warn" : "good");
+    VB.set("bl-o3", Math.round(M.prompts) + "번", M.prompts > 40 ? "bad" : M.prompts > 15 ? "warn" : "");
+    VB.set("bl-o4", VB.pct(M.catchP));
+  }
+  VB.el("bl-perm").addEventListener("change", () => cv.redraw());
+  cv.redraw();
+})();
+</script>
+</body>
+</html>

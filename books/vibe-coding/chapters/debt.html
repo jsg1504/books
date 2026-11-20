@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기술 부채와 이해 부채 · VibeBook</title>
+<meta name="description" content="빠르게 쌓은 AI 코드의 이자: 기술 부채가 속도를 갉아먹는 곡선, 복붙으로 불어나는 중복과 고칠 때 놓치는 사본, 아무도 이해하지 못하는 코드의 이해 부채를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="debt">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 09</div>
+    <h1>기술 부채와 이해 부채</h1>
+    <p class="lead">코드를 쓰는 비용이 0에 가까워지면 무슨 일이 생길까? 코드가 많아진다. 비슷한 함수가 다섯 군데 생기고, 아무도 지우지 않은 실험 코드가 남고, 누구도 끝까지 읽지 않은 모듈이 운영 환경에서 돈다. <b>쓰는 비용은 내려갔지만 읽고 고치는 비용은 그대로</b>다. 이 장에서는 바이브로 쌓은 코드가 몇 주 뒤 어떤 이자를 청구하는지 세 가지 모습으로 본다. 속도를 갉아먹는 기술 부채, 복붙으로 불어나는 중복, 그리고 AI 시대에 새로 생긴 이름인 이해 부채.</p>
+    <ul class="objectives">
+      <li>기술 부채가 개발 속도를 떨어뜨리는 원리를 설명하고, 리팩터링 예산의 효과를 비교할 수 있다.</li>
+      <li>중복 코드가 버그 수정을 어떻게 불완전하게 만드는지 설명할 수 있다.</li>
+      <li>이해 부채를 정의하고, 리뷰·페어링·문서로 그것을 갚는 방법을 고를 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="interest">
+    <h2>부채의 이자</h2>
+    <p>기술 부채는 은유다. 지금 빨리 가려고 구조를 대충 만들면, 그 뒤의 모든 변경이 조금씩 비싸진다. 그 추가 비용이 이자다. 바이브 코딩은 원금을 아주 빨리 빌린다. 아무도 구조를 설계하지 않고, 아무도 diff를 읽지 않으니, 에이전트가 고른 첫 번째 구조가 그대로 굳는다. 처음 몇 주는 이자가 작아 보인다. 코드가 커질수록 이자는 복리처럼 붙는다.</p>
+    <div class="formula"><div class="eq">이번 주 기능 수 = <var>v</var> · (1 − <var>r</var>) / (1 + <var>k</var> · <var>D</var>) &nbsp;·&nbsp; <var>D</var><sub>다음</sub> = <var>D</var> + <var>d</var> · 기능 수 − <var>g</var> · <var>r</var> · <var>v</var></div>
+      <div class="where"><var>v</var>: 부채가 없을 때의 속도, <var>D</var>: 쌓인 부채, <var>k</var>: 이자율(부채 1단위가 속도를 깎는 정도), <var>d</var>: 기능 하나가 남기는 부채, <var>r</var>: 리팩터링에 쓰는 시간 비율, <var>g</var>: 리팩터링 한 단위가 갚는 부채.</div></div>
+    <div class="sim" id="sim-debt">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>부채의 이자 — 26주 동안 쌓이는 기능</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="db-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>이자율 k <output id="db-k-out"></output></span><input type="range" id="db-k" min="0" max="0.2" step="0.005" value="0.06"></label>
+          <label class="ctrl"><span>리팩터링 예산 r (가드레일·엔지) <output id="db-r-out"></output></span><input type="range" id="db-r" min="0" max="0.4" step="0.02" value="0.15"></label>
+          <label class="ctrl"><span>바이브의 초기 속도 배수 <output id="db-v-out"></output></span><input type="range" id="db-v" min="1" max="3" step="0.1" value="1.8"></label>
+          <label class="ctrl"><span>기간 (주) <output id="db-w-out"></output></span><input type="range" id="db-w" min="4" max="52" step="1" value="26"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>바이브 (부채 d=1, r=0)</span><span><i style="background:var(--tool)"></i>가드레일 (d=0.6, r의 절반)</span><span><i style="background:var(--accent-2)"></i>엔지니어링 (d=0.15)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">누적 기능 · 바이브</span><span class="v" id="db-o1">—</span></div>
+        <div class="stat"><span class="k">누적 기능 · 가드레일</span><span class="v" id="db-o2">—</span></div>
+        <div class="stat"><span class="k">누적 기능 · 엔지니어링</span><span class="v" id="db-o3">—</span></div>
+        <div class="stat"><span class="k">엔지니어링이 바이브를 추월</span><span class="v" id="db-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기간을 4주로 줄이면 바이브(20개)가 이긴다. 해커톤과 시제품의 세계다. ② 26주에서는 바이브의 주간 속도(얇은 선)가 바닥으로 내려가 65개에 머물고, 엔지니어링(88개)과 가드레일(84개)이 앞선다. 52주로 늘리면 엔지니어링 177개, 가드레일 145개, 바이브 97개로 벌어진다. ③ 리팩터링 예산을 0으로 내리면 가드레일·엔지니어링도 부채에 눌린다(26주에 67개, 78개). 0.4로 올리면 엔지니어링은 오히려 62개로 준다. <b>리팩터링 예산에도 최적점이 있다.</b> ④ 이자율 k를 0으로 두면(부채가 속도를 깎지 않는 세상) 바이브가 끝까지 이긴다. 바이브 코딩을 옹호하는 주장은 결국 “이 코드에는 이자가 붙지 않는다”는 주장이다. 버릴 코드라면 맞다.</div>
+    </div>
+  </section>
+
+  <section id="clone">
+    <h2>복붙이 늘어나는 저장소</h2>
+    <p>에이전트는 저장소에 이미 있는 함수를 찾아 재사용하기보다, 비슷한 코드를 <b>새로 쓰는</b> 쪽을 자주 택한다. 새로 쓰는 것이 더 쉽고, 찾지 못하면 있는지도 모르기 때문이다. GitClear는 2025년 분석에서 2024년에 저장소 안의 중복 코드 블록이 크게 늘고, 코드를 옮겨 재사용하는 종류의 변경(리팩터링의 흔적)은 줄었다고 보고했다. 중복의 진짜 비용은 버그를 고칠 때 드러난다. 같은 로직의 사본이 다섯 개면, 버그도 다섯 개다. 하나를 고치고 나머지를 놓치면 버그는 “고쳤는데 또 나는” 버그가 된다.</p>
+    <div class="sim" id="sim-clone">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>사본의 증식 — 기능을 쌓고, 버그를 고쳐 보자</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cl-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>새 기능이 기존 로직을 복붙할 확률 <output id="cl-p-out"></output></span><input type="range" id="cl-p" min="0" max="0.9" step="0.05" value="0.55"></label>
+          <label class="ctrl"><span>버그 수정 때 사본을 찾아낼 확률 <output id="cl-f-out"></output></span><input type="range" id="cl-f" min="0.1" max="1" step="0.05" value="0.5"></label>
+          <div class="btns"><button class="btn primary" id="cl-add">▶ 기능 40개 쌓기</button><button class="btn" id="cl-bug">🐞 버그 수정 5건</button><button class="btn" id="cl-reset">처음으로</button></div>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>원본 로직</span><span><i style="background:var(--tool)"></i>사본</span><span><i style="background:var(--guard)"></i>놓친 사본 (버그 남음)</span><span><i style="background:var(--env)"></i>고친 사본</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">코드 블록</span><span class="v" id="cl-o1">0</span></div>
+        <div class="stat"><span class="k">중복 비율</span><span class="v" id="cl-o2">—</span></div>
+        <div class="stat"><span class="k">가장 큰 사본 가족</span><span class="v" id="cl-o3">—</span></div>
+        <div class="stat"><span class="k">고쳤는데 남은 버그</span><span class="v" id="cl-o4">0</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기능 40개를 쌓고 버그 수정 5건을 눌러 보자. 사본이 많은 가족에서 빨간 칸(놓친 사본)이 남는다. ② 복붙 확률을 0.1로 내리고 처음부터 다시 하면 같은 수정이 거의 완벽하게 끝난다. ③ 사본 찾는 확률을 1로 올려도(전체 검색을 시켜도) 사본은 그대로 남는다. 고칠 때마다 모든 사본을 고쳐야 하고, 다음 변경 때도 그렇다. <b>중복을 줄이는 길은 찾기가 아니라 합치기다.</b> 규칙 파일에 “새 유틸을 만들기 전에 기존 함수를 검색하라”를 적고, 리뷰에서 “이거 이미 있지 않나요?”를 묻는다.</div>
+    </div>
+  </section>
+
+  <section id="comprehension">
+    <h2>이해 부채</h2>
+    <p>기술 부채는 코드의 <b>구조</b>에 쌓인다. 이해 부채는 사람의 <b>머릿속</b>에 쌓인다. 코드는 잘 짜여 있고 테스트도 통과하는데, 팀의 누구도 그 코드가 왜 그렇게 동작하는지 설명하지 못하는 상태다. 사람이 손으로 짠 코드는 적어도 짠 사람 한 명은 이해한다. 바이브로 만든 코드는 0명일 수 있다. 평소에는 문제가 없다. 새벽 세 시에 장애가 나면 문제가 된다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 200" role="img" aria-label="사람이 짠 코드는 작성자 한 명이 이해하고, 바이브 코드는 이해하는 사람이 없을 수 있다">
+        <g transform="translate(30,30)">
+          <text x="0" y="0" class="t-b">손으로 짠 코드</text>
+          <rect x="0" y="16" width="150" height="60" rx="10" class="soft-ctx"/><text x="75" y="52" text-anchor="middle" class="t-mono">billing.ts</text>
+          <circle cx="210" cy="46" r="18" class="soft-user"/><text x="210" y="51" text-anchor="middle" class="t-mono">작성자</text>
+          <path d="M152 46 H190" stroke="var(--env)" stroke-width="3"/><text x="260" y="40" class="t-dim">이해: 최소 1명</text><text x="260" y="58" class="t-dim">리뷰어까지 2명</text>
+        </g>
+        <g transform="translate(30,120)">
+          <text x="0" y="0" class="t-b">바이브로 만든 코드</text>
+          <rect x="0" y="16" width="150" height="60" rx="10" class="soft-ctx"/><text x="75" y="52" text-anchor="middle" class="t-mono">billing.ts</text>
+          <circle cx="210" cy="46" r="18" class="soft-user" opacity=".4"/><text x="210" y="51" text-anchor="middle" class="t-mono" opacity=".6">요청자</text>
+          <path d="M152 46 H190" stroke="var(--guard)" stroke-width="3" stroke-dasharray="4 4"/><text x="260" y="40" class="t-dim">이해: 0명일 수 있다</text><text x="260" y="58" class="t-dim">“돌아가니까 머지했어요”</text>
+        </g>
+        <g transform="translate(470,40)">
+          <rect width="290" height="130" rx="12" class="f-surface"/>
+          <text x="16" y="28" class="t-b">이해 부채를 갚는 방법</text>
+          <text x="16" y="56" class="t-dim">① 머지 전에 설명할 수 있을 만큼 읽기</text>
+          <text x="16" y="80" class="t-dim">② 에이전트에게 설계 메모를 남기게 하기</text>
+          <text x="16" y="104" class="t-dim">③ 두 사람이 리뷰해 지식을 퍼뜨리기</text>
+        </g>
+      </svg>
+      <figcaption><b>그림 9-1.</b> 이해 부채. 코드를 이해하는 사람의 수가 줄어드는 것이 부채다. 장애가 났을 때 그 코드를 아는 사람이 없으면 복구 시간이 몇 배로 늘어난다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-know">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>지식 지도 — 누가 어떤 모듈을 이해하나</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="kn-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>머지 전 리뷰로 이해하는 비율 <output id="kn-u-out"></output></span><input type="range" id="kn-u" min="0" max="1" step="0.05" value="0.35"></label>
+          <label class="ctrl"><span>경과 기간 (주) <output id="kn-w-out"></output></span><input type="range" id="kn-w" min="0" max="52" step="1" value="12"></label>
+          <label class="ctrl"><span>기억 반감기 (주) <output id="kn-h-out"></output></span><input type="range" id="kn-h" min="2" max="52" step="1" value="10"></label>
+          <label class="check"><input type="checkbox" id="kn-pair"> 두 사람이 리뷰 (지식 공유)</label>
+          <label class="check"><input type="checkbox" id="kn-doc"> 에이전트가 설계 메모 남기기</label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">아무도 모르는 모듈</span><span class="v" id="kn-o1">—</span></div>
+        <div class="stat"><span class="k">한 명만 아는 모듈</span><span class="v" id="kn-o2">—</span></div>
+        <div class="stat"><span class="k">장애 평균 복구 시간</span><span class="v" id="kn-o3">—</span></div>
+        <div class="stat"><span class="k">두 명 이상 아는 모듈</span><span class="v" id="kn-o4">—</span></div>
+      </div>
+      <div class="sim-note">진한 칸일수록 그 사람이 그 모듈을 잘 안다. 해볼 것: ① 기본값(리뷰로 이해하는 비율 35%, 12주 경과)에서 30개 모듈 중 19개를 아무도 모른다. 장애가 나면 평균 복구 시간이 3.5배다. ② 리뷰 이해 비율을 90%로 올리면 아무도 모르는 모듈이 6개로 준다. 그런데 기간을 52주로 늘리면 다시 26개가 된다. 이해는 한 번 하고 끝나는 것이 아니다. ③ 35%·12주로 돌아와 “두 사람 리뷰”를 켜면 두 명 이상 아는 모듈이 3개에서 7개로 는다. “설계 메모”까지 켜면 아무도 모르는 모듈에서 장애가 나도 복구 시간이 1.8배로 줄어든다. 메모는 기억이 옅어진 뒤에도 남는다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>기술 부채는 이후 모든 변경의 비용을 올린다. 바이브는 원금을 빨리 빌리고, 코드가 오래 살수록 이자가 복리로 붙는다.</li>
+      <li>리팩터링 예산은 부채를 갚는 투자다. 0이면 결국 부채에 눌리고, 너무 크면 초반 속도를 잃는다.</li>
+      <li>에이전트는 재사용보다 새로 쓰기를 택하기 쉽다. 중복은 버그 수정을 불완전하게 만든다. 찾기보다 합치기로 줄인다.</li>
+      <li>이해 부채는 코드를 설명할 수 있는 사람이 없는 상태다. 머지 전 이해, 두 사람 리뷰, 설계 메모로 갚는다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 바이브 코딩이 엔지니어링보다 누적 기능에서 끝까지 앞서는 조건은?</p><div class="opts">
+        <button class="opt">프로젝트 기간이 길고 코드가 계속 유지될 때</button>
+        <button class="opt" data-correct>기간이 짧거나, 코드에 이자가 붙지 않을 때(곧 버릴 코드)</button>
+        <button class="opt">팀원이 많을 때</button>
+      </div><div class="quiz-exp">부채의 이자는 시간이 지나야 쌓인다. 짧게 쓰고 버리는 코드에는 이자가 붙을 틈이 없다.</div></div>
+      <div class="quiz-q"><p>2. 같은 날짜 계산 로직이 다섯 군데 복사되어 있다. 버그 하나를 고칠 때 생기는 문제는?</p><div class="opts">
+        <button class="opt">다섯 곳 모두 자동으로 고쳐진다</button>
+        <button class="opt" data-correct>일부 사본을 놓쳐 “고쳤는데 또 나는” 버그가 남기 쉽다</button>
+        <button class="opt">문제없다, 사본은 서로 독립이다</button>
+      </div><div class="quiz-exp">사본마다 같은 버그가 있다. 모두 찾지 못하면 일부가 남는다. 근본 해결은 하나로 합치는 것이다.</div></div>
+      <div class="quiz-q"><p>3. 이해 부채를 가장 잘 설명한 것은?</p><div class="opts">
+        <button class="opt">테스트가 없는 코드</button>
+        <button class="opt" data-correct>동작하지만 팀의 누구도 왜 그렇게 동작하는지 설명하지 못하는 코드</button>
+        <button class="opt">주석이 없는 코드</button>
+      </div><div class="quiz-exp">이해 부채는 사람의 지식에 쌓인다. 테스트와 주석이 있어도 아무도 이해하지 못할 수 있다.</div></div>
+      <div class="quiz-q"><p>4. 이해 부채를 줄이는 데 가장 효과가 작은 것은?</p><div class="opts">
+        <button class="opt">머지 전에 설명할 수 있을 만큼 읽기</button>
+        <button class="opt">두 사람이 리뷰하기</button>
+        <button class="opt" data-correct>더 빠른 모델로 더 많은 코드를 생성하기</button>
+      </div><div class="quiz-exp">코드를 더 많이 만들수록 이해해야 할 것도 늘어난다. 생성 속도는 이해 부채를 갚지 않는다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 부채의 이자 ---------------- */
+(function () {
+  const cv = VB.canvas("db-cv", { aspect: 0.62, draw });
+  function sim(mode) {
+    const k = VB.val("db-k"), W = VB.val("db-w"), rr = VB.val("db-r"), vb = VB.val("db-v");
+    const P = { vibe: { v: 4 * vb, d: 1, r: 0 }, guard: { v: 4 * (1 + (vb - 1) * 0.5), d: 0.6, r: rr * 0.5 }, eng: { v: 4, d: 0.15, r: rr } }[mode];
+    let D = 0, cum = 0;
+    const cumA = [0], rate = [];
+    for (let wk = 1; wk <= W; wk++) {
+      const f = (P.v * (1 - P.r)) / (1 + k * D);
+      cum += f;
+      D = Math.max(0, D + P.d * f - 3 * P.r * P.v);
+      cumA.push(cum); rate.push(f);
+    }
+    return { cumA, rate, D };
+  }
+  function draw(c, w, h) {
+    const W = VB.val("db-w");
+    const R = { vibe: sim("vibe"), guard: sim("guard"), eng: sim("eng") };
+    const ymax = Math.max(10, Math.ceil(Math.max(...Object.values(R).map((r) => r.cumA[W])) / 10) * 10);
+    const box = { l: 46, t: 14, r: w - 46, b: h - 42 };
+    const step = W <= 12 ? 2 : W <= 26 ? 4 : 8;
+    const A = VB.axes(c, { box, x: [0, W], y: [0, ymax], xt: Array.from({ length: Math.floor(W / step) + 1 }, (_, i) => i * step), yt: [0, ymax / 2, ymax].map(Math.round), xl: "주", yl: "누적 기능" });
+    const rmax = Math.max(...R.vibe.rate, ...R.eng.rate, ...R.guard.rate);
+    const Y2 = (v) => box.b - (v / rmax) * (box.b - box.t) * 0.45;
+    VB.text(c, "주간 속도 (얇은 선)", box.r + 4, Y2(rmax), { size: 9.5, color: VB.col("text-faint") });
+    const col = { vibe: "accent", guard: "tool", eng: "accent-2" };
+    Object.entries(R).forEach(([m, r]) => {
+      VB.line(c, r.rate.map((v, i) => [A.X(i + 1), Y2(v)]), VB.alpha(VB.col(col[m]), 0.55), 1.2);
+      VB.line(c, r.cumA.map((v, i) => [A.X(i), A.Y(v)]), VB.col(col[m]), 2.6);
+    });
+    let cross = null;
+    for (let i = 1; i <= W; i++) if (R.eng.cumA[i] > R.vibe.cumA[i] && R.eng.cumA[i - 1] <= R.vibe.cumA[i - 1]) cross = i;
+    if (cross) { c.save(); c.strokeStyle = VB.col("text-faint"); c.setLineDash([3, 4]); c.beginPath(); c.moveTo(A.X(cross), box.t); c.lineTo(A.X(cross), box.b); c.stroke(); c.restore(); VB.text(c, cross + "주", A.X(cross) + 4, box.t + 8, { size: 11, color: VB.col("text-dim") }); }
+    VB.set("db-o1", Math.round(R.vibe.cumA[W]) + "개"); VB.set("db-o2", Math.round(R.guard.cumA[W]) + "개"); VB.set("db-o3", Math.round(R.eng.cumA[W]) + "개");
+    const best = Object.entries(R).sort((a, b) => b[1].cumA[W] - a[1].cumA[W])[0][0];
+    ["vibe", "guard", "eng"].forEach((m, i) => VB.el("db-o" + (i + 1)).classList.toggle("good", m === best));
+    VB.set("db-o4", R.eng.cumA[W] > R.vibe.cumA[W] && cross ? cross + "주째" : "추월 없음", R.eng.cumA[W] > R.vibe.cumA[W] ? "" : "warn");
+  }
+  VB.wire(["db-k", "db-r", "db-v", "db-w"], () => cv.redraw(), { "db-k": (v) => v.toFixed(3), "db-r": (v) => VB.pct(v), "db-v": (v) => v.toFixed(1) + "×", "db-w": (v) => v + "주" });
+})();
+
+/* ---------------- 2. 사본의 증식 ---------------- */
+(function () {
+  const COLS = 12, ROWS = 8, MAX = COLS * ROWS;
+  let blocks = [], fam = 0, rnd = VB.rng(8), pending = 0, missed = 0, acc = 0, bugQueue = 0;
+  const cv = VB.canvas("cl-cv", { aspect: 0.62, draw });
+  function addOne() {
+    if (blocks.length >= MAX) return false;
+    const p = VB.val("cl-p");
+    if (blocks.length && rnd() < p) {
+      // 기존 가족 하나를 복붙 (큰 가족일수록 더 자주 복사됨: 눈에 잘 띄는 코드)
+      const pick = blocks[Math.floor(rnd() * blocks.length)];
+      blocks.push({ fam: pick.fam, copy: true, st: "ok", f: 1 });
+    } else blocks.push({ fam: fam++, copy: false, st: "ok", f: 1 });
+    return true;
+  }
+  function bugFix() {
+    const fams = {};
+    blocks.forEach((b) => (fams[b.fam] = (fams[b.fam] || 0) + 1));
+    const ids = Object.keys(fams).map(Number);
+    if (!ids.length) return;
+    // 사본이 많은 가족에서 버그가 날 확률이 높다 (사용처가 많음)
+    const tot = blocks.length; let r = rnd() * tot, target = ids[0];
+    for (const id of ids) { r -= fams[id]; if (r <= 0) { target = id; break; } }
+    const f = VB.val("cl-f");
+    const members = blocks.filter((b) => b.fam === target);
+    members.forEach((b, i) => { if (i === 0 || rnd() < f) { if (b.st !== "miss") b.st = "fixed"; } else { b.st = "miss"; } b.f = 1; });
+    missed = blocks.filter((b) => b.st === "miss").length;
+  }
+  function famColor(id) { const hues = ["ctx", "state", "accent-2", "env", "accent", "tool", "user"]; return hues[id % hues.length]; }
+  function draw(c, w, h) {
+    const cs = Math.min((w - 20) / COLS, (h - 20) / ROWS);
+    const x0 = (w - cs * COLS) / 2, y0 = (h - cs * ROWS) / 2;
+    for (let i = 0; i < MAX; i++) {
+      const x = x0 + (i % COLS) * cs, y = y0 + Math.floor(i / COLS) * cs;
+      c.fillStyle = VB.col("surface"); VB.rrect(c, x + 2, y + 2, cs - 4, cs - 4, 5); c.fill();
+      const b = blocks[i]; if (!b) continue;
+      let col = b.copy ? VB.col("tool") : VB.col("ctx");
+      if (b.st === "miss") col = VB.col("guard"); else if (b.st === "fixed") col = VB.col("env");
+      c.fillStyle = VB.alpha(col, 0.35 + b.f * 0.4); VB.rrect(c, x + 2, y + 2, cs - 4, cs - 4, 5); c.fill();
+      VB.text(c, String.fromCharCode(65 + (b.fam % 26)) + (b.fam >= 26 ? Math.floor(b.fam / 26) : ""), x + cs / 2, y + cs / 2, { size: Math.min(13, cs * 0.36), mono: true, weight: 700, align: "center", color: VB.col("text") });
+      b.f = Math.max(0, b.f - 0.05);
+    }
+    const fams = {}; blocks.forEach((b) => (fams[b.fam] = (fams[b.fam] || 0) + 1));
+    const dup = blocks.filter((b) => b.copy).length;
+    VB.set("cl-o1", blocks.length + "개");
+    VB.set("cl-o2", blocks.length ? VB.pct(dup / blocks.length) : "—", dup / Math.max(1, blocks.length) > 0.4 ? "bad" : "");
+    const big = Object.entries(fams).sort((a, b) => b[1] - a[1])[0];
+    VB.set("cl-o3", big ? `${String.fromCharCode(65 + (big[0] % 26))} · ${big[1]}개` : "—");
+    VB.set("cl-o4", missed + "개", missed ? "bad" : "good");
+  }
+  const L = VB.loop(VB.el("cl-cv"), (dt) => {
+    if (!pending && !bugQueue) return;
+    acc += dt; if (acc < (bugQueue ? 0.5 : 0.07)) return; acc = 0;
+    if (pending) { if (!addOne()) pending = 0; else pending--; }
+    else if (bugQueue) { bugFix(); bugQueue--; }
+    cv.redraw();
+  });
+  L.start();
+  const instant = () => VB.reduced();
+  VB.el("cl-add").addEventListener("click", () => { if (instant()) { for (let i = 0; i < 40; i++) addOne(); cv.redraw(); } else pending += 40; });
+  VB.el("cl-bug").addEventListener("click", () => { if (instant()) { for (let i = 0; i < 5; i++) bugFix(); cv.redraw(); } else bugQueue += 5; });
+  VB.el("cl-reset").addEventListener("click", () => { blocks = []; fam = 0; rnd = VB.rng(8); pending = 0; bugQueue = 0; missed = 0; cv.redraw(); });
+  VB.wire(["cl-p", "cl-f"], () => cv.redraw(), { "cl-p": (v) => VB.pct(v), "cl-f": (v) => VB.pct(v) });
+})();
+
+/* ---------------- 3. 지식 지도 ---------------- */
+(function () {
+  const PEOPLE = ["민지", "준호", "서연", "태윤"], M = 30;
+  const cv = VB.canvas("kn-cv", { aspect: 0.5, draw });
+  function compute() {
+    const u = VB.val("kn-u"), W = VB.val("kn-w"), hl = VB.val("kn-h"), pair = VB.el("kn-pair").checked, doc = VB.el("kn-doc").checked;
+    const rnd = VB.rng(42);
+    const K = PEOPLE.map(() => new Array(M).fill(0));
+    for (let m = 0; m < M; m++) {
+      const age = rnd() * W; // 모듈이 만들어진 뒤 지난 시간
+      const decay = Math.pow(0.5, age / hl);
+      const a = Math.floor(rnd() * PEOPLE.length), b = (a + 1 + Math.floor(rnd() * (PEOPLE.length - 1))) % PEOPLE.length;
+      const ru = rnd(), ru2 = rnd();
+      if (ru < u) K[a][m] = 0.95 * decay;
+      else K[a][m] = 0.15 * decay; // 요청만 하고 읽지 않음
+      if (pair && ru2 < u) K[b][m] = 0.8 * decay;
+      // 가끔 다른 사람이 그 모듈을 고치며 배운다
+      const c = Math.floor(rnd() * PEOPLE.length);
+      if (rnd() < 0.15) K[c][m] = Math.max(K[c][m], 0.7 * Math.pow(0.5, (rnd() * age) / hl));
+    }
+    const known = Array.from({ length: M }, (_, m) => PEOPLE.filter((_, p) => K[p][m] >= 0.5).length);
+    const nobody = known.filter((k) => k === 0).length, single = known.filter((k) => k === 1).length;
+    const mttr = known.reduce((a, k) => a + (k ? 1 : doc ? 2.5 : 5), 0) / M;
+    return { K, known, nobody, single, mttr };
+  }
+  function draw(c, w, h) {
+    const r = compute();
+    const lx = 48, cw = (w - lx - 10) / M, ch = Math.min(30, (h - 40) / PEOPLE.length);
+    PEOPLE.forEach((p, i) => {
+      VB.text(c, p, lx - 6, 10 + i * ch + ch / 2, { size: 11.5, align: "right", color: VB.col("text-dim") });
+      for (let m = 0; m < M; m++) {
+        const v = r.K[i][m];
+        c.fillStyle = VB.col("surface"); c.fillRect(lx + m * cw + 1, 10 + i * ch + 1, cw - 2, ch - 2);
+        c.fillStyle = VB.alpha(VB.col("accent-2"), Math.min(0.9, v)); c.fillRect(lx + m * cw + 1, 10 + i * ch + 1, cw - 2, ch - 2);
+      }
+    });
+    const y = 10 + PEOPLE.length * ch + 4;
+    for (let m = 0; m < M; m++) {
+      const k = r.known[m];
+      c.fillStyle = k === 0 ? VB.col("guard") : k === 1 ? VB.col("tool") : VB.col("env");
+      c.fillRect(lx + m * cw + 1, y, cw - 2, 6);
+    }
+    VB.text(c, "모듈 30개 → (아래 띠: 빨강 = 아무도 모름, 주황 = 한 명만 앎)", lx, y + 18, { size: 10.5, color: VB.col("text-faint") });
+    VB.set("kn-o1", r.nobody + "개", r.nobody > 5 ? "bad" : r.nobody ? "warn" : "good");
+    VB.set("kn-o2", r.single + "개", r.single > 10 ? "warn" : "");
+    VB.set("kn-o3", r.mttr.toFixed(1) + "×", r.mttr > 2 ? "bad" : r.mttr > 1.3 ? "warn" : "good");
+    const multi = r.known.filter((k) => k >= 2).length;
+    VB.set("kn-o4", multi + "개", multi > 15 ? "good" : multi < 5 ? "bad" : "warn");
+  }
+  ["kn-pair", "kn-doc"].forEach((id) => VB.el(id).addEventListener("change", () => cv.redraw()));
+  VB.wire(["kn-u", "kn-w", "kn-h"], () => cv.redraw(), { "kn-u": (v) => VB.pct(v), "kn-w": (v) => v + "주", "kn-h": (v) => v + "주" });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전략 플레이북과 용어집 · VibeBook</title>
+<meta name="description" content="프로젝트 유형·수명·팀·테스트 성숙도에 맞는 AI 코딩 모드와 가드레일을 고르는 전략 플레이그라운드, 도입 성숙도 체크리스트, 사고 대응 게임, 용어집과 종합 퀴즈.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .pb-q { display: grid; gap: 10px; }
+  .pb-q > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .pb-q b { font-size: 13.5px; color: var(--text-dim); font-weight: 600; min-width: 92px; }
+  .rec { border: 1px solid var(--k); background: color-mix(in srgb, var(--k) 8%, var(--bg-elev)); border-radius: 12px; padding: 12px 16px; }
+  .rec h4 { margin: 0 0 4px; font-size: 18px; color: var(--k); }
+  .rec ul { margin: 8px 0 0; padding-left: 18px; font-size: 14.5px; }
+  .rec li { margin: 3px 0; }
+  .rec li a { font-family: var(--mono); font-size: 12px; margin-left: 4px; }
+  .grp { font-size: 12.5px; font-family: var(--mono); color: var(--text-faint); letter-spacing: .06em; margin: 6px 0 -2px; }
+  #ir-card { min-height: 90px; }
+  .opts3 { display: grid; gap: 8px; }
+</style>
+</head>
+<body data-root="../" data-chapter="playbook">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 12</div>
+    <h1>전략 플레이북과 용어집</h1>
+    <p class="lead">지금까지 열한 장에 걸쳐 본 것은 결국 하나의 질문이다. <b>이 일에서는 어디까지 느낌을 믿고, 어디부터 규율로 묶을까.</b> 정답은 프로젝트마다 다르다. 주말 장난감과 결제 시스템이 같은 방식일 수 없다. 이 장에서는 앞의 장들을 한데 모아 내 프로젝트에 맞는 모드와 가드레일을 고르는 플레이그라운드, 팀의 도입 성숙도를 점검하는 체크리스트, 실제로 벌어지는 사고에 대응하는 게임으로 정리한다. 마지막에 용어집과 종합 퀴즈가 있다.</p>
+    <ul class="objectives">
+      <li>프로젝트의 위험·수명·팀·검증 수준에 맞춰 AI 코딩 모드와 가드레일 묶음을 고를 수 있다.</li>
+      <li>팀의 에이전틱 엔지니어링 성숙도를 점검하고 다음에 할 일을 정할 수 있다.</li>
+      <li>바이브 코딩에서 흔한 사고에 알맞게 대응할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="play">
+    <h2>전략 플레이그라운드</h2>
+    <p>다섯 가지 질문에 답하면 추천 모드와 가드레일 묶음, 그리고 예상되는 강점과 약점의 모양(레이더)이 나온다. 각 가드레일 옆의 장 번호를 눌러 근거를 다시 볼 수 있다.</p>
+    <div class="sim" id="sim-play">
+      <div class="sim-head"><span class="sim-tag">PLAYGROUND</span><h3>내 프로젝트의 AI 코딩 전략</h3></div>
+      <div class="sim-body">
+        <div class="pb-q">
+          <div><b>무엇을 만드나</b><div class="seg" id="pb-kind"><button data-v="toy">개인 장난감·시제품</button><button data-v="internal" class="on">사내 도구</button><button data-v="product">고객 서비스</button><button data-v="critical">돈·의료·개인정보</button></div></div>
+          <div><b>얼마나 쓰나</b><div class="seg" id="pb-life"><button data-v="0">한 번·며칠</button><button data-v="1" class="on">몇 달</button><button data-v="2">수년</button></div></div>
+          <div><b>누가 만드나</b><div class="seg" id="pb-team"><button data-v="solo" class="on">혼자</button><button data-v="small">작은 팀</button><button data-v="org">큰 조직</button></div></div>
+          <div><b>자동 테스트</b><div class="seg" id="pb-test"><button data-v="0">거의 없음</button><button data-v="1" class="on">일부</button><button data-v="2">탄탄함</button></div></div>
+          <div><b>에이전트 운용</b><div class="seg" id="pb-agents"><button data-v="one" class="on">대화형 하나</button><button data-v="many">병렬 여러 개</button><button data-v="bg">백그라운드·자동</button></div></div>
+        </div>
+        <div class="two">
+          <div id="pb-rec"></div>
+          <div class="sim-view"><canvas id="pb-cv"></canvas></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">추천 모드</span><span class="v" id="pb-o1">—</span></div>
+        <div class="stat"><span class="k">위험 점수 (Q × R)</span><span class="v" id="pb-o2">—</span></div>
+        <div class="stat"><span class="k">가드레일 수</span><span class="v" id="pb-o3">—</span></div>
+        <div class="stat"><span class="k">사람 리뷰 깊이</span><span class="v" id="pb-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “개인 장난감 · 한 번 · 혼자”는 바이브다. 가드레일은 거의 없고, 대신 git 하나는 켜 두라고 한다. ② “돈·의료 · 수년 · 큰 조직”은 모든 장의 장치가 다 나온다. ③ 같은 사내 도구라도 자동 테스트를 “탄탄함”으로 바꾸면 리뷰 깊이가 한 단계 내려간다. 테스트가 사람의 리뷰를 덜어 준다(5장). ④ 에이전트 운용을 “병렬 여러 개”로 바꾸면 워크트리·작은 PR·몰아서 확인이 추가된다(8장).</div>
+    </div>
+  </section>
+
+  <section id="maturity">
+    <h2>도입 성숙도 체크리스트</h2>
+    <p>팀이 지금 어디에 있는지 점검해 보자. 해당하는 항목을 체크하면 영역별 점수와 단계, 그리고 다음에 할 일 세 가지가 나온다. 이 체크 상태는 이 브라우저에만 저장된다.</p>
+    <div class="sim" id="sim-check">
+      <div class="sim-head"><span class="sim-tag">CHECKLIST</span><h3>에이전틱 엔지니어링 성숙도</h3></div>
+      <div class="sim-body">
+        <div id="mc-list"></div>
+        <div class="sim-view"><canvas id="mc-cv"></canvas></div>
+        <div class="verdict" id="mc-next"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">체크한 항목</span><span class="v" id="mc-o1">—</span></div>
+        <div class="stat"><span class="k">성숙도 단계</span><span class="v" id="mc-o2">—</span></div>
+        <div class="stat"><span class="k">가장 약한 영역</span><span class="v" id="mc-o3">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="incident">
+    <h2>사고 대응</h2>
+    <p>마지막 실험은 실제로 자주 벌어지는 장면들이다. 세 가지 대응 중 가장 알맞은 것을 골라 보자.</p>
+    <div class="sim" id="sim-incident">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>사고 대응 카드 — 이럴 땐 어떻게?</h3></div>
+      <div class="sim-body">
+        <div class="sort-card verdict" id="ir-card" style="--k:var(--border)"></div>
+        <div class="opts3" id="ir-opts"></div>
+        <div class="verdict" id="ir-fb">상황을 읽고 대응을 고르세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="ir-o1">0 / 7</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="ir-o2">0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="glossary">
+    <h2>용어집</h2>
+    <p>이 책에 나온 용어를 장 순서대로 모았다. 상단 검색창에서도 찾을 수 있다.</p>
+    <div class="gloss" id="gl"></div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리 — 이 책 전체</h2>
+    <ol>
+      <li><b>바이브는 도구이지 철학이 아니다.</b> 폭발 반경과 수명이 작으면 쓰고, 커질수록 명세·검증·리뷰로 묶는다(1장).</li>
+      <li><b>빠른 루프가 전부다.</b> 자동 테스트로 한 바퀴를 줄이고, 읽지 않은 수락을 줄이고, 맴돌면 새로 시작한다(2·5장).</li>
+      <li><b>무엇을 원하는지, 무엇을 보여 줄지 정하라.</b> 짧고 검사 가능한 명세와 골라 넣은 컨텍스트가 시도 횟수를 줄인다(3·4장).</li>
+      <li><b>작게 만들고 작게 읽어라.</b> 지평선 안쪽의 조각, 수백 줄의 diff, 사람이 감당할 만큼의 병렬(6·7·8장).</li>
+      <li><b>이자와 반경을 기억하라.</b> 부채와 이해 부채는 시간이 지나 청구되고, 보안 사고의 크기는 권한이 정한다(9·10장).</li>
+      <li><b>체감 말고 측정.</b> 순효과, 안정성, 사람의 성장을 함께 본다(11장).</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>종합 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 바이브 코딩과 에이전틱 엔지니어링을 가르는 기준은?</p><div class="opts">
+        <button class="opt">AI가 작성한 코드의 비율</button>
+        <button class="opt" data-correct>사람이 결과를 검증하고 책임지는가</button>
+        <button class="opt">사용하는 모델의 크기</button>
+      </div><div class="quiz-exp">둘 다 AI가 많이 쓴다. 차이는 명세·검증·리뷰로 결과에 책임지는가다(1장).</div></div>
+      <div class="quiz-q"><p>2. 변경마다 8%의 확률로 조용한 회귀가 생긴다. 읽지 않고 15번 수락하면 아무것도 안 깨졌을 확률은?</p><div class="opts">
+        <button class="opt">약 92%</button>
+        <button class="opt" data-correct>약 29%</button>
+        <button class="opt">약 8%</button>
+      </div><div class="quiz-exp">0.92<sup>15</sup> ≈ 0.29 (2장).</div></div>
+      <div class="quiz-q"><p>3. 명세에 넣을 문장 하나만 고르라면?</p><div class="opts">
+        <button class="opt">“좋은 코드로 작성해 줘”</button>
+        <button class="opt" data-correct>“입력 [5/1,5/2,5/3], 기준일 5/3이면 3을 돌려준다”</button>
+        <button class="opt">“우리 팀은 품질을 중시한다”</button>
+      </div><div class="quiz-exp">예시는 가장 싼 명세이고 그대로 테스트가 된다(3·5장).</div></div>
+      <div class="quiz-q"><p>4. 100만 토큰 창이 있을 때 컨텍스트 전략으로 옳은 것은?</p><div class="opts">
+        <button class="opt">저장소 전체를 넣는다</button>
+        <button class="opt" data-correct>관련 파일·테스트·규칙 파일을 골라 넣고, 긴 세션은 작업 단위로 새로 연다</button>
+        <button class="opt">대화를 끝없이 이어 간다</button>
+      </div><div class="quiz-exp">잡음은 집중도를 떨어뜨리고 매 턴 비용을 키운다(4장).</div></div>
+      <div class="quiz-q"><p>5. 같은 세션의 에이전트가 쓴 코드와 테스트가 모두 통과했다. 가장 남아 있기 쉬운 결함은?</p><div class="opts">
+        <button class="opt">문법 오류</button>
+        <button class="opt" data-correct>요구를 잘못 이해한 구현</button>
+        <button class="opt">들여쓰기 오류</button>
+      </div><div class="quiz-exp">같은 오해에서 나온 코드와 테스트는 서로 일치한다(5장).</div></div>
+      <div class="quiz-q"><p>6. 에이전트를 4개에서 10개로 늘렸는데 하루 병합 수가 그대로다. 병목은?</p><div class="opts">
+        <button class="opt">에이전트의 속도</button>
+        <button class="opt" data-correct>사람의 브리프·리뷰 시간</button>
+        <button class="opt">git의 속도</button>
+      </div><div class="quiz-exp">처리량 상한은 1 / (B + R)이다. 레버는 사람의 일을 줄이는 것이다(8장).</div></div>
+      <div class="quiz-q"><p>7. 슬롭스쿼팅을 막는 데 효과가 없는 것은?</p><div class="opts">
+        <button class="opt">신생·저사용 패키지 차단</button>
+        <button class="opt" data-correct>레지스트리 존재 여부만 확인</button>
+        <button class="opt">새 의존성은 사람이 승인</button>
+      </div><div class="quiz-exp">공격자가 이미 등록한 이름은 “존재”한다(10장).</div></div>
+      <div class="quiz-q"><p>8. AI 도입 후 기능 전달은 늘었는데 장애 시간도 늘었다. 우선 할 일은?</p><div class="opts">
+        <button class="opt">AI 사용을 전면 금지한다</button>
+        <button class="opt" data-correct>PR 크기 상한(작은 배치)과 자동 테스트를 강화한다</button>
+        <button class="opt">배포 빈도를 줄여 한 번에 많이 배포한다</button>
+      </div><div class="quiz-exp">큰 배치가 실패율과 복구 시간을 키운다. 속도를 작은 배치와 자동 검증에 담는다(11장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 전략 플레이그라운드 ---------------- */
+(function () {
+  const g = { kind: VB.seg("pb-kind", up), life: VB.seg("pb-life", up), team: VB.seg("pb-team", up), test: VB.seg("pb-test", up), agents: VB.seg("pb-agents", up) };
+  const cv = VB.canvas("pb-cv", { aspect: 0.85, draw });
+  const CH = (s, n) => `<a href="${s}.html">${n}장</a>`;
+  function plan() {
+    const R = { toy: 0.05, internal: 0.35, product: 0.7, critical: 1 }[g.kind()];
+    const L = [0.05, 0.5, 1][+g.life()];
+    const T = +g.test(), team = g.team(), ag = g.agents();
+    const risk = R * 0.6 + L * 0.4 + (team === "org" ? 0.1 : team === "small" ? 0.05 : 0) - T * 0.08;
+    const mode = risk < 0.25 ? "vibe" : risk < 0.55 ? "guard" : "eng";
+    const items = [];
+    items.push(["git으로 작게 자주 커밋 — 언제든 되돌릴 수 있게", CH("loop", 2)]);
+    if (mode !== "vibe") {
+      items.push(["규칙 파일(AGENTS.md)에 빌드·테스트 명령과 금지 사항", CH("context", 4)]);
+      items.push(["작업마다 수용 기준 3–5개와 비목표", CH("spec", 3)]);
+      if (T < 2) items.push(["핵심 경로에 자동 테스트부터 — 에이전트의 눈", CH("verify", 5)]);
+      items.push(["실패하면 같은 세션에서 밀지 말고 원인 가설부터", CH("loop", 2)]);
+    }
+    if (mode === "eng") {
+      items.push(["복잡한 작업은 계획 모드 → 사람 검토 → 실행", CH("spec", 3)]);
+      items.push(["수용 테스트는 사람이 먼저 확인 (상관 끊기)", CH("verify", 5)]);
+      items.push(["PR 400줄 상한, 경계·권한·시간·부작용 먼저 리뷰", CH("review", 7)]);
+      items.push(["테스트 파일 변경·skip·@ts-ignore는 따로 확인", CH("verify", 5)]);
+      items.push(["리팩터링 예산과 두 사람 리뷰로 부채 관리", CH("debt", 9)]);
+    }
+    if (R >= 0.7) { items.push(["운영 자격 증명 없음 · 샌드박스 · 네트워크 제한", CH("security", 10)]); items.push(["새 의존성은 나이·사용량 확인 후 사람 승인", CH("security", 10)]); }
+    else if (mode !== "vibe") items.push(["자동 승인은 허용 목록(테스트·린트)부터", CH("security", 10)]);
+    if (ag !== "one") { items.push(["워크트리로 작업 공간 분리, 핫스폿 작업은 하나씩", CH("parallel", 8)]); items.push(["질문은 몰아서 확인, 리뷰를 브리프보다 먼저", CH("parallel", 8)]); }
+    if (ag === "bg" && mode !== "vibe") items.push(["백그라운드 결과는 PR로만 받고 CI 통과 후 리뷰", CH("verify", 5)]);
+    if (team !== "solo" && mode !== "vibe") items.push(["도입 전후 DORA 지표·재작업률 추적", CH("team", 11)]);
+    if (team === "org") items.push(["주니어는 ‘먼저 시도 → AI 리뷰’ 방식으로", CH("team", 11)]);
+    const depth = mode === "vibe" ? "결과만 확인" : mode === "guard" ? (T >= 2 ? "샘플링" : "변경 요약 + 위험 지점") : T >= 2 ? "위험 지점 정독" : "전체 정독";
+    // 레이더: 속도, 품질, 보안, 유지보수, 학습, 비용 효율
+    const lvl = { vibe: 0, guard: 1, eng: 2 }[mode];
+    const speed = [0.95, 0.8, 0.62][lvl] + (ag !== "one" ? 0.08 : 0) - (lvl === 2 && T < 1 ? 0.05 : 0);
+    const quality = [0.35, 0.65, 0.88][lvl] + T * 0.04;
+    const sec = [0.3, 0.6, 0.9][lvl] + (R >= 0.7 ? 0.05 : 0);
+    const maint = [0.25, 0.6, 0.88][lvl];
+    const learn = [0.35, 0.6, 0.8][lvl] + (team === "org" ? 0.05 : 0);
+    const cost = [0.9, 0.78, 0.6][lvl] + (ag === "many" ? -0.08 : 0);
+    const target = R >= 0.7 ? [0.6, 0.85, 0.9, 0.85, 0.7, 0.6] : R >= 0.3 ? [0.75, 0.65, 0.6, 0.6, 0.55, 0.7] : [0.9, 0.3, 0.3, 0.2, 0.4, 0.85];
+    return { mode, risk, items, depth, axes: [["속도", speed], ["품질", quality], ["보안", sec], ["유지보수", maint], ["학습", learn], ["비용 효율", cost]].map(([label, v], i) => ({ label, v: VB.clamp(v, 0, 1), target: target[i] })) };
+  }
+  const NAME = { vibe: ["바이브", "accent", "코드를 읽기보다 결과를 본다. 속도가 전부인 일."], guard: ["가드레일 바이브", "tool", "한 줄씩 읽지는 않되, 테스트·작은 커밋·명세로 안전 범위를 둔다."], eng: ["에이전틱 엔지니어링", "accent-2", "구현은 맡기되 명세·검증·리뷰로 결과에 책임진다."] };
+  function draw(c, w, h) {
+    const P = plan();
+    VB.radar(c, w / 2, h / 2 + 4, Math.min(w, h) * 0.32, P.axes, { color: VB.col(NAME[P.mode][1]) });
+    VB.text(c, "점선 = 이 프로젝트가 요구하는 수준", w / 2, h - 8, { size: 10.5, align: "center", color: VB.col("text-faint") });
+  }
+  function up() {
+    const P = plan(), [nm, k, desc] = NAME[P.mode];
+    VB.el("pb-rec").innerHTML = `<div class="rec" style="--k:var(--${k})"><h4>${nm}</h4><div style="font-size:14.5px;color:var(--text-dim)">${desc}</div><ul>${P.items.map(([t, l]) => `<li>${t} ${l}</li>`).join("")}</ul></div>`;
+    VB.set("pb-o1", nm); VB.el("pb-o1").style.color = VB.col(k);
+    VB.set("pb-o2", P.risk.toFixed(2), P.risk > 0.55 ? "bad" : P.risk > 0.25 ? "warn" : "good");
+    VB.set("pb-o3", P.items.length + "개");
+    VB.set("pb-o4", P.depth);
+    cv.redraw();
+  }
+  VB.onTheme(up);
+  up();
+})();
+
+/* ---------------- 2. 성숙도 체크리스트 ---------------- */
+(function () {
+  const KEY = "vibebook-maturity";
+  const G = [
+    { n: "명세·맥락", k: "state", items: [["저장소에 규칙 파일(AGENTS.md 등)이 있고 빌드·테스트 명령이 적혀 있다", 3, "규칙 파일에 빌드·테스트 명령과 금지 사항 적기 (4장)"], ["큰 작업은 수용 기준과 비목표를 먼저 적는다", 3, "작업마다 수용 기준·비목표 쓰기 (3장)"], ["복잡한 작업은 계획을 먼저 검토한 뒤 실행한다", 2, "계획 모드 도입 (3장)"], ["긴 세션 대신 작업 단위로 진행 상황을 남기고 새로 시작한다", 2, "작업 단위 세션 (4장)"]] },
+    { n: "검증", k: "env", items: [["에이전트가 스스로 돌릴 수 있는 빠른 테스트가 있다 (1분 이내)", 3, "1분 안에 도는 테스트 만들기 (2·5장)"], ["CI에서 타입 검사·린트·테스트가 자동으로 돈다", 3, "CI 자동 검사 (5장)"], ["수용 테스트는 사람이 먼저 확인하거나 쓴다", 2, "사람이 확인한 수용 테스트 (5장)"], ["테스트 파일 변경과 skip·억제 주석을 따로 검토한다", 2, "테스트 변경 별도 검토 규칙 (5장)"]] },
+    { n: "리뷰·병합", k: "accent-2", items: [["PR 크기 상한(예: 400줄)이 있다", 3, "PR 크기 상한 정하기 (6·7장)"], ["머지하는 사람이 변경을 설명할 수 있어야 한다는 원칙이 있다", 3, "‘설명할 수 있어야 머지’ 원칙 (9장)"], ["병렬 작업은 워크트리로 나누고 핫스폿은 하나씩", 1, "워크트리·핫스폿 규칙 (8장)"], ["리팩터링 예산을 정해 두고 지킨다", 2, "리팩터링 예산 (9장)"]] },
+    { n: "보안·운영", k: "guard", items: [["에이전트 환경에 운영 자격 증명이 없다", 3, "운영 자격 증명 분리 (10장)"], ["셸 명령은 샌드박스·컨테이너에서 돈다", 2, "샌드박스 도입 (10장)"], ["새 의존성은 나이·사용량 확인 후 사람이 승인한다", 2, "의존성 승인 절차 (10장)"], ["도입 전후의 DORA 지표와 재작업률을 추적한다", 2, "지표 추적 시작 (11장)"]] },
+  ];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { saved = {}; }
+  VB.el("mc-list").innerHTML = G.map((g, gi) => `<div class="grp">${g.n.toUpperCase()}</div><div class="checks" style="margin-top:6px">${g.items.map(([t, w], ii) => `<label style="--k:var(--${g.k})"><input type="checkbox" data-k="${gi}-${ii}" ${saved[gi + "-" + ii] ? "checked" : ""}><span>${t}<small>가중치 ${w}</small></span></label>`).join("")}</div>`).join("");
+  const cv = VB.canvas("mc-cv", { height: 150, draw });
+  function state() {
+    const on = (gi, ii) => VB.$(`#mc-list [data-k="${gi}-${ii}"]`).checked;
+    const per = G.map((g, gi) => { const tot = g.items.reduce((a, it) => a + it[1], 0), got = g.items.reduce((a, it, ii) => a + (on(gi, ii) ? it[1] : 0), 0); return got / tot; });
+    const all = G.flatMap((g, gi) => g.items.map((it, ii) => ({ it, gi, on: on(gi, ii) })));
+    return { per, all, n: all.filter((x) => x.on).length };
+  }
+  function draw(c, w, h) {
+    const S = state();
+    const lw = 90, bw = w - lw - 60, rh = (h - 10) / G.length;
+    G.forEach((g, i) => {
+      VB.text(c, g.n, lw - 8, 8 + i * rh + rh / 2, { size: 12, weight: 700, align: "right", color: VB.col("text-dim") });
+      VB.hbar(c, lw, 8 + i * rh + rh / 2 - 7, bw, 14, S.per[i], VB.col(g.k), { label: VB.pct(S.per[i]) });
+    });
+    const avg = S.per.reduce((a, b) => a + b, 0) / G.length, minP = Math.min(...S.per);
+    const lvl = avg < 0.2 ? 0 : avg < 0.45 ? 1 : avg < 0.7 ? 2 : minP < 0.5 ? 2 : avg < 0.9 ? 3 : 4;
+    const LV = ["0 · 바이브만", "1 · 시작", "2 · 가드레일", "3 · 엔지니어링", "4 · 체계화"];
+    VB.set("mc-o1", `${S.n} / 16`);
+    VB.set("mc-o2", LV[lvl], lvl >= 3 ? "good" : lvl >= 2 ? "warn" : "bad");
+    VB.set("mc-o3", G[S.per.indexOf(minP)].n);
+    const next = S.all.filter((x) => !x.on).sort((a, b) => b.it[1] - a.it[1] || S.per[a.gi] - S.per[b.gi]).slice(0, 3);
+    const box = VB.el("mc-next");
+    box.style.setProperty("--k", next.length ? "var(--accent)" : "var(--env)");
+    box.innerHTML = next.length ? `<b>다음에 할 일</b><br>${next.map((x, i) => `${i + 1}. ${x.it[2]}`).join("<br>")}` : "<b>모든 항목을 갖췄습니다</b> — 이제 지표로 효과를 확인하고, 규칙을 주기적으로 다듬으세요.";
+  }
+  VB.el("mc-list").addEventListener("change", (e) => {
+    const k = e.target.dataset.k; if (!k) return;
+    saved[k] = e.target.checked;
+    try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (err) { /* 저장 불가 */ }
+    cv.redraw();
+  });
+  cv.redraw();
+})();
+
+/* ---------------- 3. 사고 대응 ---------------- */
+(function () {
+  const CARDS = [
+    ["바이브로 만든 사이드 프로젝트를 공개했더니, 프런트엔드 번들에 결제 API 비밀 키가 그대로 들어 있다는 제보가 왔다.", ["코드에서 키를 지우고 다시 배포한다", "즉시 키를 폐기·재발급하고, 사용 내역을 확인한 뒤 서버 쪽으로 옮긴다", "번들을 난독화한다"], 1, "이미 공개된 키는 유출된 것이다. 지우는 것으로는 부족하다. 폐기·재발급이 먼저고, 비밀은 서버에만 둔다(10장)."],
+    ["에이전트가 같은 타입 오류를 네 번째 고치고 있다. 매번 다른 파일을 수정하고 있다.", ["오류 메시지를 다시 붙여 넣는다", "멈추고 원인 가설 세 개와 확인 방법을 묻거나, 재현 테스트를 먼저 쓰게 한다", "@ts-ignore를 허용한다"], 1, "둠 루프다. 증상 돌려막기를 멈추고 원인을 좁힌다. 억제 주석은 문제를 숨긴다(2·5장)."],
+    ["에이전트가 1,800줄짜리 PR을 올렸다. 테스트는 통과했고 오늘 안에 머지해 달라는 요청이 있다.", ["테스트가 통과했으니 머지한다", "기능 단위로 여러 PR로 나누게 하고, 위험 지점부터 리뷰한다", "AI 리뷰어가 승인하면 머지한다"], 1, "1,800줄은 리뷰할 수 없는 크기다. 나눠서 읽어야 결함을 찾는다(6·7장)."],
+    ["CI가 갑자기 통과하기 시작했는데, 보니 에이전트가 실패하던 테스트 두 개에 .skip을 붙였다.", ["통과했으니 넘어간다", "skip을 되돌리고 실패 원인을 고치게 하며, 규칙 파일에 ‘테스트는 승인 없이 고치지 않는다’를 추가한다", "테스트를 아예 지운다"], 1, "보상 해킹이다. 테스트는 사람이 지키는 목표다(5장)."],
+    ["에이전트 다섯 개를 돌리는데 PR이 리뷰 대기열에 하루 넘게 쌓여 있고, 에이전트들은 다음 작업 설명을 기다린다.", ["에이전트를 열 개로 늘린다", "에이전트 수를 줄이고 리뷰를 먼저 끝내며, 작은 PR과 자동 검증으로 리뷰 시간을 줄인다", "리뷰 없이 머지한다"], 1, "병목은 사람이다. 더 시작하지 말고 끝내는 것을 먼저 하고, 사람의 작업 시간을 줄인다(8장)."],
+    ["에이전트가 처음 보는 패키지 ‘quick-jwt-verify-pro’(가상의 이름)를 설치하려 한다. 3일 전 등록, 다운로드 9회.", ["설치를 허락한다", "거절하고, 널리 쓰이는 검증된 라이브러리나 기존 코드를 쓰게 한다", "존재하는 패키지인지만 확인하고 허락한다"], 1, "신생·무사용 패키지는 슬롭스쿼팅의 전형이다. 존재 확인으로는 막지 못한다(10장)."],
+    ["팀 주니어가 AI로 기능을 빠르게 내지만, 코드 리뷰에서 자기 코드를 설명하지 못한다.", ["생산성이 좋으니 그대로 둔다", "먼저 직접 시도하고 AI에게 설명·리뷰를 받는 방식으로 바꾸고, 머지 전에 변경을 설명하게 한다", "AI 사용을 금지한다"], 1, "결과물만 남고 과정이 없다. 이해 부채이자 학습 손실이다. 금지보다 사용법을 바꾼다(9·11장)."],
+  ];
+  let i = 0, score = 0, locked = false;
+  function show() {
+    if (i >= CARDS.length) { VB.el("ir-card").innerHTML = `<b>${score} / ${CARDS.length}</b> 맞혔습니다. 다시 하려면 아래 버튼을 누르세요.`; VB.el("ir-opts").innerHTML = `<button class="opt" data-i="-1">다시 시작</button>`; return; }
+    VB.el("ir-card").innerHTML = `<small style="display:block;font-family:var(--mono);font-size:11.5px;color:var(--text-faint)">상황 ${i + 1} / ${CARDS.length}</small>${VB.esc(CARDS[i][0])}`;
+    VB.el("ir-opts").innerHTML = CARDS[i][1].map((t, j) => `<button class="opt" data-i="${j}">${VB.esc(t)}</button>`).join("");
+  }
+  VB.el("ir-opts").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const j = +b.dataset.i;
+    if (j < 0) { i = 0; score = 0; VB.set("ir-o1", "0 / 7"); VB.set("ir-o2", "0"); VB.el("ir-fb").textContent = "다시 시작합니다."; show(); return; }
+    if (locked) return;
+    const [, , ans, why] = CARDS[i];
+    const ok = j === ans; if (ok) score++;
+    VB.$$("#ir-opts .opt").forEach((o, k) => { if (k === ans) o.classList.add("right"); else if (k === j) o.classList.add("wrong"); });
+    const fb = VB.el("ir-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "아쉽습니다"}</b> — ${VB.esc(why)}`;
+    locked = true; i++;
+    VB.set("ir-o1", `${i} / ${CARDS.length}`); VB.set("ir-o2", String(score), score === i ? "good" : "");
+    setTimeout(() => { locked = false; show(); }, 1900);
+  });
+  show();
+})();
+
+/* ---------------- 4. 용어집 ---------------- */
+(function () {
+  const order = VB.CHAPTERS.map((c) => c.slug);
+  const list = VB.GLOSSARY.slice().sort((a, b) => order.indexOf(a[3]) - order.indexOf(b[3]));
+  VB.el("gl").innerHTML = list.map(([t, en, d, ch]) => { const c = VB.CHAPTERS.find((x) => x.slug === ch); return `<div><b>${t}</b><i>${en}</i><a href="${ch}.html">${c.num}장</a><p>${d}</p></div>`; }).join("");
+})();
+</script>
+</body>
+</html>
