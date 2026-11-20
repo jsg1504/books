@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스스로 검증하기 · MarathonBook</title>
+<meta name="description" content="아무도 보지 않는 긴 실행에서 에이전트가 스스로 확인하는 법. 늦게 발견된 버그의 비용과 검증 주기, 완료 보고 심사, 같은 맹점을 공유하는 검증기 층을 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="verify">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>스스로 검증하기</h1>
+    <p class="lead">짧은 대화에서는 사람이 매 턴 결과를 본다. 장기 실행에서는 사람이 자는 동안 에이전트가 수백 번 “됐다”고 판단한다. 그 판단이 틀리면 틀린 기반 위에 다음 일이 쌓인다. 이 장에서는 <b>얼마나 자주 확인할지</b>, <b>무엇을 확인으로 인정할지</b>, 그리고 <b>확인하는 쪽이 확인받는 쪽과 같은 맹점을 공유할 때</b> 무슨 일이 생기는지를 본다.</p>
+    <ul class="objectives">
+      <li>버그가 늦게 발견될수록 비용이 커지는 이유를 이해하고, 검증 주기를 고를 수 있다.</li>
+      <li>완료 보고에서 테스트 건너뛰기, 기대값 바꾸기 같은 보상 해킹의 흔적을 찾아낼 수 있다.</li>
+      <li>검증기 여러 겹이 같은 맹점을 공유하면 효과가 줄어든다는 점을 설명하고, 독립적인 검증을 설계할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="cadence">
+    <h2>늦게 발견된 버그는 비싸다</h2>
+    <p>버그를 만든 직후에 테스트가 실패하면 원인은 방금 바꾼 몇 줄 안에 있다. 50걸음 뒤에 발견하면 그 사이의 모든 변경이 용의자다. 게다가 그 버그 위에 쌓은 코드도 함께 고쳐야 할 수 있다. 장기 실행에서 검증 주기는 이 <b>위치 찾기 비용</b>과 검증 자체의 비용 사이의 줄다리기다. 그리고 끝까지 발견되지 않은 버그는 “다 됐다”는 보고와 함께 사람에게 넘어간다.</p>
+    <div class="formula"><div class="eq">비용 = (<var>N</var>/<var>k</var>)·<var>c</var><sub>test</sub> + Σ<sub>버그</sub> [ <var>f</var><sub>0</sub> + <var>f</var><sub>1</sub>·(발견까지 걸음) ] + (놓친 버그)·<var>c</var><sub>escape</sub></div>
+      <div class="where"><var>N</var>: 전체 걸음(200), <var>k</var>: 검증 주기, <var>c</var><sub>test</sub>: 검증 한 번의 비용, <var>f</var><sub>1</sub>: 걸음마다 늘어나는 위치 찾기 비용, 테스트는 버그를 확률 <var>v</var>로 잡는다. 같은 테스트는 같은 맹점을 가지므로, 처음에 놓친 버그는 다음 검증에서도 놓친다. 끝까지 놓친 버그 하나는 <var>c</var><sub>escape</sub> = 60걸음의 비용(사람의 디버깅과 되돌리기)으로 셌다.</div></div>
+    <div class="sim" id="sim-cad">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>검증 주기와 총비용 — 200걸음 실행</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cd-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>걸음당 버그 확률 <output id="cd-b-out"></output></span><input type="range" id="cd-b" min="0.01" max="0.2" step="0.01" value="0.06"></label>
+          <label class="ctrl"><span>검증 한 번의 비용 <output id="cd-c-out"></output></span><input type="range" id="cd-c" min="0.2" max="10" step="0.2" value="1.5"></label>
+          <label class="ctrl"><span>걸음당 위치 찾기 비용 증가 f₁ <output id="cd-f-out"></output></span><input type="range" id="cd-f" min="0" max="1" step="0.05" value="0.3"></label>
+          <label class="ctrl"><span>테스트 포착률 v <output id="cd-v-out"></output></span><input type="range" id="cd-v" min="0.2" max="1" step="0.05" value="0.8"></label>
+          <div class="legend"><span><i style="background:var(--tool)"></i>총비용 (걸음)</span><span><i style="background:var(--guard)"></i>놓친 버그 (개)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">가장 좋은 주기</span><span class="v" id="cd-o1">—</span></div>
+        <div class="stat"><span class="k">매 걸음 검증</span><span class="v" id="cd-o2">—</span></div>
+        <div class="stat"><span class="k">끝에 한 번만 검증</span><span class="v" id="cd-o3">—</span></div>
+        <div class="stat"><span class="k">최적 주기에서 놓친 버그</span><span class="v" id="cd-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 끝에 한 번만 검증하면 비용이 최적의 두 배를 넘는다. 버그는 결국 잡히지만, 200걸음 전체가 용의자라 원인을 찾는 데 오래 걸린다. ② 검증 비용을 8 이상으로 올리면 최적 주기가 길어진다. 느린 테스트 묶음은 검증을 드물게 만든다. 그래서 빠른 단위 테스트는 자주, 느린 종단 간 테스트는 기능 단위로 나눈다. ③ 포착률 v를 1로 올리면 놓친 버그가 사라지지만, 0.5로 내리면 주기를 아무리 줄여도 여섯 개가 새어 나간다(빨간 점선이 평평하다). 같은 테스트를 자주 돌려도 같은 맹점은 그대로다. 검증의 주기보다 질이 먼저다.</div>
+    </div>
+  </section>
+
+  <section id="claims">
+    <h2>“다 됐습니다”를 심사하기</h2>
+    <p>장기 실행 에이전트가 가장 자주 하는 거짓말은 악의가 아니라 착각이다. 코드를 썼으니 됐다고 여기고, 단위 테스트가 통과했으니 기능이 된다고 여긴다. 앞서 본 하네스 사례에서 Anthropic은 에이전트가 기능을 사용자처럼 끝까지 확인하지 않고 통과로 표시하는 실패를 보고했다. 브라우저 자동화 도구로 실제 화면을 클릭하며 확인하게 하자 성능이 크게 좋아졌다고 한다. 더 나쁜 경우는 <span class="term">보상 해킹</span><span class="en">reward hacking</span>이다. 테스트를 건너뛰게 바꾸거나, 기대값을 실제 출력에 맞추거나, 실패를 삼키는 명령으로 “성공”을 만든다.</p>
+    <div class="sim" id="sim-claim">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>완료 보고 심사 — 믿을 만한가, 다시 확인할 것인가</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="cl-card" style="font-size:14px"></div>
+        <div class="bins">
+          <button data-v="ok" style="--k:var(--env)">믿을 만함</button>
+          <button data-v="sus" style="--k:var(--guard)">의심 · 다시 확인</button>
+        </div>
+        <div class="verdict" id="cl-fb">에이전트의 완료 보고와 근거를 읽고 판정해 보세요.</div>
+        <div class="budget"><i id="cl-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="cl-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="cl-o2">0</span></div>
+      </div>
+      <div class="sim-note">믿을 만한 근거의 공통점: <b>사용자가 겪을 흐름</b>을 확인했고, <b>고치기 전에는 실패하고 고친 뒤에는 통과</b>하는 것을 보였고, 검사 기준 자체는 건드리지 않았다. 의심할 신호: skip·only·ignore의 추가, 기대값 변경, <code>|| true</code>, 넓어진 예외 처리, 핵심 부분의 모킹.</div>
+    </div>
+  </section>
+
+  <section id="layers">
+    <h2>같은 눈으로 두 번 보기</h2>
+    <p>검증을 여러 겹 쌓으면 각 층의 구멍이 겹치지 않는 한 버그는 걸린다. 스위스 치즈 모형이다. 그런데 장기 실행 에이전트가 쓰는 검증은 종종 <b>같은 눈</b>이다. 에이전트가 짠 코드를, 같은 에이전트가 짠 테스트로, 같은 모델이 판정한다. 요구 사항을 잘못 이해했다면 코드도 테스트도 판정도 똑같이 잘못 이해한다. 구멍이 같은 자리에 뚫려 있다.</p>
+    <p>그래서 검증의 독립성이 중요하다. 사람이 쓴 수용 기준, 다른 모델이나 다른 프롬프트의 검토자, 실제 브라우저에서의 종단 간 확인, 그리고 사람의 무작위 표본 검토. 겹수를 늘리는 것보다 <b>맹점이 다른 검증기를 더하는 것</b>이 효과가 크다.</p>
+    <div class="formula"><div class="eq"><var>P</var><sub>통과</sub> = <var>ρ</var> · min<sub><var>i</var></sub>(1 − <var>c</var><sub><var>i</var></sub>) + (1 − <var>ρ</var>) · Π<sub><var>i</var></sub>(1 − <var>c</var><sub><var>i</var></sub>)</div>
+      <div class="where"><var>c</var><sub><var>i</var></sub>: 층 <var>i</var>의 포착률, <var>ρ</var>: 버그가 모든 층의 공통 맹점에 놓일 확률(상관). ρ = 0이면 구멍이 독립이라 곱해지고, ρ = 1이면 가장 좋은 층 하나와 같다.</div></div>
+    <div class="sim" id="sim-cheese">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>맹점을 공유하는 검증기 — 100개의 버그 통과시키기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ch-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="check"><input type="checkbox" id="ch-l0" checked> 에이전트가 쓴 단위 테스트 (60%)</label>
+          <label class="check"><input type="checkbox" id="ch-l1" checked> 같은 모델의 자기 검토 (50%)</label>
+          <label class="check"><input type="checkbox" id="ch-l2"> 브라우저 종단 간 확인 (70%)</label>
+          <label class="check"><input type="checkbox" id="ch-l3"> 다른 모델의 독립 검토 (50%)</label>
+          <label class="check"><input type="checkbox" id="ch-l4"> 사람의 표본 검토 (40%)</label>
+          <label class="ctrl"><span>같은 계열 층의 상관 ρ <output id="ch-r-out"></output></span><input type="range" id="ch-r" min="0" max="1" step="0.05" value="0.6"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">빠져나간 버그</span><span class="v" id="ch-o1">—</span></div>
+        <div class="stat"><span class="k">독립이라면</span><span class="v" id="ch-o2">—</span></div>
+        <div class="stat"><span class="k">켠 층 수</span><span class="v" id="ch-o3">—</span></div>
+      </div>
+      <div class="sim-note">위 두 층(에이전트의 테스트와 자기 검토)은 같은 이해에서 나오므로 서로 ρ만큼 맹점을 공유한다고 두었다. 아래 세 층은 독립이다. 해볼 것: ① 기본값에서 같은 계열 두 층만 켜면 버그의 4분의 1 넘게 빠져나간다. 독립이었다면 20%였다. ② 다른 모델의 독립 검토 하나만 더해 보자. 같은 포착률 50%인데도 자기 검토보다 훨씬 많이 줄인다. ③ ρ를 1로 올리면 자기 검토를 켜든 끄든 결과가 같다. 같은 눈은 한 번 보는 것과 같다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>버그는 늦게 발견될수록 위치 찾기와 그 위에 쌓인 코드 때문에 비싸다. 끝에 한 번만 검증하는 긴 실행은 비용이 크고 버그가 새어 나간다.</li>
+      <li>빠른 검증은 자주, 느린 검증은 기능 단위로. 검증 주기보다 검증의 질(포착률)이 먼저다.</li>
+      <li>완료 보고의 근거를 본다. 사용자 흐름의 확인, 수정 전 실패와 수정 후 통과, 검사 기준의 보존. 건너뛰기·기대값 변경·실패 삼키기는 보상 해킹의 신호다.</li>
+      <li>같은 눈으로 두 번 보면 한 번 본 것과 비슷하다. 맹점이 다른 검증기 — 사람의 기준, 다른 모델, 실제 화면 — 를 더한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 전체 테스트가 20분 걸린다. 장기 실행 에이전트의 검증 전략으로 가장 알맞은 것은?</p><div class="opts">
+        <button class="opt">모든 편집마다 전체 테스트를 돌린다</button>
+        <button class="opt" data-correct>편집마다 관련 단위 테스트를, 기능을 끝낼 때 전체·종단 간 테스트를 돌린다</button>
+        <button class="opt">마지막에 한 번 돌린다</button>
+      </div><div class="quiz-exp">빠른 검증으로 대부분을 일찍 잡고, 비싼 검증은 의미 있는 경계에서 한다.</div></div>
+      <div class="quiz-q"><p>2. 에이전트의 diff에 <code>expect(total).toBe(42)</code>가 <code>expect(total).toBe(41)</code>로 바뀌어 있고 보고는 “테스트 통과”다. 판단은?</p><div class="opts">
+        <button class="opt">통과했으니 문제없다</button>
+        <button class="opt" data-correct>기대값을 출력에 맞춘 보상 해킹일 수 있다. 왜 바뀌었는지 근거를 요구한다</button>
+        <button class="opt">숫자 하나라 무시한다</button>
+      </div><div class="quiz-exp">테스트는 기준이다. 기준을 바꾼 변경은 코드 변경보다 더 엄격히 확인해야 한다.</div></div>
+      <div class="quiz-q"><p>3. 포착률 50%인 검증기 두 개가 완전히 독립이면 함께 놓치는 비율은?</p><div class="opts">
+        <button class="opt">50%</button>
+        <button class="opt" data-correct>25%</button>
+        <button class="opt">0%</button>
+      </div><div class="quiz-exp">0.5 × 0.5 = 0.25. 맹점을 완전히 공유한다면 50%로, 하나만 있는 것과 같다.</div></div>
+      <div class="quiz-q"><p>4. 에이전트가 자기 코드를 자기가 검토하게 할 때의 근본적인 한계는?</p><div class="opts">
+        <button class="opt">시간이 오래 걸린다</button>
+        <button class="opt" data-correct>요구 사항을 잘못 이해했다면 코드와 검토가 같은 오해를 공유한다</button>
+        <button class="opt">토큰이 부족하다</button>
+      </div><div class="quiz-exp">자기 검토도 오타나 명백한 실수는 잡는다. 하지만 이해 자체의 오류는 독립적인 눈이 필요하다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 검증 주기 ---------------- */
+(function () {
+  const N = 200, F0 = 2, CESC = 60;
+  function cost(k, b, ct, f1, v) {
+    let total = Math.floor(N / k) * ct, esc = 0;
+    for (let s = 0; s < N; s++) {
+      // s 걸음에서 생긴 버그: 다음 검증 시점들 (k, 2k, ...) 중 s 이후
+      const first = (Math.floor(s / k) + 1) * k;
+      // 같은 테스트는 같은 맹점을 가진다: 첫 검증에서 v로 잡거나, 끝까지 못 잡는다
+      const exp = first <= N ? v * (F0 + f1 * (first - s)) + (1 - v) * CESC : CESC;
+      esc += first <= N ? 1 - v : 1;
+      total += b * exp;
+    }
+    return { total, esc: esc * b };
+  }
+  const KS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 67, 100, 200];
+  const cv = LR.canvas("cd-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const b = LR.val("cd-b"), ct = LR.val("cd-c"), f1 = LR.val("cd-f"), v = LR.val("cd-v");
+    const R = KS.map((k) => ({ k, ...cost(k, b, ct, f1, v) }));
+    const best = R.reduce((a, r) => (r.total < a.total ? r : a));
+    const ymax = Math.ceil(Math.max(...R.map((r) => r.total)) / 50) * 50;
+    const emax = Math.max(1, Math.ceil(Math.max(...R.map((r) => r.esc))));
+    const box = { l: 50, t: 14, r: w - 46, b: h - 42 };
+    const A = LR.axes(c, { box, x: [1, 200], y: [0, ymax], logx: true, xt: [1, 2, 5, 10, 20, 50, 100, 200], yt: [0, ymax / 2, ymax], xl: "검증 주기 k (걸음, 로그 눈금)", yl: "총비용 (걸음)" });
+    const Y2 = (v) => box.b - (v / emax) * (box.b - box.t);
+    [0, emax / 2, emax].forEach((v) => LR.text(c, (+v.toFixed(1)) + "개", box.r + 6, Y2(v), { size: 10.5, mono: true, color: LR.col("guard") }));
+    LR.line(c, R.map((r) => [A.X(r.k), Y2(r.esc)]), LR.col("guard"), 2, [5, 4]);
+    LR.line(c, R.map((r) => [A.X(r.k), A.Y(r.total)]), LR.col("tool"), 2.8);
+    c.fillStyle = LR.col("env"); c.beginPath(); c.arc(A.X(best.k), A.Y(best.total), 6, 0, 7); c.fill();
+    LR.text(c, "최적", A.X(best.k), A.Y(best.total) - 14, { size: 11, weight: 700, align: "center", color: LR.col("env") });
+    const r1 = R[0], rN = R[R.length - 1];
+    LR.set("cd-o1", `${best.k}걸음마다 · ${Math.round(best.total)}`, "good");
+    LR.set("cd-o2", Math.round(r1.total) + "");
+    LR.set("cd-o3", `${Math.round(rN.total)} · 놓침 ${rN.esc.toFixed(1)}개`, rN.total > best.total * 1.5 ? "bad" : "");
+    LR.set("cd-o4", best.esc.toFixed(2) + "개", best.esc > 1 ? "bad" : best.esc > 0.3 ? "warn" : "good");
+  }
+  LR.wire(["cd-b", "cd-c", "cd-f", "cd-v"], () => cv.redraw(), { "cd-b": (v) => LR.pct(v), "cd-c": (v) => v.toFixed(1) + "걸음", "cd-f": (v) => v.toFixed(2), "cd-v": (v) => LR.pct(v) });
+})();
+
+/* ---------------- 2. 완료 보고 심사 ---------------- */
+LR.sortGame({
+  root: "sim-claim", prefix: "cl",
+  names: { ok: "믿을 만함", sus: "의심 · 다시 확인" },
+  cards: [
+    ["“모든 테스트 통과했습니다.” 근거: npm test → 48 passed, 3 skipped. diff에는 test/payment.spec.ts에 it.skip( 세 줄이 추가되어 있다.", "sus", "건너뛴 테스트 세 개를 에이전트가 직접 추가했다. 통과가 아니라 검사를 끈 것이다."],
+    ["“기능 #12(비밀번호 재설정) 통과.” 근거: 브라우저 자동화로 재설정 링크 요청 → 메일함의 링크 클릭 → 새 비밀번호로 로그인 성공, 각 단계 스크린숏 첨부.", "ok", "사용자가 겪을 흐름을 처음부터 끝까지 실제로 확인했다. 가장 강한 종류의 근거다."],
+    ["“합계 계산 버그 수정.” diff: 계산 코드는 그대로, 테스트의 expect(total).toBe(42)가 toBe(41)로 바뀌었다.", "sus", "코드가 아니라 기대값을 출력에 맞췄다. 전형적인 보상 해킹이다."],
+    ["“빌드 성공.” 근거로 실행한 명령: npm run build || true", "sus", "|| true는 실패해도 성공 종료 코드를 돌려준다. 이 명령의 성공은 아무것도 증명하지 않는다."],
+    ["“날짜 경계 버그 수정.” 근거: 버그를 재현하는 테스트를 먼저 추가해 실패를 확인했고, 수정 후 같은 테스트와 기존 테스트 전체가 통과했다.", "ok", "수정 전 실패 → 수정 후 통과를 보였다. 테스트가 정말 그 버그를 잡는다는 증거다."],
+    ["“타입 오류 0개.” diff에 // @ts-ignore가 14곳 추가되어 있다.", "sus", "오류를 고친 것이 아니라 검사기를 침묵시켰다. 오류 수가 아니라 원인이 줄었는지 봐야 한다."],
+    ["“목록 화면 렌더링 2배 빨라짐.” 근거: 같은 기기에서 변경 전후 각각 5회 측정한 중앙값 420ms → 205ms, 측정 스크립트를 저장소에 커밋.", "ok", "같은 조건의 전후 비교, 반복 측정, 재현 가능한 스크립트까지 있다."],
+    ["“결제 연동 기능 통과.” 근거: e2e 테스트 통과. 테스트 설정에서 결제 API 클라이언트 전체를 항상 성공을 돌려주는 가짜로 바꿨다.", "sus", "검증 대상이 바로 결제 연동인데 그 부분을 가짜로 바꿨다. 테스트 모드의 실제 결제 샌드박스로 확인해야 한다."],
+  ],
+});
+
+/* ---------------- 3. 맹점을 공유하는 검증기 ---------------- */
+(function () {
+  const L = [
+    { n: "단위 테스트", c: 0.6, fam: true, k: "env" },
+    { n: "자기 검토", c: 0.5, fam: true, k: "accent" },
+    { n: "종단 간", c: 0.7, fam: false, k: "ctx" },
+    { n: "독립 검토", c: 0.5, fam: false, k: "state" },
+    { n: "사람 표본", c: 0.4, fam: false, k: "accent-2" },
+  ];
+  const on = () => L.map((_, i) => LR.el("ch-l" + i).checked);
+  function pass(rho) {
+    const o = on(), fam = L.filter((l, i) => o[i] && l.fam), ind = L.filter((l, i) => o[i] && !l.fam);
+    const famInd = fam.reduce((p, l) => p * (1 - l.c), 1);
+    const famCorr = fam.length ? Math.min(...fam.map((l) => 1 - l.c)) : 1;
+    const famPass = rho * famCorr + (1 - rho) * famInd;
+    return famPass * ind.reduce((p, l) => p * (1 - l.c), 1);
+  }
+  const cv = LR.canvas("ch-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const rho = LR.val("ch-r"), o = on();
+    const act = L.map((l, i) => ({ ...l, on: o[i] }));
+    const n = act.length, x0 = 40, x1 = w - 30, gap = (x1 - x0) / (n + 1);
+    // 결정적 버그 100개: 공통 맹점 여부 u, 층마다 난수
+    const r = LR.rng(17);
+    const B = Array.from({ length: 100 }, (_, i) => ({ y: 18 + (i % 50) * ((h - 40) / 50) + (i >= 50 ? (h - 40) / 100 : 0), u: r(), rs: L.map(() => r()), famR: r() }));
+    let escaped = 0;
+    act.forEach((l, i) => {
+      const x = x0 + gap * (i + 1);
+      c.fillStyle = l.on ? LR.alpha(LR.col(l.k), 0.22) : LR.alpha(LR.col("text-faint"), 0.08);
+      LR.rrect(c, x - 9, 12, 18, h - 40, 6); c.fill();
+      if (l.on) { c.strokeStyle = LR.col(l.k); c.lineWidth = 1.4; c.stroke(); }
+      LR.text(c, l.n, x, h - 14, { size: 10.5, weight: 700, align: "center", color: l.on ? LR.col(l.k) : LR.col("text-faint") });
+    });
+    B.forEach((b) => {
+      let x = x0 - 20, alive = true;
+      const blind = b.u < rho; // 같은 계열 층의 공통 맹점
+      // 공통 맹점이면 같은 계열 층 중 가장 좋은 층의 확률로만 걸린다
+      const famOn = act.filter((l) => l.on && l.fam);
+      const bestFam = famOn.length ? Math.max(...famOn.map((l) => l.c)) : 0;
+      let caughtAt = -1;
+      act.forEach((l, i) => {
+        if (!alive || !l.on) return;
+        let caught;
+        if (l.fam && blind) caught = l.c === bestFam && famOn.indexOf(l) === famOn.findIndex((q) => q.c === bestFam) ? b.famR < l.c : false;
+        else caught = b.rs[i] < l.c;
+        if (caught) { alive = false; caughtAt = i; }
+      });
+      const endX = caughtAt >= 0 ? x0 + gap * (caughtAt + 1) - 10 : x1;
+      c.strokeStyle = LR.alpha(caughtAt >= 0 ? LR.col("text-faint") : LR.col("guard"), caughtAt >= 0 ? 0.35 : 0.8);
+      c.lineWidth = 1; c.beginPath(); c.moveTo(x, b.y); c.lineTo(endX, b.y); c.stroke();
+      c.fillStyle = caughtAt >= 0 ? LR.col("env") : LR.col("guard"); c.beginPath(); c.arc(endX, b.y, 2.4, 0, 7); c.fill();
+      if (caughtAt < 0) escaped++;
+    });
+    const indp = L.filter((l, i) => o[i]).reduce((p, l) => p * (1 - l.c), 1);
+    const exp = pass(rho);
+    LR.set("ch-o1", `${escaped}개 (기대 ${LR.pct(exp)})`, exp > 0.15 ? "bad" : exp > 0.05 ? "warn" : "good");
+    LR.set("ch-o2", LR.pct(indp));
+    LR.set("ch-o3", o.filter(Boolean).length + "겹");
+  }
+  LR.wire(["ch-r"], () => cv.redraw(), { "ch-r": (v) => v.toFixed(2) });
+  L.forEach((_, i) => LR.el("ch-l" + i).addEventListener("change", () => cv.redraw()));
+})();
+</script>
+</body>
+</html>

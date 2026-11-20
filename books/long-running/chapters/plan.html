@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>계획과 분해, 진행 추적 · MarathonBook</title>
+<meta name="description" content="긴 실행에서 계획이 표류하는 모양과 재계획 주기, 하위 작업의 의존 그래프와 임계 경로, 하면서 발견되는 일이 만드는 완료율의 착시를 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="plan">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 06</div>
+    <h1>계획과 분해, 진행 추적</h1>
+    <p class="lead">짧은 일은 계획 없이도 된다. 긴 일은 다르다. 백 걸음 중 한 걸음이 조금씩 비뚤어지면 도착지는 엉뚱한 곳이 된다. 그렇다고 처음 세운 계획을 끝까지 고집하면 하면서 알게 된 것을 버리게 된다. 이 장에서는 계획이 표류하는 모양, 언제 다시 계획할지, 큰 일을 어떻게 쪼개고 무엇부터 할지, 그리고 진행률이라는 숫자가 어떻게 우리를 속이는지를 본다.</p>
+    <ul class="objectives">
+      <li>재계획 없이 오차가 누적되는 모양을 이해하고, 재계획 주기의 이득과 비용을 따질 수 있다.</li>
+      <li>하위 작업의 의존 그래프에서 임계 경로를 찾고, 병렬 일꾼을 늘려도 줄지 않는 한계를 설명할 수 있다.</li>
+      <li>하면서 새 일이 발견될 때 초기 계획 기준 진행률이 왜 완료를 너무 일찍 말하는지 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="replan">
+    <h2>표류하는 계획과 재계획</h2>
+    <p>계획은 방향이다. 에이전트가 한 걸음 내디딜 때마다 그 방향에서 조금씩 벗어난다. 파일 하나를 고치다 옆 파일이 눈에 들어오고, 테스트 하나를 고치다 리팩터링을 시작한다. 이런 작은 벗어남은 서로 상쇄되지 않고 <b>누적된다</b>. 걸음마다 방향이 무작위로 흔들리면, 방향 오차는 걸음 수의 제곱근에 비례해 커진다.</p>
+    <p><span class="term">재계획</span><span class="en">re-planning</span>은 주기적으로 멈춰 서서 “목표는 어디고, 나는 어디 있지?”를 묻고 방향을 다시 잡는 일이다. 너무 드물면 표류하고, 너무 잦으면 계획만 하다 끝난다. 실제 하네스에서 재계획은 진행 파일을 다시 읽고 작업 목록을 다시 쓰는 일, 혹은 계획 담당 모델을 다시 부르는 일이다.</p>
+    <div class="sim" id="sim-replan">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>방향을 잃는 걸음 — 재계획 주기 k</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rpl-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>걸음마다 방향 흔들림 σ <output id="rpl-s-out"></output></span><input type="range" id="rpl-s" min="0" max="0.6" step="0.02" value="0.25"></label>
+          <label class="ctrl"><span>재계획 주기 k <output id="rpl-k-out"></output></span><input type="range" id="rpl-k" min="0" max="60" step="1" value="10"></label>
+          <label class="ctrl"><span>재계획 한 번의 비용 <output id="rpl-c-out"></output></span><input type="range" id="rpl-c" min="0" max="10" step="0.5" value="2"></label>
+          <label class="ctrl"><span>표본 경로 <output id="rpl-seed-out"></output></span><input type="range" id="rpl-seed" min="1" max="20" step="1" value="3"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>재계획 없음</span><span><i style="background:var(--accent)"></i>k걸음마다 재계획</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">도착 시간 · 재계획 없음</span><span class="v" id="rpl-o1">—</span></div>
+        <div class="stat"><span class="k">도착 시간 · k마다</span><span class="v" id="rpl-o2">—</span></div>
+        <div class="stat"><span class="k">가장 좋은 k (200회 평균)</span><span class="v" id="rpl-o3">—</span></div>
+        <div class="stat"><span class="k">재계획에 쓴 시간</span><span class="v" id="rpl-o4">—</span></div>
+      </div>
+      <div class="sim-note">목표까지 곧장 가면 40걸음이다. 도착 시간은 걸음 수 + 재계획 비용, 300을 넘으면 실패로 센다(200개 경로의 평균). 해볼 것: ① 기본값에서 재계획 없는 경로는 크게 휘어 돌아가거나 아예 도착하지 못한다. ② k를 1로 내리면 경로는 곧지만 재계획 비용 때문에 오히려 늦다. ③ 흔들림 σ를 0.5 넘게 올리면 가장 좋은 k가 작아진다. 불확실한 일일수록 자주 멈춰 방향을 확인한다. ④ 재계획 비용을 0으로 내리면 가장 좋은 k가 1이 된다. 재계획을 싸게 만드는 것(짧은 진행 파일, 작업 목록)이 재계획을 자주 하게 해 준다.</div>
+    </div>
+  </section>
+
+  <section id="dag">
+    <h2>쪼개기와 임계 경로</h2>
+    <p>큰 일을 하위 작업으로 쪼개면 의존 관계가 생긴다. 스키마를 바꿔야 API를 바꾸고, API를 바꿔야 화면을 바꾼다. 서로 의존하지 않는 일은 하위 에이전트 여럿에게 동시에 맡길 수 있다. 하지만 의존의 사슬 가운데 가장 긴 것, 즉 <span class="term">임계 경로</span><span class="en">critical path</span>보다 빨리 끝낼 방법은 없다. 일꾼을 아무리 늘려도 마찬가지다. 그래서 긴 실행의 계획에서 가장 먼저 할 일은 임계 경로 위의 작업을 찾아 <b>먼저, 그리고 가장 믿을 만하게</b> 하는 것이다.</p>
+    <div class="formula"><div class="eq">완료 시간 ≥ max( <var>L</var><sub>임계</sub>, Σ<var>t</var><sub><var>i</var></sub> / <var>W</var> )</div>
+      <div class="where"><var>L</var><sub>임계</sub>: 임계 경로의 길이, Σ<var>t</var><sub><var>i</var></sub>: 모든 작업 시간의 합, <var>W</var>: 동시에 일하는 일꾼 수. 일꾼이 적을 때는 총량이, 많을 때는 임계 경로가 한계다.</div></div>
+    <div class="sim" id="sim-dag">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>임계 경로 찾기 — 결제 서비스를 새 API로 옮기기</h3></div>
+      <div class="sim-body">
+        <p style="margin:0;font-size:14.5px;color:var(--text-dim)">아래 의존 그래프에서 임계 경로 위에 있다고 생각하는 작업을 눌러 고른 뒤 “검사”를 눌러 보자. 일꾼 수를 바꾸면 아래 간트 차트가 다시 계산된다(숫자는 시간).</p>
+        <div class="sim-view"><canvas id="dg-cv"></canvas></div>
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:200px"><span>동시에 일하는 하위 에이전트 수 W <output id="dg-w-out"></output></span><input type="range" id="dg-w" min="1" max="6" step="1" value="2"></label>
+          <div class="btns"><button class="btn primary" id="dg-check">검사</button><button class="btn" id="dg-clear">선택 해제</button></div>
+        </div>
+        <div class="verdict" id="dg-fb">임계 경로라고 생각하는 작업을 눌러 보세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">모든 작업의 합</span><span class="v" id="dg-o1">—</span></div>
+        <div class="stat"><span class="k">임계 경로 길이</span><span class="v" id="dg-o2">—</span></div>
+        <div class="stat"><span class="k">W명으로 끝나는 시간</span><span class="v" id="dg-o3">—</span></div>
+        <div class="stat"><span class="k">한 명 대비 속도</span><span class="v" id="dg-o4">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="discover">
+    <h2>하면서 발견되는 일과 진행률의 착시</h2>
+    <p>긴 작업의 계획은 처음에 다 보이지 않는다. 마이그레이션을 하다 보면 숨은 호출부가 나오고, 기능을 만들다 보면 빠진 예외 처리가 보인다. 작업 하나를 끝낼 때마다 평균 <var>g</var>개의 새 작업이 발견된다면, 처음 <var>N</var><sub>0</sub>개였던 일의 전체 크기는 기대값으로 <var>N</var><sub>0</sub>/(1 − <var>g</var>)가 된다. g = 0.5면 두 배, g = 0.8이면 다섯 배다. g가 1에 가까우면 일은 끝나지 않는다.</p>
+    <p>문제는 진행률이다. “처음 계획한 20개 중 20개 완료”는 100%처럼 보이지만, 그사이 발견된 일이 남아 있다. 초기 계획을 분모로 진행률을 재는 에이전트는 <b>너무 일찍 완료를 선언한다</b>. 기능 목록처럼 발견된 일까지 목록에 넣고, 목록이 빌 때를 완료로 정해야 한다.</p>
+    <div class="formula"><div class="eq">E[전체 작업] = <var>N</var><sub>0</sub> / (1 − <var>g</var>) &nbsp;(<var>g</var> &lt; 1)</div>
+      <div class="where">작업 하나를 끝낼 때 새 작업이 평균 <var>g</var>개 생기는 분기 과정의 기대 총량. 1 + g + g² + … 의 합이다.</div></div>
+    <div class="sim" id="sim-disc">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>발견되는 일 — 계획 대비 진행률과 실제</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ds-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>처음 계획한 작업 N₀ <output id="ds-n-out"></output></span><input type="range" id="ds-n" min="5" max="60" step="1" value="20"></label>
+          <label class="ctrl"><span>작업당 발견되는 새 작업 g <output id="ds-g-out"></output></span><input type="range" id="ds-g" min="0" max="0.95" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>표본 실행 <output id="ds-seed-out"></output></span><input type="range" id="ds-seed" min="1" max="20" step="1" value="4"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>초기 계획 기준 진행률</span><span><i style="background:var(--env)"></i>실제 진행률</span><span><i style="background:var(--state)"></i>알려진 작업 수</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">기대 전체 작업</span><span class="v" id="ds-o1">—</span></div>
+        <div class="stat"><span class="k">이 실행의 실제 전체</span><span class="v" id="ds-o2">—</span></div>
+        <div class="stat"><span class="k">“100%”라고 말할 때 실제</span><span class="v" id="ds-o3">—</span></div>
+        <div class="stat"><span class="k">발견된 작업 비율</span><span class="v" id="ds-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① g = 0.5면 초기 계획 기준으로 100%를 말하는 순간 실제로는 절반 안팎이다. ② g를 0.8로 올리면 전체가 다섯 배 안팎으로 불어나고, “100%”는 실제의 20%쯤에서 나온다. ③ g = 0이면 두 선이 겹친다. 그런 일은 짧은 일뿐이다. 긴 실행일수록 분모를 계속 갱신해야 한다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>걸음마다의 작은 벗어남은 누적된다. 재계획은 방향을 되잡지만 비용이 있어 최적 주기가 있다. 불확실할수록 자주, 재계획이 쌀수록 자주.</li>
+      <li>쪼갠 작업의 완료 시간은 총량/일꾼 수와 임계 경로 중 큰 값이 정한다. 임계 경로 위의 작업을 먼저, 가장 믿을 만하게.</li>
+      <li>긴 작업은 하면서 새 일이 발견된다. 전체 크기의 기대값은 N₀/(1 − g)다.</li>
+      <li>초기 계획을 분모로 쓰는 진행률은 완료를 너무 일찍 말한다. 발견된 일을 목록에 넣고, 목록이 빌 때를 완료로 정한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 재계획 비용이 거의 0에 가까워지면 최적 재계획 주기는?</p><div class="opts">
+        <button class="opt">길어진다</button>
+        <button class="opt" data-correct>짧아진다 — 자주 방향을 확인해도 손해가 없다</button>
+        <button class="opt">상관없다</button>
+      </div><div class="quiz-exp">재계획의 이득(표류 감소)은 그대로인데 비용이 줄면 더 자주 하는 편이 낫다. 짧은 작업 목록을 다시 쓰는 것이 싼 재계획이다.</div></div>
+      <div class="quiz-q"><p>2. 임계 경로가 9시간, 모든 작업의 합이 20시간이다. 하위 에이전트 10개를 동시에 돌리면 가장 빨리 끝나는 시간은?</p><div class="opts">
+        <button class="opt">2시간</button>
+        <button class="opt" data-correct>9시간</button>
+        <button class="opt">20시간</button>
+      </div><div class="quiz-exp">20/10 = 2시간이지만 임계 경로 9시간보다 빨리 끝낼 수 없다. 일꾼을 늘려도 사슬은 짧아지지 않는다.</div></div>
+      <div class="quiz-q"><p>3. 작업 하나를 끝낼 때마다 평균 0.75개의 새 작업이 발견된다. 처음 계획이 12개라면 기대 전체 작업 수는?</p><div class="opts">
+        <button class="opt">약 21개</button>
+        <button class="opt" data-correct>48개</button>
+        <button class="opt">12개</button>
+      </div><div class="quiz-exp">12 / (1 − 0.75) = 48. 처음 계획의 네 배다.</div></div>
+      <div class="quiz-q"><p>4. 때 이른 완료 선언을 막는 진행 추적 방법은?</p><div class="opts">
+        <button class="opt">처음 계획의 항목 수를 분모로 고정한다</button>
+        <button class="opt" data-correct>발견된 일을 즉시 목록에 추가하고, 실패 상태의 항목이 하나도 없을 때를 완료로 정한다</button>
+        <button class="opt">진행률을 보지 않는다</button>
+      </div><div class="quiz-exp">완료의 기준은 계획이 아니라 남은 일의 목록이어야 한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 재계획 ---------------- */
+(function () {
+  const D = 40, CAP = 300;
+  function walk(seed, s, k, c, keep) {
+    const r = LR.rng(seed * 7919 + 13);
+    let x = 0, y = 0, th = 0, t = 0, steps = 0, rp = 0; const P = [[0, 0]];
+    while (t < CAP) {
+      if (k > 0 && steps > 0 && steps % k === 0) { th = Math.atan2(-y, D - x); t += c; rp++; }
+      th += LR.normal(r) * s; x += Math.cos(th); y += Math.sin(th); steps++; t++;
+      if (keep) P.push([x, y]);
+      if (Math.hypot(D - x, y) < 1.5) return { t, P, ok: true, rp };
+    }
+    return { t: CAP, P, ok: false, rp };
+  }
+  const avgT = (s, k, c) => { let sum = 0; for (let i = 1; i <= 200; i++) sum += walk(i + 100, s, k, c, false).t; return sum / 200; };
+  const cv = LR.canvas("rpl-cv", { aspect: 0.62, draw });
+  let bestCache = null;
+  function draw(cx, w, h) {
+    const s = LR.val("rpl-s"), k = LR.val("rpl-k"), c = LR.val("rpl-c"), seed = LR.val("rpl-seed");
+    const A = walk(seed, s, 0, c, true), B = walk(seed, s, k, c, true);
+    const all = A.P.concat(B.P);
+    const ext = Math.max(12, ...all.map(([, y]) => Math.abs(y)));
+    const xmin = Math.min(-4, ...all.map(([x]) => x)), xmax = Math.max(D + 4, ...all.map(([x]) => x));
+    const sc = Math.min((w - 40) / (xmax - xmin), (h - 40) / (2 * ext));
+    const X = (x) => 20 + (x - xmin) * sc, Y = (y) => h / 2 - y * sc;
+    cx.strokeStyle = LR.col("grid"); cx.setLineDash([3, 4]); cx.beginPath(); cx.moveTo(X(0), Y(0)); cx.lineTo(X(D), Y(0)); cx.stroke(); cx.setLineDash([]);
+    LR.line(cx, A.P.map(([x, y]) => [X(x), Y(y)]), LR.alpha(LR.col("guard"), 0.85), 1.8);
+    LR.line(cx, B.P.map(([x, y]) => [X(x), Y(y)]), LR.col("accent"), 2.4);
+    if (k > 0) B.P.forEach(([x, y], i) => { if (i && i % k === 0) { cx.fillStyle = LR.col("accent"); cx.beginPath(); cx.arc(X(x), Y(y), 3, 0, 7); cx.fill(); } });
+    LR.node(cx, X(0), Y(0), 9, "idle", "시작", { below: true, size: 10.5 });
+    cx.fillStyle = LR.alpha(LR.col("env"), 0.2); cx.beginPath(); cx.arc(X(D), Y(0), 1.5 * sc + 4, 0, 7); cx.fill();
+    LR.node(cx, X(D), Y(0), 9, "ok", "목표", { below: true, size: 10.5 });
+    const key = [s, c].join();
+    if (!bestCache || bestCache.key !== key) {
+      let best = { k: 0, t: avgT(s, 0, c) };
+      [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60].forEach((kk) => { const t = avgT(s, kk, c); if (t < best.t - 0.05) best = { k: kk, t }; });
+      bestCache = { key, best };
+    }
+    const bt = bestCache.best;
+    LR.set("rpl-o1", A.ok ? Math.round(A.t) + "" : "실패(300+)", A.ok ? "" : "bad");
+    LR.set("rpl-o2", B.ok ? Math.round(B.t) + "" : "실패(300+)", B.ok ? (B.t < A.t ? "good" : "") : "bad");
+    LR.set("rpl-o3", bt.k ? `k = ${bt.k} · ${Math.round(bt.t)}` : `없음 · ${Math.round(bt.t)}`);
+    LR.set("rpl-o4", (B.rp * c).toFixed(0) + ` (${B.rp}회)`);
+  }
+  LR.wire(["rpl-s", "rpl-k", "rpl-c", "rpl-seed"], () => cv.redraw(), { "rpl-s": (v) => v.toFixed(2) + " rad", "rpl-k": (v) => (v ? v + "걸음" : "안 함"), "rpl-c": (v) => v + "걸음", "rpl-seed": (v) => "#" + v });
+})();
+
+/* ---------------- 2. 임계 경로 ---------------- */
+(function () {
+  const T = [
+    { id: "a", n: "기존 호출부 조사", d: 2, x: 0, y: 1, dep: [] },
+    { id: "b", n: "새 API 클라이언트", d: 3, x: 1, y: 0, dep: ["a"] },
+    { id: "c", n: "DB 스키마 변경", d: 2, x: 1, y: 2, dep: ["a"] },
+    { id: "d", n: "결제 로직 이전", d: 4, x: 2, y: 0, dep: ["b"] },
+    { id: "e", n: "환불 로직 이전", d: 3, x: 2, y: 1, dep: ["b", "c"] },
+    { id: "f", n: "데이터 백필", d: 2, x: 2, y: 2, dep: ["c"] },
+    { id: "g", n: "통합 테스트", d: 3, x: 3, y: 1, dep: ["d", "e", "f"] },
+    { id: "h", n: "문서 갱신", d: 1, x: 3, y: 2, dep: ["b"] },
+    { id: "i", n: "단계적 전환", d: 1, x: 4, y: 1, dep: ["g"] },
+  ];
+  const by = Object.fromEntries(T.map((t) => [t.id, t]));
+  // 가장 이른 끝 시간과 임계 경로
+  const ef = {}; const pred = {};
+  T.forEach((t) => { let s = 0, p = null; t.dep.forEach((d) => { if (ef[d] > s) { s = ef[d]; p = d; } }); ef[t.id] = s + t.d; pred[t.id] = p; });
+  const endId = T.reduce((b, t) => (ef[t.id] > ef[b] ? t.id : b), T[0].id);
+  const crit = new Set(); for (let x = endId; x; x = pred[x]) crit.add(x);
+  const CL = ef[endId], SUM = T.reduce((a, t) => a + t.d, 0);
+  const sel = new Set(); let checked = false;
+  function schedule(W) {
+    const fin = {}, start = {}; const free = Array(W).fill(0); const lane = {};
+    const done = new Set(); let t = 0; const todo = T.slice();
+    while (todo.length) {
+      // 준비된 작업 중 임계 경로 우선, 그다음 긴 것
+      const ready = todo.filter((x) => x.dep.every((d) => done.has(d) && fin[d] <= t)).sort((p, q) => (crit.has(q.id) - crit.has(p.id)) || q.d - p.d);
+      const wi = free.findIndex((f) => f <= t);
+      if (ready.length && wi >= 0) { const x = ready[0]; start[x.id] = t; fin[x.id] = t + x.d; free[wi] = t + x.d; lane[x.id] = wi; done.add(x.id); todo.splice(todo.indexOf(x), 1); continue; }
+      const nxt = Math.min(...free.filter((f) => f > t), ...Object.values(fin).filter((f) => f > t));
+      t = isFinite(nxt) ? nxt : t + 1;
+    }
+    return { start, fin, lane, mk: Math.max(...Object.values(fin)) };
+  }
+  let hit = [];
+  const cv = LR.canvas("dg-cv", { height: (w) => (w < 560 ? 420 : 380), draw });
+  function draw(c, w, h) {
+    const W = LR.val("dg-w");
+    const gh = h * 0.52, nw = Math.min(118, (w - 40) / 5.4), nh = 40;
+    const NX = (x) => 14 + x * ((w - 28 - nw) / 4), NY = (y) => 18 + y * ((gh - 36 - nh) / 2);
+    hit = [];
+    T.forEach((t) => t.dep.forEach((d) => {
+      const a = by[d], onCrit = checked && crit.has(t.id) && crit.has(d) && pred[t.id] === d;
+      LR.arrow(c, NX(a.x) + nw, NY(a.y) + nh / 2, NX(t.x), NY(t.y) + nh / 2, onCrit ? LR.col("guard") : LR.col("axis"), { w: onCrit ? 2.6 : 1.3, hs: 6 });
+    }));
+    T.forEach((t) => {
+      const x = NX(t.x), y = NY(t.y), s = sel.has(t.id);
+      const col = checked ? (crit.has(t.id) ? LR.col("guard") : LR.col("state")) : s ? LR.col("accent") : LR.col("state");
+      c.fillStyle = LR.col("bg-elev"); LR.rrect(c, x, y, nw, nh, 8); c.fill();
+      c.fillStyle = LR.alpha(col, s ? 0.3 : 0.12); c.fill(); c.strokeStyle = col; c.lineWidth = s ? 2.4 : 1.4; c.stroke();
+      LR.text(c, t.n, x + 8, y + 14, { size: Math.min(12, nw / 8.5), weight: 700 });
+      LR.text(c, t.d + "h", x + 8, y + 30, { size: 10.5, mono: true, color: LR.col("text-dim") });
+      if (checked && s !== crit.has(t.id)) LR.text(c, s ? "✗" : "놓침", x + nw - 8, y + 30, { size: 10.5, weight: 800, align: "right", color: LR.col("guard") });
+      hit.push({ id: t.id, x, y, w: nw, h: nh });
+    });
+    // 간트
+    const S = schedule(W), top = gh + 14, l = 64, rr = w - 12, maxT = Math.max(SUM, S.mk);
+    const X = (v) => l + (v / maxT) * (rr - l), lh = Math.min(22, (h - top - 30) / W);
+    LR.text(c, `간트 차트 · W = ${W}`, 8, top - 2, { size: 11.5, weight: 700, color: LR.col("text-dim") });
+    for (let i = 0; i < W; i++) LR.text(c, `에이전트 ${i + 1}`, 8, top + 12 + i * lh + lh / 2, { size: 10.5, color: LR.col("text-faint") });
+    T.forEach((t) => {
+      const y = top + 12 + S.lane[t.id] * lh, col = crit.has(t.id) && checked ? LR.col("guard") : LR.col("accent");
+      c.fillStyle = LR.alpha(col, 0.25); LR.rrect(c, X(S.start[t.id]) + 1, y + 2, X(S.fin[t.id]) - X(S.start[t.id]) - 2, lh - 4, 4); c.fill();
+      c.strokeStyle = col; c.lineWidth = 1; c.stroke();
+      if (X(S.fin[t.id]) - X(S.start[t.id]) > 20) LR.text(c, t.id.toUpperCase(), (X(S.start[t.id]) + X(S.fin[t.id])) / 2, y + lh / 2, { size: 10, mono: true, weight: 700, align: "center", color: col });
+    });
+    const yb = top + 14 + W * lh;
+    c.strokeStyle = LR.col("axis"); c.beginPath(); c.moveTo(l, yb); c.lineTo(rr, yb); c.stroke();
+    [0, 5, 10, 15, 20].filter((v) => v <= maxT).forEach((v) => LR.text(c, v + "h", X(v), yb + 10, { size: 10, mono: true, align: "center", color: LR.col("text-faint") }));
+    c.save(); c.strokeStyle = LR.col("guard"); c.setLineDash([4, 4]); c.beginPath(); c.moveTo(X(CL), top + 6); c.lineTo(X(CL), yb); c.stroke(); c.restore();
+    LR.text(c, "임계 경로 " + CL + "h", X(CL) + 4, top + 4, { size: 10.5, weight: 700, color: LR.col("guard") });
+    LR.set("dg-o1", SUM + "시간"); LR.set("dg-o2", checked ? CL + "시간" : "검사 후 공개"); LR.set("dg-o3", S.mk + "시간", S.mk === CL ? "good" : ""); LR.set("dg-o4", (SUM / S.mk).toFixed(2) + "배");
+  }
+  cv.on("click", (x, y) => { const t = hit.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h); if (!t) return; checked = false; sel.has(t.id) ? sel.delete(t.id) : sel.add(t.id); cv.redraw(); });
+  LR.el("dg-check").addEventListener("click", () => {
+    checked = true; cv.redraw();
+    const right = [...sel].filter((x) => crit.has(x)).length, wrong = sel.size - right, miss = crit.size - right;
+    const ok = !wrong && !miss;
+    const fb = LR.el("dg-fb"); fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = ok ? `<b>정확합니다</b> — ${[...crit].map((x) => by[x].n).reverse().join(" → ")} = ${CL}시간. 이 사슬의 작업이 하나라도 늦으면 전체가 늦는다.` : `<b>${right}개 맞음, ${wrong}개 잘못 고름, ${miss}개 놓침</b> — 빨간 사슬이 임계 경로다. 각 작업에서 가장 늦게 끝나는 선행 작업을 거꾸로 따라가 보자.`;
+  });
+  LR.el("dg-clear").addEventListener("click", () => { sel.clear(); checked = false; LR.el("dg-fb").textContent = "임계 경로라고 생각하는 작업을 눌러 보세요."; LR.el("dg-fb").style.removeProperty("--k"); cv.redraw(); });
+  LR.wire(["dg-w"], () => cv.redraw(), { "dg-w": (v) => v + "개" });
+})();
+
+/* ---------------- 3. 발견되는 일 ---------------- */
+(function () {
+  const cv = LR.canvas("ds-cv", { aspect: 0.62, draw });
+  function run() {
+    const N0 = LR.val("ds-n"), g = LR.val("ds-g"), r = LR.rng(LR.val("ds-seed") * 104729 + 7);
+    let known = N0, done = 0; const K = [N0], Dn = [0];
+    while (done < known && done < 2000) { done++; let add = 0; let gg = g; while (gg > 0) { if (r() < Math.min(1, gg)) add++; gg -= 1; } known += add; K.push(known); Dn.push(done); }
+    return { N0, g, K, Dn, total: known };
+  }
+  function draw(c, w, h) {
+    const R = run(), n = R.Dn.length - 1, total = R.total;
+    const box = { l: 46, t: 14, r: w - 52, b: h - 42 };
+    const A = LR.axes(c, { box, x: [0, n], y: [0, 1], xt: [0, Math.round(n / 4), Math.round(n / 2), Math.round((3 * n) / 4), n], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "끝낸 작업 수", yl: "진행률" });
+    const kmax = Math.max(...R.K);
+    const Y2 = (v) => box.b - (v / kmax) * (box.b - box.t);
+    [0, Math.round(kmax / 2), kmax].forEach((v) => LR.text(c, v + "개", box.r + 6, Y2(v), { size: 10.5, mono: true, color: LR.col("state") }));
+    LR.line(c, R.K.map((k, i) => [A.X(i), Y2(k)]), LR.alpha(LR.col("state"), 0.8), 1.6, [4, 3]);
+    LR.line(c, R.Dn.map((d, i) => [A.X(i), A.Y(Math.min(1, d / R.N0))]), LR.col("accent"), 2.6);
+    LR.line(c, R.Dn.map((d, i) => [A.X(i), A.Y(d / total)]), LR.col("env"), 2.6);
+    const at = Math.min(n, R.N0), realAt = at / total;
+    c.fillStyle = LR.col("accent"); c.beginPath(); c.arc(A.X(at), A.Y(1), 5, 0, 7); c.fill();
+    c.strokeStyle = LR.col("accent"); c.setLineDash([3, 3]); c.beginPath(); c.moveTo(A.X(at), A.Y(1)); c.lineTo(A.X(at), A.Y(realAt)); c.stroke(); c.setLineDash([]);
+    c.fillStyle = LR.col("env"); c.beginPath(); c.arc(A.X(at), A.Y(realAt), 5, 0, 7); c.fill();
+    LR.text(c, "“100% 완료!”", A.X(at) + 8, A.Y(1) + 12, { size: 11, weight: 700, color: LR.col("accent") });
+    const exp = R.g < 1 ? R.N0 / (1 - R.g) : Infinity;
+    LR.set("ds-o1", isFinite(exp) ? exp.toFixed(0) + "개" : "∞");
+    LR.set("ds-o2", total + "개");
+    LR.set("ds-o3", LR.pct(realAt), realAt < 0.6 ? "bad" : realAt < 0.9 ? "warn" : "good");
+    LR.set("ds-o4", LR.pct((total - R.N0) / total));
+  }
+  LR.wire(["ds-n", "ds-g", "ds-seed"], () => cv.redraw(), { "ds-n": (v) => v + "개", "ds-g": (v) => v.toFixed(2), "ds-seed": (v) => "#" + v });
+})();
+</script>
+</body>
+</html>

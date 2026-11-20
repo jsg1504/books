@@ -1,0 +1,14 @@
+{
+  "title": "장기 실행 에이전트 교과서",
+  "topic": "인공지능",
+  "description": "몇 분짜리 대화가 아니라 몇 시간, 며칠을 일하는 에이전트는 어떻게 만들까요? 신뢰도의 복리, 컨텍스트 압축, 진행 파일과 외부 기억, 체크포인트와 멱등성, 계획과 검증, 표류 감지, 비용, 사람의 감독, 안전까지 애니메이션 도해와 실험으로 배우는 장기 실행 에이전트 설계서입니다.",
+  "published": true,
+  "format": "custom",
+  "cover": "cover.svg",
+  "details": ["12개 장", "36개 실험", "3D 세션 나선"],
+  "links": [
+    {"label": "신뢰도 복리 계산기", "href": "chapters/horizon.html#sim-compound", "kind": "첫 실험"},
+    {"label": "충돌과 재개 게임", "href": "chapters/checkpoint.html#sim-replay", "kind": "게임"},
+    {"label": "하네스 설계 플레이그라운드", "href": "chapters/ops.html#sim-play", "kind": "종합"}
+  ]
+}

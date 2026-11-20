@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>표류, 맴돌기, 목표 망각 · MarathonBook</title>
+<meta name="description" content="긴 실행에서 같은 행동을 반복하는 둠 루프를 감지하는 법, 목표가 컨텍스트 가운데로 밀려나며 생기는 표류와 재고정, 실행 기록을 읽고 상태를 진단하는 게임.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="drift">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 08</div>
+    <h1>표류, 맴돌기, 목표 망각</h1>
+    <p class="lead">장기 실행 에이전트가 실패하는 모습은 대개 극적이지 않다. 충돌하지도, 오류를 내지도 않는다. 그저 <b>같은 수정과 같은 실패를 스무 번째 반복하거나</b>, 처음 목표와 상관없는 리팩터링에 두 시간을 쓴다. 그동안 토큰은 타고 진척은 없다. 이 장에서는 그런 상태를 기계적으로 감지하는 법, 목표를 잊지 않게 붙드는 법, 그리고 실행 기록을 읽고 진단하는 눈을 기른다.</p>
+    <ul class="objectives">
+      <li>행동의 반복과 진척 지표를 함께 써서 둠 루프를 감지하고, 감지기의 놓침과 오경보를 맞바꿀 수 있다.</li>
+      <li>목표가 컨텍스트 가운데로 밀려나며 표류가 커지는 원리와, 목표를 끝에 다시 쓰는 재고정의 효과를 설명할 수 있다.</li>
+      <li>실행 기록을 보고 진전, 맴돌기, 표류를 구별할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="loop">
+    <h2>둠 루프 감지</h2>
+    <p><span class="term">둠 루프</span><span class="en">doom loop</span>는 같은 실패에 같은 처방을 반복하는 상태다. 테스트가 실패하면 같은 줄을 고치고, 다시 실패하면 되돌리고, 다시 같은 줄을 고친다. 사람은 몇 번이면 알아채지만, 에이전트는 매 턴이 새 시도처럼 느껴진다. 압축이 그 사이에 끼면 이전 시도의 기억까지 사라진다.</p>
+    <p>하네스가 할 수 있는 일은 <span class="term">정체 감지</span><span class="en">stall detection</span>다. 최근 W개의 행동 중 서로 다른 행동의 비율이 낮으면 반복을 의심한다. 하지만 반복이 늘 나쁜 것은 아니다. 편집 → 테스트 → 편집 → 테스트는 건강한 리듬이기도 하다. 그래서 <b>진척 지표</b>(통과한 테스트 수, 끝낸 기능 수)가 함께 움직이는지 본다. 반복하면서 진척도 없을 때가 진짜 맴돌기다. 감지하면 할 일은 정해져 있다. 멈추고, 지금까지의 시도를 노트에 적고, 다른 접근을 고르거나 사람에게 묻는다.</p>
+    <div class="sim" id="sim-stall">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>정체 감지기 조율 — 300턴 실행 기록</h3></div>
+      <div class="sim-body">
+        <div class="sim-view"><canvas id="st-cv"></canvas></div>
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:180px"><span>창 W (최근 행동 수) <output id="st-w-out"></output></span><input type="range" id="st-w" min="4" max="30" step="1" value="10"></label>
+          <label class="ctrl" style="flex:1;min-width:180px"><span>반복 경보 임계값 <output id="st-t-out"></output></span><input type="range" id="st-t" min="0.3" max="0.95" step="0.05" value="0.6"></label>
+          <label class="check"><input type="checkbox" id="st-p"> 진척 지표도 멈췄을 때만 경보</label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">잡은 둠 루프</span><span class="v" id="st-o1">—</span></div>
+        <div class="stat"><span class="k">평균 감지 지연</span><span class="v" id="st-o2">—</span></div>
+        <div class="stat"><span class="k">오경보 구간</span><span class="v" id="st-o3">—</span></div>
+        <div class="stat"><span class="k">루프에서 버린 턴</span><span class="v" id="st-o4">—</span></div>
+      </div>
+      <div class="sim-note">가운데 띠는 행동마다 색을 다르게 칠한 실행 기록이다. 빨간 음영은 실제 둠 루프, 초록 음영은 진척이 있는 건강한 반복(TDD 리듬)이다. 아래 선은 통과한 테스트 수, 위의 주황 표시는 감지기가 울린 턴이다. 해볼 것: ① 기본값에서 감지기는 루프를 잡지만 건강한 반복에서도 울린다. ② “진척 지표도 멈췄을 때만”을 켜면 오경보가 사라진다. ③ 창을 4로 줄이면 빨리 잡지만 우연한 반복에도 울리고, 30으로 늘리면 짧은 루프를 놓치거나 늦게 잡는다. ④ 루프에서 버린 턴은 감지 지연의 합이다. 감지가 늦을수록 비싸다.</div>
+    </div>
+  </section>
+
+  <section id="anchor">
+    <h2>목표가 가운데로 밀려날 때</h2>
+    <p><span class="term">목표 표류</span><span class="en">goal drift</span>는 맴돌기보다 조용하다. 에이전트는 계속 무언가를 해내고 있다. 다만 그것이 원래 목표와 점점 상관없어진다. 3장에서 본 것처럼 긴 컨텍스트의 가운데 있는 정보는 덜 쓰인다. 목표는 처음 지시에 한 번 나오고, 그 뒤로 수만 토큰의 도구 결과가 쌓이며 가운데로 밀려난다. 반면 창의 끝에는 방금 본 흥미로운 로그와 파일이 있다.</p>
+    <p>처방은 <b>목표를 창의 끝으로 다시 가져오는 것</b>이다. 에이전트가 작업 목록을 주기적으로 다시 쓰게 하면, 그때마다 목표와 남은 일이 최근 메시지로 다시 등장한다. 별것 아닌 습관이지만, 긴 실행에서 주의를 붙드는 가장 싼 장치다. 하네스가 일정 턴마다 목표를 상기시키는 메시지를 넣는 방법도 있다.</p>
+    <div class="sim" id="sim-anchor">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>표류와 재고정 — 창 속 목표의 위치와 하는 일</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="an-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>목표 재고정 주기 <output id="an-k-out"></output></span><input type="range" id="an-k" min="0" max="60" step="5" value="0"></label>
+          <label class="ctrl"><span>기본 흔들림 <output id="an-s-out"></output></span><input type="range" id="an-s" min="0.02" max="0.2" step="0.01" value="0.08"></label>
+          <label class="ctrl"><span>표본 실행 <output id="an-seed-out"></output></span><input type="range" id="an-seed" min="1" max="12" step="1" value="1"></label>
+          <div class="btns"><button class="btn primary" id="an-play">▶ 재생</button><button class="btn" id="an-reset">처음부터</button></div>
+          <div class="legend"><span><i style="background:var(--accent)"></i>목표와의 정렬</span><span><i style="background:var(--state)"></i>목표 재고정</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">턴</span><span class="v" id="an-o1">—</span></div>
+        <div class="stat"><span class="k">지금 하는 일</span><span class="v" id="an-o2" style="font-size:15px">—</span></div>
+        <div class="stat"><span class="k">목표 정렬 (이 시점)</span><span class="v" id="an-o3">—</span></div>
+        <div class="stat"><span class="k">목표와 무관한 턴 비율</span><span class="v" id="an-o4">—</span></div>
+      </div>
+      <div class="sim-note">모형: 매 턴 하는 일의 방향이 무작위로 흔들리는데, 흔들림의 크기는 목표가 마지막으로 창 끝에 나온 뒤 지난 턴 수에 비례해 커지고, 목표가 가까이 있을수록 원래 방향으로 당겨진다. 위쪽 띠는 창이다. 보라 블록이 목표 문장이 있는 자리다. 해볼 것: ① 재고정 없이 재생하면 목표 블록이 왼쪽(가운데)으로 밀려나며 하는 일이 “로깅 라이브러리 비교”, “README 문체 다듬기” 쪽으로 흘러간다. ② 재고정 주기를 20턴으로 두면 보라 블록이 주기적으로 끝에 다시 생기고, 정렬이 다시 올라간다. ③ 표본 실행을 바꿔 가며 보자. 표류는 운이 아니라 구조다.</div>
+    </div>
+  </section>
+
+  <section id="diagnose">
+    <h2>실행 기록 읽기</h2>
+    <p>밤새 돈 에이전트의 기록을 아침에 열어 보는 사람에게 필요한 눈은 하나다. 지금 이 실행이 <b>나아가고 있는가, 맴돌고 있는가, 엉뚱한 데로 가고 있는가</b>. 단서는 기록 안에 있다. 같은 파일·같은 오류의 반복, 진척 지표의 변화, 목표에 나오는 단어가 행동에 나오는지.</p>
+    <div class="sim" id="sim-diag">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>실행 기록 진단 — 여섯 개의 발췌</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="dx-card" style="font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.6"></div>
+        <div class="bins">
+          <button data-v="ok" style="--k:var(--env)">진전 중</button>
+          <button data-v="loop" style="--k:var(--guard)">맴도는 중</button>
+          <button data-v="drift" style="--k:var(--tool)">표류 중</button>
+        </div>
+        <div class="verdict" id="dx-fb">기록을 읽고 상태를 판정해 보세요.</div>
+        <div class="budget"><i id="dx-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="dx-o1">0 / 6</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="dx-o2">0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>긴 실행의 흔한 실패는 조용하다. 같은 수정과 실패의 반복(둠 루프), 목표와 무관한 일로의 표류.</li>
+      <li>반복만 보면 건강한 리듬도 경보가 된다. 반복과 진척 정체를 함께 볼 때 둠 루프를 정확히 잡는다. 감지하면 멈추고, 기록하고, 접근을 바꾸거나 묻는다.</li>
+      <li>목표는 창의 가운데로 밀려나며 덜 쓰인다. 작업 목록을 주기적으로 다시 쓰는 재고정이 가장 싼 처방이다.</li>
+      <li>기록을 읽을 때는 같은 오류의 반복, 진척 지표의 변화, 목표의 단어가 행동에 남아 있는지를 본다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 정체 감지기가 TDD 리듬(편집 → 테스트 반복)에도 경보를 울린다. 가장 좋은 보완은?</p><div class="opts">
+        <button class="opt">감지기를 끈다</button>
+        <button class="opt" data-correct>통과한 테스트 수 같은 진척 지표가 멈췄을 때만 경보를 울린다</button>
+        <button class="opt">창을 아주 크게 한다</button>
+      </div><div class="quiz-exp">반복 자체가 아니라 진척 없는 반복이 문제다. 두 신호를 함께 쓴다.</div></div>
+      <div class="quiz-q"><p>2. 둠 루프를 감지한 하네스가 할 일로 가장 알맞은 것은?</p><div class="opts">
+        <button class="opt">같은 프롬프트로 다시 시도한다</button>
+        <button class="opt" data-correct>멈추고, 지금까지의 시도와 결과를 노트에 남기고, 다른 접근을 고르거나 사람에게 묻는다</button>
+        <button class="opt">컨텍스트를 압축하고 계속한다</button>
+      </div><div class="quiz-exp">압축만 하면 이전 시도의 기억이 사라져 같은 루프를 다시 돈다. 시도의 기록이 루프를 끊는다.</div></div>
+      <div class="quiz-q"><p>3. 목표 표류를 줄이는 가장 싼 습관은?</p><div class="opts">
+        <button class="opt">시스템 프롬프트를 길게 쓴다</button>
+        <button class="opt" data-correct>작업 목록과 목표를 주기적으로 다시 써서 창의 끝에 두게 한다</button>
+        <button class="opt">더 큰 컨텍스트 창을 쓴다</button>
+      </div><div class="quiz-exp">창이 크면 목표가 더 깊이 묻힐 뿐이다. 최근 메시지에 목표가 다시 나오게 한다.</div></div>
+      <div class="quiz-q"><p>4. 기록에서 “결제 마이그레이션” 목표의 단어가 지난 80턴 동안 한 번도 나오지 않고, 커밋은 로깅 설정 변경뿐이다. 진단은?</p><div class="opts">
+        <button class="opt">맴도는 중</button>
+        <button class="opt" data-correct>표류 중</button>
+        <button class="opt">진전 중</button>
+      </div><div class="quiz-exp">일은 하고 있지만 목표와 무관하다. 표류의 전형이다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 정체 감지 ---------------- */
+(function () {
+  const N = 300;
+  // 결정적 실행 기록: 일반 작업, 둠 루프, 건강한 반복
+  const r = LR.rng(99);
+  const EP = [ // [시작, 길이, 종류]
+    [40, 22, "loop"], [95, 18, "tdd"], [150, 14, "loop"], [205, 26, "loop"], [250, 20, "tdd"],
+  ];
+  const kindAt = (t) => { const e = EP.find(([s, l]) => t >= s && t < s + l); return e ? e[2] : "work"; };
+  const A = [], P = []; let pass = 10;
+  for (let t = 0; t < N; t++) {
+    const k = kindAt(t), e = EP.find(([s, l]) => t >= s && t < s + l);
+    let a;
+    if (k === "loop") a = (t - e[0]) % 2 ? 1 : 2; // edit X / test X (실패)
+    else if (k === "tdd") { a = (t - e[0]) % 2 ? 3 : 4; if ((t - e[0]) % 2) pass += 1; }
+    else { a = 5 + Math.floor(r() * 14); if (r() < 0.06) pass += 1; }
+    A.push(a); P.push(pass);
+  }
+  const cv = LR.canvas("st-cv", { height: (w) => (w < 560 ? 220 : 200), draw });
+  function detect() {
+    const W = LR.val("st-w"), th = LR.val("st-t"), prog = LR.el("st-p").checked;
+    const F = [];
+    for (let t = 0; t < N; t++) {
+      if (t < W - 1) { F.push(false); continue; }
+      const win = A.slice(t - W + 1, t + 1), rep = 1 - (new Set(win).size - 1) / (W - 1);
+      const stalled = P[t] === P[t - W + 1];
+      F.push(rep >= th && (!prog || stalled));
+    }
+    // 평가
+    let caught = 0, delay = 0, wasted = 0;
+    EP.filter((e) => e[2] === "loop").forEach(([s, l]) => {
+      const i = F.slice(s, s + l).indexOf(true);
+      if (i >= 0) { caught++; delay += i; wasted += i; } else wasted += l;
+    });
+    let fa = 0;
+    const clean = (t) => { for (let i = Math.max(0, t - W + 1); i <= t; i++) if (kindAt(i) === "loop") return false; return true; };
+    for (let t = 0; t < N; t++) if (F[t] && clean(t) && (t === 0 || !F[t - 1] || !clean(t - 1))) fa++;
+    return { F, caught, delay, fa, wasted };
+  }
+  function draw(c, w, h) {
+    const D = detect();
+    const l = 10, rr = w - 10, X = (t) => l + (t / N) * (rr - l), bw = (rr - l) / N;
+    const yb = 40, bh = 38, yp = yb + bh + 16, ph = h - yp - 26;
+    EP.forEach(([s, len, k]) => { c.fillStyle = LR.alpha(LR.col(k === "loop" ? "guard" : "env"), 0.16); c.fillRect(X(s), 14, len * bw, h - 30); });
+    // 경보
+    D.F.forEach((f, t) => { if (f) { c.fillStyle = LR.col("accent"); c.fillRect(X(t), 18, Math.max(1, bw), 12); } });
+    LR.text(c, "경보", l + 2, 10, { size: 10, color: LR.col("accent") });
+    // 행동 띠
+    const pal = ["ctx", "guard", "tool", "env", "state", "accent-2", "user"];
+    A.forEach((a, t) => { c.fillStyle = LR.alpha(LR.col(a <= 2 ? "guard" : a <= 4 ? "env" : pal[a % pal.length]), a <= 4 ? 0.85 : 0.45); c.fillRect(X(t), yb + (a % 5) * (bh / 6), Math.max(1, bw - 0.3), bh / 6); });
+    LR.text(c, "행동", l + 2, yb - 6, { size: 10, color: LR.col("text-faint") });
+    // 진척
+    const pmax = Math.max(...P), pmin = P[0];
+    LR.line(c, P.map((p, t) => [X(t), yp + ph - ((p - pmin) / (pmax - pmin)) * ph]), LR.col("env"), 2);
+    LR.text(c, "통과한 테스트", l + 2, yp + 4, { size: 10, color: LR.col("env") });
+    [0, 100, 200, 300].forEach((t) => LR.text(c, t + "턴", X(t), h - 8, { size: 10, mono: true, align: t === 0 ? "left" : t === 300 ? "right" : "center", color: LR.col("text-faint") }));
+    const nl = EP.filter((e) => e[2] === "loop").length;
+    LR.set("st-o1", `${D.caught} / ${nl}`, D.caught === nl ? "good" : "bad");
+    LR.set("st-o2", D.caught ? (D.delay / D.caught).toFixed(1) + "턴" : "—");
+    LR.set("st-o3", D.fa + "개", D.fa ? "bad" : "good");
+    LR.set("st-o4", D.wasted + "턴", D.wasted > 30 ? "warn" : "");
+  }
+  LR.wire(["st-w", "st-t"], () => cv.redraw(), { "st-w": (v) => v + "개", "st-t": (v) => LR.pct(v) });
+  LR.el("st-p").addEventListener("change", () => cv.redraw());
+})();
+
+/* ---------------- 2. 표류와 재고정 ---------------- */
+(function () {
+  const T = 200;
+  const TASKS = ["결제 마이그레이션: 환불 API 이전", "환불 테스트 고치기", "관련 유틸 정리", "에러 처리 리팩터링", "로깅 라이브러리 비교", "로그 형식 통일", "README 문체 다듬기"];
+  let sim = null, now = 0;
+  function run() {
+    const k = LR.val("an-k"), s0 = LR.val("an-s"), r = LR.rng(LR.val("an-seed") * 31 + 5);
+    let th = 0, since = 0; const TH = [], SINCE = [], ANC = [];
+    for (let t = 0; t < T; t++) {
+      if (k > 0 && t > 0 && t % k === 0) { since = 0; ANC.push(t); }
+      const pull = 0.12 * Math.exp(-since / 25);   // 목표가 가까울수록 원래 방향으로 당김
+      const sig = s0 * (1 + since / 40);           // 목표가 멀어질수록 크게 흔들림
+      th += LR.normal(r) * sig - pull * th;
+      th = LR.clamp(th, -Math.PI, Math.PI);
+      since++;
+      TH.push(th); SINCE.push(since);
+    }
+    const al = TH.map((x) => Math.cos(x));
+    return { al, SINCE, ANC, off: al.filter((a) => a < 0.5).length / T };
+  }
+  const cv = LR.canvas("an-cv", { aspect: 0.66, draw });
+  function draw(c, w, h) {
+    if (!sim) sim = run();
+    const t = Math.min(T - 1, Math.floor(now));
+    // 위: 창 띠 (시간 순으로 블록이 오른쪽에 쌓이고, 왼쪽이 오래된 것)
+    const sx = 12, sw = w - 24, sy = 16, sh = 30;
+    c.fillStyle = LR.col("surface-2"); LR.rrect(c, sx, sy, sw, sh, 6); c.fill();
+    LR.text(c, "창의 앞 (시스템 프롬프트)", sx, sy - 7, { size: 10, color: LR.col("text-faint") });
+    LR.text(c, "창의 끝 (최근)", sx + sw, sy - 7, { size: 10, align: "right", color: LR.col("text-faint") });
+    const span = 80, base = Math.max(0, t - span);
+    for (let i = base; i <= t; i++) { const x = sx + 30 + ((i - base) / span) * (sw - 34); c.fillStyle = LR.alpha(LR.col("ctx"), 0.25 + 0.15 * ((i * 7) % 3)); c.fillRect(x, sy + 4, Math.max(1.5, (sw - 34) / span - 0.6), sh - 8); }
+    c.fillStyle = LR.col("state"); c.fillRect(sx + 4, sy + 4, 22, sh - 8);
+    const lastA = [0, ...sim.ANC].filter((a) => a <= t).pop();
+    if (lastA > 0 && lastA >= base) { const x = sx + 30 + ((lastA - base) / span) * (sw - 34); c.fillStyle = LR.col("state"); c.fillRect(x - 2, sy + 2, 8, sh - 4); }
+    LR.text(c, "목표", sx + 15, sy + sh / 2, { size: 9.5, weight: 800, align: "center", color: LR.col("bg") });
+    // 아래: 정렬 그래프
+    const box = { l: 44, t: sy + sh + 24, r: w - 12, b: h - 34 };
+    const A = LR.axes(c, { box, x: [0, T], y: [-1, 1], xt: [0, 50, 100, 150, 200], yt: [-1, 0, 0.5, 1], yf: (v) => v.toFixed(1), xl: "턴", yl: "목표 정렬" });
+    c.fillStyle = LR.alpha(LR.col("guard"), 0.08); c.fillRect(box.l, A.Y(0.5), box.r - box.l, box.b - A.Y(0.5));
+    sim.ANC.forEach((a) => { c.strokeStyle = LR.alpha(LR.col("state"), 0.6); c.setLineDash([3, 3]); c.beginPath(); c.moveTo(A.X(a), box.t); c.lineTo(A.X(a), box.b); c.stroke(); c.setLineDash([]); });
+    LR.line(c, sim.al.slice(0, t + 1).map((v, i) => [A.X(i), A.Y(v)]), LR.col("accent"), 2.4);
+    c.fillStyle = LR.col("accent"); c.beginPath(); c.arc(A.X(t), A.Y(sim.al[t]), 5, 0, 7); c.fill();
+    const a = sim.al[t], idx = a > 0.9 ? 0 : a > 0.75 ? 1 : a > 0.5 ? 2 : a > 0.2 ? 3 : a > -0.1 ? 4 : a > -0.5 ? 5 : 6;
+    LR.set("an-o1", (t + 1) + " / " + T);
+    LR.set("an-o2", TASKS[idx], idx <= 1 ? "good" : idx >= 4 ? "bad" : "warn");
+    LR.set("an-o3", a.toFixed(2), a > 0.75 ? "good" : a < 0.5 ? "bad" : "warn");
+    LR.set("an-o4", LR.pct(sim.off), sim.off > 0.3 ? "bad" : sim.off > 0.1 ? "warn" : "good");
+  }
+  LR.wire(["an-k", "an-s", "an-seed"], () => { sim = null; cv.redraw(); }, { "an-k": (v) => (v ? v + "턴마다" : "안 함"), "an-s": (v) => v.toFixed(2), "an-seed": (v) => "#" + v });
+  now = T - 1; cv.redraw();
+  LR.player("an-play", LR.el("sim-anchor"), (dt) => { if (now >= T - 1) now = 0; now += dt * 22; cv.redraw(); if (now >= T - 1) { now = T - 1; cv.redraw(); return false; } });
+  LR.el("an-reset").addEventListener("click", () => { now = 0; cv.redraw(); });
+})();
+
+/* ---------------- 3. 실행 기록 진단 ---------------- */
+LR.sortGame({
+  root: "sim-diag", prefix: "dx",
+  names: { ok: "진전 중", loop: "맴도는 중", drift: "표류 중" },
+  cards: [
+    ["목표: 결제 모듈을 새 API로 이전\n#212 edit src/pay/refund.ts\n#213 test → 41 passed (+1)\n#214 edit src/pay/charge.ts\n#215 test → 43 passed (+2)\n#216 commit \"charge: 새 API 클라이언트로 전환\"", "ok", "편집과 테스트가 번갈아 나오지만 통과 수가 계속 늘고 커밋이 남는다. 건강한 리듬이다."],
+    ["목표: 결제 모듈을 새 API로 이전\n#301 edit src/pay/refund.ts:88 (timeout 3000→5000)\n#302 test → FAIL refund.spec: ETIMEDOUT\n#303 edit src/pay/refund.ts:88 (timeout 5000→3000)\n#304 test → FAIL refund.spec: ETIMEDOUT\n#305 edit src/pay/refund.ts:88 (timeout 3000→5000)", "loop", "같은 줄을 같은 값 사이에서 왔다 갔다 하고, 같은 오류가 반복된다. 진척 지표도 그대로다. 멈추고 원인(네트워크 모킹?)을 다시 봐야 한다."],
+    ["목표: 결제 모듈을 새 API로 이전\n#410 read node_modules/pino/README.md\n#411 read node_modules/winston/README.md\n#412 write docs/logging-comparison.md (+180)\n#413 edit src/logger.ts (+64 −30)\n#414 commit \"로거 교체 검토\"", "drift", "일은 하고 커밋도 남지만 목표의 단어(결제, API, 이전)가 어디에도 없다. 로깅이라는 곁길로 빠졌다."],
+    ["목표: 기능 #18 다크 모드\n#520 test e2e:darkmode → FAIL 대비 4.1 < 4.5 (설정 화면)\n#521 edit src/theme.css (--text-dim 조정)\n#522 test e2e:darkmode → FAIL 대비 4.3 < 4.5 (설정 화면)\n#523 edit src/theme.css (--text-dim 조정)\n#524 test e2e:darkmode → PASS · features.json #18 true", "ok", "같은 테스트를 반복했지만 측정값이 4.1 → 4.3 → 통과로 움직였다. 반복이지만 수렴하고 있다."],
+    ["목표: 기능 #22 CSV 내보내기\n#601 run npm install csv-stringify → ERESOLVE peer dep\n#602 run npm install csv-stringify --force → ERESOLVE\n#603 run rm -rf node_modules && npm install → ERESOLVE\n#604 run npm install csv-stringify --legacy-peer-deps → ERESOLVE\n#605 run rm -rf node_modules && npm install → ERESOLVE", "loop", "설치 명령의 변형을 돌려 가며 같은 오류를 만난다. 의존성 충돌의 원인을 읽거나, 라이브러리 없이 구현하거나, 사람에게 물어야 한다."],
+    ["목표: 기능 #22 CSV 내보내기\n#702 edit src/export/csv.ts (+40)\n#703 test → PASS export.spec\n#704 edit src/ui/Toolbar.tsx (아이콘 정렬 수정)\n#705 edit src/ui/Toolbar.tsx (버튼 색 조정)\n#706 edit src/ui/Sidebar.tsx (간격 조정)\n#707 edit src/ui/Header.tsx (글꼴 크기)", "drift", "CSV 기능은 703에서 사실상 끝났는데 커밋하고 다음으로 가지 않고 UI 다듬기로 번졌다. 기능 경계에서 멈추지 않는 것도 표류다."],
+  ],
+});
+</script>
+</body>
+</html>

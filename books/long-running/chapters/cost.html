@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>비용과 예산, 언제 멈출까 · MarathonBook</title>
+<meta name="description" content="매 턴 컨텍스트를 다시 읽는 제곱 비용, 프롬프트 캐시와 압축의 효과, 계속할지 멈출지의 경제학, 큰 모델과 작은 모델의 역할 배분을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="cost">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 09</div>
+    <h1>비용과 예산, 언제 멈출까</h1>
+    <p class="lead">한 번의 질문은 몇 센트다. 밤새 도는 에이전트는 몇십 달러, 수십 개를 돌리면 한 달에 수천 달러가 된다. 그런데 장기 실행의 비용은 시간에 비례해서 늘지 않는다. 모델은 기억이 없어서 매 턴 지금까지의 대화를 <b>통째로 다시 읽는다</b>. 이 장에서는 그 구조가 만드는 제곱 비용, 그것을 깎는 캐시와 압축, 그리고 “조금만 더 하면 될 것 같은” 실행을 언제 멈춰야 하는지를 숫자로 본다.</p>
+    <ul class="objectives">
+      <li>턴마다 컨텍스트를 다시 읽는 구조 때문에 누적 입력 토큰이 턴 수의 제곱에 비례함을 설명할 수 있다.</li>
+      <li>프롬프트 캐시, 압축, 새 세션이 누적 비용을 어떻게 바꾸는지 비교할 수 있다.</li>
+      <li>남은 성공 확률과 비용으로 계속할지 멈출지를 판단하고, 예산 상한을 설계할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="quad">
+    <h2>매 턴 다시 읽는 비용</h2>
+    <p>에이전트가 n번째 턴에 모델을 부를 때 보내는 입력은 시스템 프롬프트 + 지금까지의 n−1턴 전부다. 턴마다 t토큰씩 쌓인다면 n번째 입력은 대략 <var>s</var> + <var>n</var>·<var>t</var>이고, N턴 동안 보낸 입력의 합은 N²에 비례한다. 100턴짜리 실행과 1,000턴짜리 실행의 비용 차이는 10배가 아니라 100배에 가깝다.</p>
+    <p>두 가지가 이 곡선을 꺾는다. 첫째 <span class="term">프롬프트 캐시</span><span class="en">prompt caching</span>. 앞부분이 같은 입력을 다시 보내면 제공자가 저장해 둔 계산을 재사용하고 그 부분을 훨씬 싸게 받는다. Anthropic API 기준으로 캐시에서 읽는 입력은 기본 입력 가격의 10%다(캐시에 쓸 때는 25% 더 비싸다). 대화가 뒤에만 덧붙는 에이전트 루프는 캐시와 궁합이 좋다. 둘째 <b>압축과 새 세션</b>. 창을 비우면 다시 읽을 양 자체가 줄어든다. 대신 3장에서 본 손실이 따른다.</p>
+    <div class="formula"><div class="eq">입력 합 ≈ Σ<sub><var>n</var>=1</sub><sup><var>N</var></sup> (<var>s</var> + <var>n</var>·<var>t</var>) = <var>N</var>·<var>s</var> + <var>t</var>·<var>N</var>(<var>N</var>+1)/2 &nbsp;·&nbsp; 캐시 시: 새 토큰 × 1.25 + 다시 읽은 토큰 × 0.1</div>
+      <div class="where"><var>s</var>: 시스템 프롬프트와 도구 정의, <var>t</var>: 턴당 쌓이는 토큰. 출력 토큰과 캐시 만료는 단순화를 위해 뺐다. 가격은 실험의 입력값이다.</div></div>
+    <div class="sim" id="sim-quad">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>누적 입력 비용 — 캐시와 압축 비교</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="qd-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>턴 수 N <output id="qd-n-out"></output></span><input type="range" id="qd-n" min="50" max="2000" step="50" value="600"></label>
+          <label class="ctrl"><span>턴당 쌓이는 토큰 t <output id="qd-t-out"></output></span><input type="range" id="qd-t" min="0.5" max="8" step="0.5" value="2"></label>
+          <label class="ctrl"><span>시스템 프롬프트 + 도구 s <output id="qd-s-out"></output></span><input type="range" id="qd-s" min="2" max="40" step="1" value="12"></label>
+          <label class="ctrl"><span>입력 가격 ($ / 100만 토큰) <output id="qd-p-out"></output></span><input type="range" id="qd-p" min="0.5" max="15" step="0.5" value="3"></label>
+          <label class="ctrl"><span>압축 시점 (창 크기 기준) <output id="qd-w-out"></output></span><input type="range" id="qd-w" min="50" max="1000" step="50" value="200"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>캐시 없음</span><span><i style="background:var(--tool)"></i>캐시</span><span><i style="background:var(--env)"></i>캐시 + 압축</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">캐시 없음</span><span class="v" id="qd-o1">—</span></div>
+        <div class="stat"><span class="k">캐시</span><span class="v" id="qd-o2">—</span></div>
+        <div class="stat"><span class="k">캐시 + 압축</span><span class="v" id="qd-o3">—</span></div>
+        <div class="stat"><span class="k">턴 수 두 배일 때 (캐시 없음)</span><span class="v" id="qd-o4">—</span></div>
+      </div>
+      <div class="sim-note">빨강과 노랑 곡선은 창 크기에 한계가 없다고 가정한 것이다. 기본값에서 대화는 100만 토큰을 넘으니 실제로는 압축이나 새 세션이 강제된다. 초록 곡선의 압축은 창의 80%에서 대화를 창의 20% 크기 요약으로 바꾼다고 두었다(요약을 만드는 비용은 뺐다). 압축 뒤 바뀐 앞부분은 캐시를 다시 써야 한다. 해볼 것: ① 턴 수를 두 배로 늘리면 캐시 없는 비용은 네 배 가까이 된다(마지막 칸). ② 캐시만으로 비용이 10분의 1 가까이로 준다. 긴 실행에서 캐시는 선택이 아니다. ③ 압축 시점을 1,000K로 올리면 압축이 한 번뿐이라 캐시 곡선에 가까워지고, 50K로 내리면 다시 읽을 양이 줄어 가장 싸진다. 대신 압축이 잦아 기억이 깎인다(3장). 비용과 기억의 맞바꿈이다.</div>
+    </div>
+  </section>
+
+  <section id="stop">
+    <h2>계속할까, 멈출까</h2>
+    <p>장기 실행에서 가장 비싼 실수 중 하나는 <b>안 될 일을 계속하는 것</b>이다. 에이전트는 포기하지 않는다. 같은 버그에 몇 시간이고 매달린다. 이미 쓴 비용은 판단에 들어가면 안 된다(매몰 비용). 물어야 할 것은 하나다. <b>지금부터 한 시간을 더 쓰면 성공할 확률이 얼마나 오르고, 그 가치가 비용보다 큰가?</b></p>
+    <p>시도가 실패할수록 남은 성공 확률은 떨어진다. 쉽게 풀릴 문제였다면 이미 풀렸을 테니까. 이 직관을 단순한 모형으로 옮기면, 각 시도의 성공 확률이 시도를 거듭할수록 줄어드는 상황에서 <b>다음 시도의 기대 가치가 비용보다 작아지는 순간</b>이 멈출 때다. 하네스는 이 판단을 <span class="term">예산 상한</span><span class="en">budget cap</span>으로 미리 정해 둔다. 토큰, 돈, 벽시계 시간, 시도 횟수 중 하나라도 넘으면 멈추고, 지금까지의 시도를 적어 사람에게 넘긴다.</p>
+    <div class="formula"><div class="eq"><var>p</var><sub><var>k</var></sub> = <var>p</var><sub>1</sub> · <var>δ</var><sup><var>k</var>−1</sup> &nbsp;·&nbsp; 계속할 조건: <var>p</var><sub><var>k</var></sub> · <var>V</var> &gt; <var>c</var></div>
+      <div class="where"><var>p</var><sub><var>k</var></sub>: (앞의 시도가 모두 실패했을 때) <var>k</var>번째 시도의 성공 확률, <var>δ</var>: 실패할 때마다 줄어드는 비율, <var>V</var>: 성공의 가치, <var>c</var>: 시도 한 번의 비용(토큰 + 시간).</div></div>
+    <div class="sim" id="sim-stop">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>멈출 때 — 시도별 기대 가치와 비용</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>첫 시도 성공 확률 p₁ <output id="sp-p-out"></output></span><input type="range" id="sp-p" min="0.05" max="0.9" step="0.05" value="0.4"></label>
+          <label class="ctrl"><span>실패마다 남는 비율 δ <output id="sp-d-out"></output></span><input type="range" id="sp-d" min="0.3" max="1" step="0.05" value="0.75"></label>
+          <label class="ctrl"><span>성공의 가치 V <output id="sp-v-out"></output></span><input type="range" id="sp-v" min="5" max="500" step="5" value="100"></label>
+          <label class="ctrl"><span>시도 한 번의 비용 c <output id="sp-c-out"></output></span><input type="range" id="sp-c" min="1" max="40" step="1" value="6"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>다음 시도의 기대 가치 pₖV</span><span><i style="background:var(--tool)"></i>시도 비용 c</span><span><i style="background:var(--accent)"></i>누적 성공 확률</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">멈출 시도 (상한)</span><span class="v" id="sp-o1">—</span></div>
+        <div class="stat"><span class="k">그때까지 누적 성공 확률</span><span class="v" id="sp-o2">—</span></div>
+        <div class="stat"><span class="k">기대 순이익 · 그때 멈춤</span><span class="v" id="sp-o3">—</span></div>
+        <div class="stat"><span class="k">기대 순이익 · 20회까지 고집</span><span class="v" id="sp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값에서 여덟 번째 시도부터 기대 가치가 비용 아래로 내려간다. 일곱 번에서 멈춰도 누적 성공 확률은 80%이고, 스무 번까지 고집하면 순이익이 줄어든다. ② δ를 1로 올리면(실패가 정보를 주지 않는 동전 던지기 같은 일) 멈출 이유가 사라진다. 불안정한 테스트의 재시도가 그런 경우다. ③ δ를 0.4로 내리면(한두 번 안 되면 접근이 틀린 일) 두세 번 만에 멈추는 것이 맞다. 대부분의 디버깅이 여기에 가깝다. 멈출 때는 시도의 기록을 남기는 것이 핵심이다. 다음 사람이나 다음 세션이 같은 시도를 반복하지 않게.</div>
+    </div>
+  </section>
+
+  <section id="route">
+    <h2>큰 모델과 작은 모델</h2>
+    <p>장기 실행의 수천 턴이 모두 같은 난이도는 아니다. 계획을 세우고, 막힌 버그의 원인을 추론하고, 설계를 결정하는 턴은 어렵다. 파일을 읽고, 테스트를 돌리고, 정해진 패턴으로 코드를 고치는 턴은 쉽다. 어려운 턴은 큰 모델에, 쉬운 턴은 작고 싼 모델에 맡기는 <span class="term">모델 라우팅</span><span class="en">model routing</span>이 비용을 크게 바꾼다. 다만 작은 모델이 어려운 턴을 맡으면 실패가 늘고, 실패는 재시도와 표류로 돌아온다.</p>
+    <div class="sim" id="sim-route">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>라우팅 비율과 비용·성공의 맞바꿈</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ro-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>어려운 턴의 비율 <output id="ro-h-out"></output></span><input type="range" id="ro-h" min="0.05" max="0.6" step="0.05" value="0.2"></label>
+          <label class="ctrl"><span>작은 모델 가격 (큰 모델 대비) <output id="ro-c-out"></output></span><input type="range" id="ro-c" min="0.05" max="0.6" step="0.05" value="0.2"></label>
+          <label class="ctrl"><span>라우터 정확도 <output id="ro-a-out"></output></span><input type="range" id="ro-a" min="0.5" max="1" step="0.05" value="0.9"></label>
+          <div class="legend"><span><i style="background:var(--tool)"></i>성공당 상대 비용</span><span><i style="background:var(--env)"></i>실행 성공 확률</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">전부 큰 모델</span><span class="v" id="ro-o1">—</span></div>
+        <div class="stat"><span class="k">전부 작은 모델</span><span class="v" id="ro-o2">—</span></div>
+        <div class="stat"><span class="k">라우팅 최적점</span><span class="v" id="ro-o3">—</span></div>
+      </div>
+      <div class="sim-note">모형: 실행은 200턴, 어려운 턴을 큰 모델이 맡으면 99.5%, 작은 모델이 맡으면 85% 성공하고, 쉬운 턴은 둘 다 99.9%다. 실패한 턴은 자기 교정으로 80%를 되돌린다(1장의 복리 공식). 라우터는 정확도만큼 턴의 난이도를 맞힌다. 가로축은 라우터가 어렵다고 본 순서대로 큰 모델에 보내는 턴의 비율이고, 점선은 성공 한 번당 상대 비용(전부 큰 모델로 한 번 돌리는 비용 = ×1)이다. 해볼 것: ① 전부 작은 모델은 토큰 값이 싸지만 성공 확률이 절반 아래로 떨어져, 성공 한 번당 비용이 라우팅보다 크다. ② 라우터 정확도를 0.6으로 내리면 어려운 턴이 작은 모델로 새어, 같은 20%를 보내도 성공 확률이 64%로 떨어지고 이득이 줄어든다. 라우팅의 가치는 라우터의 눈에 달려 있다. ③ 어려운 턴 비율이 높은 일(연구, 설계)일수록 라우팅의 이득이 줄어든다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>모델은 매 턴 지금까지의 대화를 다시 읽는다. 누적 입력 토큰은 턴 수의 제곱에 비례한다.</li>
+      <li>대화가 뒤에만 덧붙는 에이전트 루프에는 프롬프트 캐시가 잘 맞는다. 긴 실행에서는 필수다. 압축과 새 세션은 비용을 더 줄이지만 기억을 깎는다.</li>
+      <li>이미 쓴 비용이 아니라 다음 시도의 기대 가치와 비용을 비교해 멈춘다. 실패가 정보를 주는 일일수록 일찍 멈춘다. 예산 상한으로 미리 정하고, 멈출 때 시도를 기록한다.</li>
+      <li>어려운 턴은 큰 모델, 쉬운 턴은 작은 모델. 성공 한 번당 비용으로 비교한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 캐시도 압축도 없는 에이전트 실행의 턴 수를 3배로 늘리면 누적 입력 토큰은 대략?</p><div class="opts">
+        <button class="opt">3배</button>
+        <button class="opt">6배</button>
+        <button class="opt" data-correct>9배 가까이</button>
+      </div><div class="quiz-exp">누적 입력은 N²에 비례한다. 3² = 9. 시스템 프롬프트 몫 때문에 정확히 9배보다는 조금 작다.</div></div>
+      <div class="quiz-q"><p>2. 에이전트 루프에서 프롬프트 캐시의 효과가 큰 이유는?</p><div class="opts">
+        <button class="opt">출력이 짧아져서</button>
+        <button class="opt" data-correct>매 턴 입력의 앞부분(시스템 프롬프트와 지난 대화)이 그대로이고 뒤에만 덧붙기 때문에</button>
+        <button class="opt">모델이 더 똑똑해져서</button>
+      </div><div class="quiz-exp">캐시는 앞부분이 같은 입력에서 효과가 있다. 그래서 대화 중간을 고쳐 쓰는 압축 뒤에는 캐시를 다시 만들어야 한다.</div></div>
+      <div class="quiz-q"><p>3. 같은 버그에 이미 3시간과 40달러를 썼다. 멈출지 판단할 때 가장 중요한 것은?</p><div class="opts">
+        <button class="opt">이미 쓴 40달러가 아깝다는 점</button>
+        <button class="opt" data-correct>앞으로 한 번 더 시도할 때의 성공 확률과 그 가치가 비용보다 큰지</button>
+        <button class="opt">에이전트가 포기하지 않는다는 점</button>
+      </div><div class="quiz-exp">매몰 비용은 판단에 넣지 않는다. 남은 기대 가치와 남은 비용만 비교한다.</div></div>
+      <div class="quiz-q"><p>4. 작은 모델만 쓴 실행이 토큰당 가격은 싸지만 전체적으로 더 비쌀 수 있는 이유는?</p><div class="opts">
+        <button class="opt">작은 모델은 출력이 길어서</button>
+        <button class="opt" data-correct>어려운 턴에서 실패가 늘어 실행 전체의 성공 확률이 떨어지고, 성공 한 번당 비용이 커지기 때문에</button>
+        <button class="opt">캐시를 쓸 수 없어서</button>
+      </div><div class="quiz-exp">비용은 토큰 가격이 아니라 성공 한 번을 얻는 데 드는 총비용으로 비교해야 한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 누적 입력 비용 ---------------- */
+(function () {
+  const cv = LR.canvas("qd-cv", { aspect: 0.62, draw });
+  function curves(N) {
+    const t = LR.val("qd-t") * 1000, s = LR.val("qd-s") * 1000, W = LR.val("qd-w") * 1000;
+    const nc = [], ca = [], cc = []; let a = 0, b = 0, c = 0, ctx = 0, ctx2 = 0;
+    for (let n = 1; n <= N; n++) {
+      // 캐시 없음: 매 턴 전체를 정가로
+      ctx += t; a += s + ctx; nc.push(a);
+      // 캐시: 이전 턴까지는 캐시 읽기(0.1), 새로 붙은 t는 캐시 쓰기(1.25)
+      b += (n === 1 ? (s + t) * 1.25 : (s + ctx - t) * 0.1 + t * 1.25); ca.push(b);
+      // 캐시 + 압축: 창의 80%에서 20%로 줄이고, 바뀐 앞부분은 다시 캐시에 쓴다
+      ctx2 += t;
+      if (s + ctx2 > 0.8 * W) { ctx2 = Math.max(t, 0.2 * W - s); c += (s + ctx2) * 1.25; }
+      else c += (n === 1 ? (s + t) * 1.25 : (s + ctx2 - t) * 0.1 + t * 1.25);
+      cc.push(c);
+    }
+    return { nc, ca, cc };
+  }
+  function draw(g, w, h) {
+    const N = LR.val("qd-n"), p = LR.val("qd-p") / 1e6;
+    const C = curves(N), C2 = curves(N * 2);
+    const ymax = C.nc[N - 1] * p;
+    const box = { l: 54, t: 14, r: w - 14, b: h - 42 };
+    const nice = (v) => { const e = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / e) * e; };
+    const Y = nice(ymax);
+    const A = LR.axes(g, { box, x: [0, N], y: [0, Y], xt: [0, N / 4, N / 2, (3 * N) / 4, N].map(Math.round), yt: [0, Y / 4, Y / 2, (3 * Y) / 4, Y], yf: (v) => "$" + (v >= 10 ? Math.round(v) : v.toFixed(1)), xl: "턴", yl: "누적 입력 비용" });
+    LR.line(g, C.nc.map((v, i) => [A.X(i + 1), A.Y(v * p)]), LR.col("guard"), 2.6);
+    LR.line(g, C.ca.map((v, i) => [A.X(i + 1), A.Y(v * p)]), LR.col("tool"), 2.6);
+    LR.line(g, C.cc.map((v, i) => [A.X(i + 1), A.Y(v * p)]), LR.col("env"), 2.6);
+    const f = (v) => "$" + (v * p >= 100 ? Math.round(v * p) : (v * p).toFixed(2));
+    LR.set("qd-o1", f(C.nc[N - 1]), "bad");
+    LR.set("qd-o2", f(C.ca[N - 1]) + ` (${LR.pct(C.ca[N - 1] / C.nc[N - 1])})`);
+    LR.set("qd-o3", f(C.cc[N - 1]) + ` (${LR.pct(C.cc[N - 1] / C.nc[N - 1])})`, "good");
+    LR.set("qd-o4", f(C2.nc[2 * N - 1]) + ` (×${(C2.nc[2 * N - 1] / C.nc[N - 1]).toFixed(1)})`, "warn");
+  }
+  LR.wire(["qd-n", "qd-t", "qd-s", "qd-p", "qd-w"], () => cv.redraw(), { "qd-n": (v) => v + "턴", "qd-t": (v) => v + "K", "qd-s": (v) => v + "K", "qd-p": (v) => "$" + v, "qd-w": (v) => v + "K" });
+})();
+
+/* ---------------- 2. 멈출 때 ---------------- */
+(function () {
+  const K = 20;
+  const cv = LR.canvas("sp-cv", { aspect: 0.62, draw });
+  function model() {
+    const p1 = LR.val("sp-p"), d = LR.val("sp-d"), V = LR.val("sp-v"), c = LR.val("sp-c");
+    const pk = [], cum = []; let fail = 1, net = [], acc = 0, stop = K;
+    for (let k = 1; k <= K; k++) {
+      const p = p1 * Math.pow(d, k - 1);
+      pk.push(p);
+      acc += fail * (p * V - c); // 앞이 다 실패했을 때만 이 시도를 한다
+      fail *= 1 - p; cum.push(1 - fail); net.push(acc);
+    }
+    for (let k = 1; k <= K; k++) if (pk[k - 1] * V < c) { stop = k - 1; break; }
+    return { pk, cum, net, stop, V, c };
+  }
+  function draw(g, w, h) {
+    const M = model();
+    const box = { l: 46, t: 14, r: w - 46, b: h - 42 };
+    const ymax = Math.max(M.c * 1.5, M.pk[0] * M.V * 1.1);
+    const A = LR.axes(g, { box, x: [0.5, K + 0.5], y: [0, ymax], xt: [1, 5, 10, 15, 20], yt: [0, ymax / 2, ymax], yf: (v) => Math.round(v), xl: "시도 번호 k", yl: "가치 · 비용" });
+    const bw = (box.r - box.l) / K * 0.6;
+    M.pk.forEach((p, i) => { const x = A.X(i + 1); g.fillStyle = LR.alpha(LR.col(i < M.stop ? "env" : "text-faint"), i < M.stop ? 0.7 : 0.35); g.fillRect(x - bw / 2, A.Y(p * M.V), bw, A.Y(0) - A.Y(p * M.V)); });
+    g.save(); g.strokeStyle = LR.col("tool"); g.lineWidth = 2.4; g.beginPath(); g.moveTo(box.l, A.Y(M.c)); g.lineTo(box.r, A.Y(M.c)); g.stroke(); g.restore();
+    LR.text(g, "시도 비용", box.r - 4, A.Y(M.c) - 9, { size: 10.5, align: "right", color: LR.col("tool") });
+    const Y2 = (v) => box.b - v * (box.b - box.t);
+    LR.line(g, M.cum.map((v, i) => [A.X(i + 1), Y2(v)]), LR.col("accent"), 2.2);
+    [0, 0.5, 1].forEach((v) => LR.text(g, v * 100 + "%", box.r + 6, Y2(v), { size: 10.5, mono: true, color: LR.col("accent") }));
+    if (M.stop > 0 && M.stop < K) { const x = (A.X(M.stop) + A.X(M.stop + 1)) / 2; g.save(); g.strokeStyle = LR.col("guard"); g.setLineDash([4, 4]); g.beginPath(); g.moveTo(x, box.t); g.lineTo(x, box.b); g.stroke(); g.restore(); LR.text(g, "멈춤", x + 4, box.t + 8, { size: 11, weight: 700, color: LR.col("guard") }); }
+    LR.set("sp-o1", M.stop >= K ? "멈출 이유 없음" : M.stop === 0 ? "시작하지 않음" : M.stop + "회 뒤", M.stop >= K ? "warn" : "");
+    LR.set("sp-o2", M.stop ? LR.pct(M.cum[M.stop - 1]) : "0%");
+    LR.set("sp-o3", M.stop ? M.net[M.stop - 1].toFixed(1) : "0", "good");
+    LR.set("sp-o4", M.net[K - 1].toFixed(1), M.net[K - 1] < (M.stop ? M.net[M.stop - 1] : 0) - 0.05 ? "bad" : "");
+  }
+  LR.wire(["sp-p", "sp-d", "sp-v", "sp-c"], () => cv.redraw(), { "sp-p": (v) => LR.pct(v), "sp-d": (v) => v.toFixed(2), "sp-v": (v) => v, "sp-c": (v) => v });
+})();
+
+/* ---------------- 3. 모델 라우팅 ---------------- */
+(function () {
+  const N = 200, PB = 0.995, PS = 0.85, PE = 0.999, R = 0.8;
+  const cv = LR.canvas("ro-cv", { aspect: 0.6, draw });
+  // x: 큰 모델에 보내는 턴의 비율. 라우터가 어렵다고 본 순서대로 보낸다.
+  function evalAt(x) {
+    const hf = LR.val("ro-h"), cs = LR.val("ro-c"), a = LR.val("ro-a");
+    const hBig = LR.clamp(a * Math.min(1, x / hf) + (1 - a) * x, 0, 1); // 어려운 턴 중 큰 모델이 맡은 비율
+    const pHard = hBig * PB + (1 - hBig) * PS;
+    const fHard = (1 - pHard) * (1 - R), fEasy = (1 - PE) * (1 - R);
+    const succ = Math.pow(1 - fHard, N * hf) * Math.pow(1 - fEasy, N * (1 - hf));
+    const cost = x + (1 - x) * cs;
+    return { succ, cost, per: cost / succ };
+  }
+  function draw(g, w, h) {
+    const xs = Array.from({ length: 101 }, (_, i) => i / 100), E = xs.map(evalAt);
+    const box = { l: 46, t: 14, r: w - 46, b: h - 42 };
+    const A = LR.axes(g, { box, x: [0, 1], y: [0, 1], xt: [0, 0.25, 0.5, 0.75, 1], xf: (v) => v * 100 + "%", yt: [0, 0.5, 1], yf: (v) => v * 100 + "%", xl: "큰 모델에 보내는 턴의 비율", yl: "실행 성공 확률" });
+    LR.line(g, E.map((e, i) => [A.X(xs[i]), A.Y(e.succ)]), LR.col("env"), 2.6);
+    const pmax = Math.max(...E.map((e) => e.per));
+    const Y2 = (v) => box.b - (v / pmax) * (box.b - box.t);
+    LR.line(g, E.map((e, i) => [A.X(xs[i]), Y2(e.per)]), LR.col("tool"), 2.4, [5, 4]);
+    [0, pmax / 2, pmax].forEach((v) => LR.text(g, "×" + v.toFixed(1), box.r + 6, Y2(v), { size: 10.5, mono: true, color: LR.col("tool") }));
+    const bi = E.reduce((b, e, i) => (e.per < E[b].per ? i : b), 0);
+    g.fillStyle = LR.col("accent"); g.beginPath(); g.arc(A.X(xs[bi]), Y2(E[bi].per), 6, 0, 7); g.fill();
+    LR.text(g, "성공당 비용 최소", A.X(xs[bi]), Y2(E[bi].per) - 14, { size: 10.5, weight: 700, align: "center", color: LR.col("accent") });
+    const big = E[100], small = E[0];
+    LR.set("ro-o1", `성공 ${LR.pct(big.succ)} · 성공당 ×${big.per.toFixed(2)}`);
+    LR.set("ro-o2", `성공 ${LR.pct(small.succ)} · 성공당 ×${small.per.toFixed(2)}`, small.per > E[bi].per * 1.2 ? "bad" : "");
+    LR.set("ro-o3", `${LR.pct(xs[bi])} 큰 모델 · 성공 ${LR.pct(E[bi].succ)} · 성공당 ×${E[bi].per.toFixed(2)}`, "good");
+  }
+  LR.wire(["ro-h", "ro-c", "ro-a"], () => cv.redraw(), { "ro-h": (v) => LR.pct(v), "ro-c": (v) => "×" + v.toFixed(2), "ro-a": (v) => LR.pct(v) });
+})();
+</script>
+</body>
+</html>

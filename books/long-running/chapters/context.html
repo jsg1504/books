@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>컨텍스트 창의 한계와 압축 · MarathonBook</title>
+<meta name="description" content="긴 실행에서 컨텍스트 창이 차오르는 모양, 압축과 도구 결과 비우기, 압축할 때 무엇을 남길지, 긴 입력에서 정확도가 떨어지는 컨텍스트 부패를 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="context">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>컨텍스트 창의 한계와 압축</h1>
+    <p class="lead">에이전트가 한 턴을 돌 때마다 창에는 모델의 생각, 도구 호출, 도구가 돌려준 결과가 쌓인다. 파일 하나를 읽으면 수천 토큰, 테스트 로그 하나면 또 수천 토큰. 장기 실행에서 창은 <b>반드시</b> 넘친다. 이 장에서는 창이 차오르는 모양을 보고, 넘칠 때 무엇을 버리고 무엇을 남길지, 그리고 넘치기 전에도 이미 성능이 떨어지는 현상을 다룬다.</p>
+    <ul class="objectives">
+      <li>컨텍스트 사용률의 톱니 모양과 압축 임계값, 압축 비율의 관계를 설명할 수 있다.</li>
+      <li>압축이 손실이라는 점을 이해하고, 요약에 꼭 남길 정보와 버릴 정보를 구별할 수 있다.</li>
+      <li>컨텍스트가 길어질수록, 정보가 가운데 있을수록 정확도가 떨어진다는 연구 결과를 설계에 반영할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="saw">
+    <h2>톱니 모양의 창</h2>
+    <p>창이 일정 비율(예: 80%)에 이르면 하네스는 <span class="term">압축</span><span class="en">compaction</span>을 한다. 지금까지의 대화를 모델에게 요약하게 하고, 그 요약을 새 창의 첫머리로 삼아 이어 간다. 사용률은 뚝 떨어졌다가 다시 차오른다. 톱니 모양이다. 더 가벼운 방법도 있다. 이미 소화한 오래된 도구 결과(파일 내용, 검색 결과, 로그)는 지워도 대개 괜찮다. 이것이 <span class="term">도구 결과 비우기</span><span class="en">tool result clearing</span>다.</p>
+    <p>압축은 공짜가 아니다. 요약은 <b>손실 압축</b>이다. 요약할 때마다 초반의 세부가 일정 비율로 사라진다고 하면, 맨 처음의 결정이 k번의 압축 뒤에도 남아 있을 확률은 <var>φ</var><sup><var>k</var></sup>다. 압축을 덜 하게 만드는 모든 것, 즉 큰 창, 작은 도구 출력, 도구 결과 비우기, 그리고 <b>중요한 것을 창 밖 파일에 적어 두기</b>(4장)가 긴 실행의 기억을 지킨다.</p>
+    <div class="formula"><div class="eq"><var>k</var> ≈ (<var>n</var> · <var>t</var> − <var>W</var>·<var>θ</var>) / (<var>W</var>·(<var>θ</var> − <var>ρ</var>)) &nbsp;·&nbsp; 기억률 = <var>φ</var><sup><var>k</var></sup></div>
+      <div class="where"><var>n</var>: 턴 수, <var>t</var>: 턴당 늘어나는 토큰, <var>W</var>: 창 크기, <var>θ</var>: 압축 임계값, <var>ρ</var>: 압축 뒤 남는 비율, <var>φ</var>: 압축 한 번에 한 사실이 살아남을 확률. 첫 압축 전까지 창을 채우고, 이후로는 압축마다 θ − ρ만큼씩 다시 채운다는 근사다.</div></div>
+    <div class="sim" id="sim-saw">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>창의 톱니와 사라지는 기억 — 400턴 실행</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sw-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>창 크기 W <output id="sw-w-out"></output></span><input type="range" id="sw-w" min="50" max="1000" step="50" value="200"></label>
+          <label class="ctrl"><span>턴당 토큰 t <output id="sw-t-out"></output></span><input type="range" id="sw-t" min="1" max="12" step="0.5" value="4"></label>
+          <label class="ctrl"><span>압축 임계값 θ <output id="sw-th-out"></output></span><input type="range" id="sw-th" min="0.5" max="0.95" step="0.05" value="0.8"></label>
+          <label class="ctrl"><span>압축 뒤 남는 비율 ρ <output id="sw-rho-out"></output></span><input type="range" id="sw-rho" min="0.05" max="0.45" step="0.05" value="0.2"></label>
+          <label class="ctrl"><span>압축 한 번의 보존율 φ <output id="sw-phi-out"></output></span><input type="range" id="sw-phi" min="0.5" max="0.99" step="0.01" value="0.85"></label>
+          <div class="seg" id="sw-clear"><button data-v="0" class="on">도구 결과 유지</button><button data-v="1">오래된 도구 결과 비우기</button></div>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>창 사용률</span><span><i style="background:var(--state)"></i>1턴의 결정이 남아 있을 확률</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">압축 횟수</span><span class="v" id="sw-o1">—</span></div>
+        <div class="stat"><span class="k">400턴 뒤 1턴 결정 기억률</span><span class="v" id="sw-o2">—</span></div>
+        <div class="stat"><span class="k">평균 창 사용률</span><span class="v" id="sw-o3">—</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="sw-o4">—</span></div>
+      </div>
+      <div class="sim-note">도구 결과 비우기는 코딩 에이전트처럼 턴 토큰의 80%가 도구 출력(파일 내용, 검색, 로그)이라 보고, 10턴이 지난 도구 출력을 창에서 지운다고 둔 모형이다. 해볼 것: ① 기본값에서 압축이 여러 번 일어나며 처음의 결정은 25%도 남지 않는다. ② “오래된 도구 결과 비우기”를 켜면 압축이 거의 사라지고 기억률이 크게 오른다. 가장 싼 압축은 요약이 아니라 삭제다. ③ ρ를 0.45로 올리면(요약을 길게 남기면) 압축이 훨씬 잦아진다. 요약이 길수록 다음 압축이 빨리 온다. ④ 창을 1M로 키우면 압축은 줄지만 누적 입력 토큰이 커진다. 큰 창은 공짜가 아니다(9장).</div>
+    </div>
+  </section>
+
+  <section id="keep">
+    <h2>요약에 무엇을 남길까</h2>
+    <p>압축의 질은 무엇을 남기느냐에 달려 있다. 좋은 요약은 <b>결정과 그 이유</b>, <b>이미 실패한 시도</b>, <b>지금 하던 일과 남은 일</b>, <b>사용자가 말한 제약</b>을 남긴다. 다시 열어 보면 되는 것 — 파일 내용, 디렉터리 목록, 통과한 테스트 이름 — 은 버린다. 원문이 디스크에 있으니까. 특히 “이미 실패한 시도”를 버리면 새 창의 에이전트는 같은 실수를 처음부터 다시 한다.</p>
+    <div class="sim" id="sim-keep">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>당신이 압축기다 — 2,000토큰 요약 만들기</h3></div>
+      <div class="sim-body">
+        <p style="margin:0;font-size:14.5px;color:var(--text-dim)">세션 3의 창이 가득 찼다. 아래 조각 중 무엇을 요약에 남길지 고르자(오른쪽 위 숫자는 토큰). 예산은 2,000토큰. “다음 세션 실행”을 누르면 새 창의 에이전트가 다섯 가지 상황을 맞는다.</p>
+        <div class="tiles" id="kp-tiles"></div>
+        <div class="budget" id="kp-bud"><i style="width:0"></i></div>
+        <div class="btns"><button class="btn primary" id="kp-run">다음 세션 실행</button><button class="btn" id="kp-clear">모두 해제</button></div>
+        <div class="pane" id="kp-log" style="min-height:120px"><span class="dim">요약을 고른 뒤 실행해 보세요.</span></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">요약 크기</span><span class="v" id="kp-o1">—</span></div>
+        <div class="stat"><span class="k">잘 넘긴 상황</span><span class="v" id="kp-o2">—</span></div>
+        <div class="stat"><span class="k">낭비한 토큰</span><span class="v" id="kp-o3">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="rot">
+    <h2>넘치기 전에도 무뎌진다</h2>
+    <p>창이 넘치지 않았다고 안심할 수 없다. 2023년 리우(Liu) 등의 연구 「Lost in the Middle」은 긴 입력에서 정답이 들어 있는 문서의 위치를 바꿔 가며 정확도를 쟀다. 정답이 <b>맨 앞이나 맨 끝</b>에 있을 때 정확도가 가장 높고, <b>가운데</b>에 있을 때 크게 떨어지는 U자 모양이 나왔다. 2025년 크로마(Chroma)의 보고서는 여러 최신 모델에서 입력이 길어질수록 같은 과제의 성능이 꾸준히 떨어지는 현상을 <span class="term">컨텍스트 부패</span><span class="en">context rot</span>라고 불렀다. 정답과 비슷하지만 틀린 방해 정보가 많을수록 더 나빠졌다.</p>
+    <div class="callout"><b class="h">설계로 옮기면</b>① 창은 “들어가니까 다 넣는” 공간이 아니다. 필요한 것만 넣고 오래된 것은 비운다. ② 가장 중요한 지시와 목표는 앞(시스템 프롬프트)과 끝(최근 메시지, 작업 목록)에 둔다. ③ 비슷한 버전의 파일 여러 개, 같은 로그의 반복처럼 헷갈리는 방해 정보를 줄인다.</div>
+    <div class="sim" id="sim-rot">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>중간에서 길을 잃는 정보 — 위치와 길이에 따른 정확도</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rt-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>컨텍스트 길이 <output id="rt-l-out"></output></span><input type="range" id="rt-l" min="0" max="1" step="0.01" value="0.45"></label>
+          <label class="ctrl"><span>방해 정보의 유사도 <output id="rt-d-out"></output></span><input type="range" id="rt-d" min="0" max="1" step="0.05" value="0.4"></label>
+          <label class="ctrl"><span>중요한 사실의 위치 <output id="rt-p-out"></output></span><input type="range" id="rt-p" min="0" max="1" step="0.01" value="0.5"></label>
+          <div class="legend"><span><i style="background:var(--ctx)"></i>지금 길이</span><span><i style="background:var(--text-faint)"></i>8K · 1M 비교</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">이 위치의 정확도</span><span class="v" id="rt-o1">—</span></div>
+        <div class="stat"><span class="k">맨 앞</span><span class="v" id="rt-o2">—</span></div>
+        <div class="stat"><span class="k">한가운데</span><span class="v" id="rt-o3">—</span></div>
+        <div class="stat"><span class="k">맨 끝</span><span class="v" id="rt-o4">—</span></div>
+      </div>
+      <div class="sim-note">연구 결과의 모양(U자, 길이에 따른 하락, 방해 정보의 영향)을 흉내 낸 그림이며, 특정 모델의 측정값이 아니다. 최신 모델일수록 곡선이 평평해지는 경향이 있지만, 모양 자체가 사라지지는 않았다. 해볼 것: ① 위치를 0.5에 두고 길이를 늘려 보자. 가운데의 사실이 먼저 흐려진다. ② 위치를 0.98로 옮기면(최근 메시지) 같은 길이에서도 정확도가 높다. 작업 목록을 창 끝에 다시 쓰는 습관(6장)이 효과적인 이유다. ③ 방해 정보 유사도를 1로 올리면 짧은 창에서도 성능이 떨어진다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>긴 실행에서 창 사용률은 톱니 모양이다. 압축 임계값, 압축 뒤 남는 크기, 턴당 토큰이 압축 빈도를 정한다.</li>
+      <li>압축은 손실이다. 압축이 거듭될수록 초반의 결정이 사라진다. 도구 결과 비우기처럼 다시 읽을 수 있는 것을 지우는 편이 요약보다 싸고 안전하다.</li>
+      <li>요약에는 결정과 이유, 실패한 시도, 현재 작업과 남은 일, 사용자의 제약을 남기고, 디스크에 원문이 있는 것은 버린다.</li>
+      <li>창이 넘치기 전에도 긴 입력과 방해 정보는 정확도를 떨어뜨린다. 중요한 것은 앞과 끝에, 나머지는 파일에.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 압축 한 번에 한 사실이 살아남을 확률이 0.9라면, 압축을 7번 거친 뒤 첫 결정이 남아 있을 확률은?</p><div class="opts">
+        <button class="opt">90%</button>
+        <button class="opt" data-correct>약 48%</button>
+        <button class="opt">약 10%</button>
+      </div><div class="quiz-exp">0.9<sup>7</sup> ≈ 0.478. 압축은 곱셈으로 기억을 깎는다. 그래서 중요한 결정은 창 밖 파일에 적는다.</div></div>
+      <div class="quiz-q"><p>2. 압축 요약에 남길 가치가 가장 낮은 것은?</p><div class="opts">
+        <button class="opt">“라이브러리 X 2.0으로 올리면 빌드가 깨져서 1.9에 고정했다”</button>
+        <button class="opt" data-correct>방금 읽은 설정 파일의 전체 내용</button>
+        <button class="opt">“사용자는 외부 API 호출을 금지했다”</button>
+      </div><div class="quiz-exp">파일 내용은 디스크에 그대로 있어 필요하면 다시 읽으면 된다. 결정의 이유와 제약은 어디에도 다시 나오지 않는다.</div></div>
+      <div class="quiz-q"><p>3. 요약을 길게(압축 뒤 45%) 남기면 생기는 일은?</p><div class="opts">
+        <button class="opt">압축이 드물어진다</button>
+        <button class="opt" data-correct>다음 압축까지 남는 공간이 줄어 압축이 더 자주 일어난다</button>
+        <button class="opt">창 크기가 커진다</button>
+      </div><div class="quiz-exp">압축 사이에 채울 수 있는 공간은 θ − ρ에 비례한다. 요약이 길수록 그 공간이 좁아진다.</div></div>
+      <div class="quiz-q"><p>4. 긴 컨텍스트에서 꼭 지켜야 할 목표를 어디에 두는 것이 가장 안전한가?</p><div class="opts">
+        <button class="opt">창의 한가운데</button>
+        <button class="opt" data-correct>시스템 프롬프트(앞)와 최근 메시지·작업 목록(끝)</button>
+        <button class="opt">위치는 상관없다</button>
+      </div><div class="quiz-exp">긴 입력의 가운데 정보는 덜 쓰이는 경향이 있다. 앞과 끝이 가장 잘 쓰인다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 톱니와 기억 ---------------- */
+(function () {
+  const N = 400, AGE = 10, TOOLF = 0.8, BASE = 0.04;
+  let clear = "0";
+  const cv = LR.canvas("sw-cv", { aspect: 0.62, draw });
+  function model() {
+    const W = LR.val("sw-w") * 1000, t = LR.val("sw-t") * 1000, th = LR.val("sw-th"), rho = LR.val("sw-rho"), phi = LR.val("sw-phi");
+    const use = [], mem = [];
+    let other = BASE * W, tools = []; // tools: [turn, tokens]
+    let k = 0, sum = 0, tok = 0;
+    for (let n = 1; n <= N; n++) {
+      other += t * (1 - TOOLF); tools.push([n, t * TOOLF]);
+      if (clear === "1") tools = tools.filter(([m]) => n - m < AGE);
+      let cur = other + tools.reduce((a, b) => a + b[1], 0);
+      if (cur >= th * W) { k++; other = rho * W; tools = []; cur = other; }
+      tok += cur; sum += cur / W;
+      use.push(cur / W); mem.push(Math.pow(phi, k));
+    }
+    return { use, mem, k, avg: sum / N, tok, phi };
+  }
+  function draw(c, w, h) {
+    const M = model();
+    const box = { l: 44, t: 14, r: w - 14, b: h - 42 };
+    const A = LR.axes(c, { box, x: [0, N], y: [0, 1], xt: [0, 100, 200, 300, 400], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "턴", yl: "비율" });
+    const th = LR.val("sw-th");
+    c.save(); c.strokeStyle = LR.col("guard"); c.setLineDash([3, 4]); c.beginPath(); c.moveTo(box.l, A.Y(th)); c.lineTo(box.r, A.Y(th)); c.stroke(); c.restore();
+    LR.text(c, "압축 임계값", box.r - 4, A.Y(th) - 9, { size: 10.5, align: "right", color: LR.col("guard") });
+    c.fillStyle = LR.alpha(LR.col("ctx"), 0.15); c.beginPath(); c.moveTo(A.X(0), A.Y(0)); M.use.forEach((u, i) => c.lineTo(A.X(i + 1), A.Y(u))); c.lineTo(A.X(N), A.Y(0)); c.closePath(); c.fill();
+    LR.line(c, M.use.map((u, i) => [A.X(i + 1), A.Y(u)]), LR.col("ctx"), 1.6);
+    LR.line(c, M.mem.map((u, i) => [A.X(i + 1), A.Y(u)]), LR.col("state"), 2.6);
+    const fm = M.mem[N - 1];
+    LR.set("sw-o1", M.k + "회", M.k > 8 ? "warn" : "");
+    LR.set("sw-o2", LR.pct(fm), fm > 0.6 ? "good" : fm < 0.25 ? "bad" : "warn");
+    LR.set("sw-o3", LR.pct(M.avg));
+    LR.set("sw-o4", LR.si(M.tok));
+  }
+  LR.seg("sw-clear", (v) => { clear = v; cv.redraw(); });
+  LR.wire(["sw-w", "sw-t", "sw-th", "sw-rho", "sw-phi"], () => cv.redraw(), { "sw-w": (v) => v + "K", "sw-t": (v) => v + "K", "sw-th": (v) => LR.pct(v), "sw-rho": (v) => LR.pct(v), "sw-phi": (v) => LR.pct(v) });
+})();
+
+/* ---------------- 2. 압축 게임 ---------------- */
+(function () {
+  const BUD = 2000;
+  const ITEMS = [
+    { id: "goal", name: "사용자 목표와 완료 조건: 할 일 앱, 기능 40개, 모든 e2e 통과", tok: 180, k: "accent", need: true },
+    { id: "deny", name: "사용자 제약: 외부 분석 SDK 금지, 데이터는 로컬 SQLite만", tok: 120, k: "guard", need: true },
+    { id: "fail", name: "실패한 시도: date-fns 3.x로 올리면 시간대 테스트 6개 실패 → 2.30 고정", tok: 160, k: "guard", need: true },
+    { id: "cur", name: "현재 작업: 기능 #14 반복 일정, 저장은 끝, UI 남음 (src/ui/Repeat.tsx)", tok: 200, k: "accent", need: true },
+    { id: "why", name: "결정과 이유: 상태 관리는 Zustand (Redux는 보일러플레이트가 커서 기각)", tok: 150, k: "state", need: true },
+    { id: "log", name: "마지막 테스트 실행 로그 원문 (전체)", tok: 3200, k: "user", need: false },
+    { id: "tree", name: "ls -R 출력 원문 (디렉터리 전체)", tok: 900, k: "user", need: false },
+    { id: "pass", name: "통과한 테스트 이름 120개 목록", tok: 1100, k: "user", need: false },
+    { id: "file", name: "방금 읽은 tsconfig.json 전체 내용", tok: 400, k: "user", need: false },
+    { id: "chat", name: "중간에 오간 사과와 감사 인사", tok: 90, k: "user", need: false },
+    { id: "env", name: "필요한 환경 변수 이름 목록 (값은 제외)", tok: 70, k: "state", need: false, bonus: true },
+  ];
+  const SCEN = [
+    ["goal", "새 세션: “무엇을 위해 일하고 있지?” — 완료 조건을 알아야 언제 멈출지 안다.", "목표를 몰라 진행 파일을 다시 뒤지고, 완료 조건을 추측한다."],
+    ["deny", "기능 #15에서 사용 통계가 필요하다. 분석 SDK를 붙이면 쉽다.", "금지된 외부 SDK를 설치했다. 사용자의 제약을 어겼다."],
+    ["fail", "의존성 경고가 떴다: date-fns 3.x가 나왔다.", "date-fns 3.x로 올렸다가 시간대 테스트 6개가 다시 깨졌다. 같은 실수를 반복."],
+    ["cur", "어디서부터 이어 갈까?", "반복 일정 기능의 저장 부분을 처음부터 다시 만들기 시작했다."],
+    ["why", "상태 관리가 번거롭다. Redux로 바꿀까?", "이미 기각한 Redux로 갈아타려다 반나절을 썼다."],
+  ];
+  const sel = new Set(["log", "goal"]);
+  const tiles = LR.el("kp-tiles");
+  const size = () => ITEMS.filter((i) => sel.has(i.id)).reduce((a, b) => a + b.tok, 0);
+  function render() {
+    tiles.innerHTML = ITEMS.map((it) => `<button class="tile ${sel.has(it.id) ? "sel" : ""}" data-id="${it.id}" style="--k:var(--${it.k})"><span class="cost">${it.tok.toLocaleString("ko-KR")}</span>${LR.esc(it.name)}</button>`).join("");
+    const s = size();
+    const b = LR.el("kp-bud"); b.classList.toggle("over", s > BUD); b.querySelector("i").style.width = Math.min(100, (s / BUD) * 100) + "%";
+    LR.set("kp-o1", `${s.toLocaleString("ko-KR")} / ${BUD.toLocaleString("ko-KR")}`, s > BUD ? "bad" : "");
+  }
+  tiles.addEventListener("click", (e) => { const b = e.target.closest(".tile"); if (!b) return; const id = b.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); render(); });
+  LR.el("kp-clear").addEventListener("click", () => { sel.clear(); render(); });
+  LR.el("kp-run").addEventListener("click", () => {
+    const s = size(), log = LR.el("kp-log");
+    if (s > BUD) { log.innerHTML = `<div class="ln" style="--k:var(--guard)">요약이 ${s.toLocaleString("ko-KR")}토큰으로 예산을 넘었습니다. 압축기가 뒷부분을 잘라 냈습니다. 몇 개를 빼고 다시 실행해 보세요.</div>`; LR.set("kp-o2", "—"); LR.set("kp-o3", "—"); return; }
+    let ok = 0;
+    log.innerHTML = SCEN.map(([id, q, bad]) => { const has = sel.has(id); if (has) ok++; return `<div class="ln" style="--k:var(--${has ? "env" : "guard"})">${has ? "✓" : "✗"} ${LR.esc(q)}<br><span class="dim">${has ? "요약에 답이 있어 바로 올바르게 행동했다." : LR.esc(bad)}</span></div>`; }).join("") + (sel.has("env") ? `<div class="ln" style="--k:var(--state)">+ 환경 변수 이름 목록 덕분에 개발 서버를 한 번에 띄웠다.</div>` : "");
+    const waste = ITEMS.filter((i) => sel.has(i.id) && !i.need && !i.bonus).reduce((a, b) => a + b.tok, 0);
+    LR.set("kp-o2", `${ok} / ${SCEN.length}`, ok === SCEN.length ? "good" : ok >= 3 ? "warn" : "bad");
+    LR.set("kp-o3", waste.toLocaleString("ko-KR") + "토큰", waste ? "warn" : "good");
+  });
+  render();
+})();
+
+/* ---------------- 3. 컨텍스트 부패 ---------------- */
+(function () {
+  const LMIN = 8e3, LMAX = 1e6;
+  const lenOf = (v) => Math.pow(10, Math.log10(LMIN) + v * (Math.log10(LMAX) - Math.log10(LMIN)));
+  // 길이에 따른 기준 정확도와 가운데의 패임(U자). 단순화된 그림용 모형.
+  function acc(pos, L, d) {
+    const x = Math.log10(L / LMIN) / Math.log10(LMAX / LMIN); // 0..1
+    const base = 0.97 - 0.32 * Math.pow(x, 1.2) - 0.18 * d * (0.4 + x);
+    const dip = (0.06 + 0.3 * x) * (0.6 + 0.6 * d);
+    const u = Math.pow(Math.sin(Math.PI * LR.clamp(pos, 0, 1)), 1.4); // 가운데 1, 양 끝 0
+    const endBoost = pos > 0.9 ? (pos - 0.9) * 0.6 : 0;
+    return LR.clamp(base - dip * u + endBoost, 0.02, 0.995);
+  }
+  const fmtL = (L) => (L >= 1e6 ? "1M" : L >= 1e3 ? Math.round(L / 1e3) + "K" : String(L));
+  const cv = LR.canvas("rt-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const L = lenOf(LR.val("rt-l")), d = LR.val("rt-d"), p = LR.val("rt-p");
+    const box = { l: 46, t: 14, r: w - 14, b: h - 42 };
+    const A = LR.axes(c, { box, x: [0, 1], y: [0, 1], xt: [0, 0.25, 0.5, 0.75, 1], xf: (v) => (v === 0 ? "맨 앞" : v === 1 ? "맨 끝" : v * 100 + "%"), yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "중요한 사실의 위치", yl: "정확도" });
+    const curve = (LL) => Array.from({ length: 101 }, (_, i) => [A.X(i / 100), A.Y(acc(i / 100, LL, d))]);
+    LR.line(c, curve(LMIN), LR.alpha(LR.col("text-faint"), 0.9), 1.4, [4, 4]);
+    LR.line(c, curve(LMAX), LR.alpha(LR.col("text-faint"), 0.9), 1.4, [4, 4]);
+    LR.text(c, "8K", box.r - 4, A.Y(acc(1, LMIN, d)) - 10, { size: 10, mono: true, align: "right", color: LR.col("text-faint") });
+    LR.text(c, "1M", box.r - 4, A.Y(acc(1, LMAX, d)) + 10, { size: 10, mono: true, align: "right", color: LR.col("text-faint") });
+    LR.line(c, curve(L), LR.col("ctx"), 3);
+    const a = acc(p, L, d);
+    c.fillStyle = LR.col("accent"); c.beginPath(); c.arc(A.X(p), A.Y(a), 6, 0, 7); c.fill();
+    const cls = (v) => (v > 0.85 ? "good" : v < 0.6 ? "bad" : "warn");
+    LR.set("rt-o1", LR.pct(a), cls(a));
+    LR.set("rt-o2", LR.pct(acc(0, L, d)), cls(acc(0, L, d)));
+    LR.set("rt-o3", LR.pct(acc(0.5, L, d)), cls(acc(0.5, L, d)));
+    LR.set("rt-o4", LR.pct(acc(1, L, d)), cls(acc(1, L, d)));
+  }
+  LR.wire(["rt-l", "rt-d", "rt-p"], () => cv.redraw(), { "rt-l": (v) => fmtL(lenOf(v)), "rt-d": (v) => LR.pct(v), "rt-p": (v) => (v < 0.03 ? "맨 앞" : v > 0.97 ? "맨 끝" : LR.pct(v)) });
+})();
+</script>
+</body>
+</html>

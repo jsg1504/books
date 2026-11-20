@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarathonBook · 장기 실행 에이전트 교과서</title>
+<meta name="description" content="몇 시간, 며칠을 일하는 AI 에이전트는 어떻게 만들까? 신뢰도의 복리, 컨텍스트 압축, 진행 파일, 체크포인트와 멱등성, 계획, 검증, 표류 감지, 비용, 사람의 감독, 안전을 애니메이션 도해와 36개 실험으로 배우는 교과서.">
+<meta name="theme-color" content="#14100c">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MarathonBook · 장기 실행 에이전트 교과서">
+<meta property="og:description" content="한 번의 대화가 아니라 한 번의 마라톤 — 슬라이더를 움직이며 배우는 장기 실행 에이전트 설계.">
+<meta property="og:image" content="cover.svg">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/common.js"></script>
+<style>
+  .chain svg { min-width: 900px; }
+  .chain a:hover rect, .chain a:hover circle { filter: brightness(1.06); stroke-width: 2.4; }
+  .chain a { cursor: pointer; }
+</style>
+</head>
+<body data-root="">
+
+<main>
+<section class="home-hero">
+  <div class="inner">
+    <div>
+      <div class="eyebrow">Interactive Long-Running Agents Textbook</div>
+      <h1>한 번의 대화가 아니라<br><span class="grad">한 번의 마라톤</span></h1>
+      <p>“이 저장소를 새 프레임워크로 옮겨 줘.” 몇 분짜리 질문과 달리 이런 일은 몇 시간, 며칠이 걸립니다. 그동안 컨텍스트 창은 수십 번 넘치고, 프로세스는 죽었다 살아나고, 에이전트는 어제 무엇을 했는지 잊습니다. 이 책은 <b>단계마다 99%인 에이전트가 왜 긴 일에서 무너지는지, 그리고 진행 파일·체크포인트·검증·감독으로 어떻게 끝까지 달리게 하는지</b>를 슬라이더로 직접 확인하는 장기 실행 에이전트 교과서입니다.</p>
+      <div class="cta">
+        <a class="primary" href="chapters/horizon.html">1장부터 시작하기 →</a>
+        <a class="ghost" href="chapters/horizon.html#sim-compound">신뢰도 복리 계산기 열기</a>
+      </div>
+      <div class="hero-badges">
+        <span>12개 챕터</span><span>36개 인터랙티브 실험</span><span>애니메이션 도해</span><span>개발자 · 플랫폼 · 연구자</span>
+      </div>
+    </div>
+    <div class="hero-viz" id="hero" aria-label="에이전트가 세션 나선을 따라 위로 달리며 컨텍스트 창을 채우고, 가운데 기능 목록 기둥의 블록을 하나씩 초록으로 바꾸며 커밋을 남기는 3D 애니메이션. 중간에 충돌이 나면 마지막 체크포인트에서 다시 시작한다.">
+      <canvas></canvas>
+      <span class="hint">드래그해서 돌려 보세요 · 나선 한 바퀴 = 세션 하나</span>
+      <div class="term-log" aria-live="off"></div>
+    </div>
+  </div>
+</section>
+
+<section class="home-section">
+  <h2>장기 실행의 한 바퀴</h2>
+  <p class="sub">한 문장으로: <b>목표를 검사 가능한 기능 목록으로 바꿔 두고(초기화), 세션마다 진행 파일을 읽고(기억), 기능 하나만 골라 만들고(안쪽 루프), 스스로 확인한 뒤(검증) 커밋으로 되돌릴 지점을 남기고(체크포인트), 창이 차면 메모를 남기고 새 창에서 다시 시작한다(바깥 루프).</b> 블록을 누르면 해당 장으로 이동합니다.</p>
+  <figure class="diagram chain">
+    <svg viewBox="0 0 1120 470" role="img" aria-label="장기 실행 에이전트의 흐름: 목표, 초기화, 세션 시작과 진행 파일 읽기, 기능 하나 구현, 검증, 커밋, 진행 파일 갱신, 컨텍스트가 차면 새 세션, 충돌하면 재개, 사람 승인과 예산">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="arrm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--state)"/></marker>
+        <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--guard)"/></marker>
+        <marker id="arrc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--ctx)"/></marker>
+      </defs>
+      <text x="560" y="22" text-anchor="middle" class="t-dim">주황 = 한 세션 안의 흐름 · 보라 = 세션을 넘어 이어지는 기억 · 청록 = 창이 차면 새 세션 · 빨강 = 충돌 뒤 재개</text>
+      <!-- 목표 -->
+      <a href="chapters/horizon.html"><g transform="translate(14,150)">
+        <rect width="112" height="120" rx="12" class="f-acc-soft"/>
+        <circle cx="56" cy="40" r="20" fill="none" stroke="var(--accent)" stroke-width="2.4"/><circle cx="56" cy="40" r="11" fill="none" stroke="var(--accent)" stroke-width="2"/><circle cx="56" cy="40" r="4" fill="var(--accent)"/>
+        <text x="56" y="82" text-anchor="middle" class="t-b">큰 목표</text>
+        <text x="56" y="100" text-anchor="middle" class="t-mono" style="font-size:9.5px">“앱을 완성해 줘”</text>
+        <text x="56" y="140" text-anchor="middle" class="t-mono">Ch.01</text>
+      </g></a>
+      <path d="M130 210 H152" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- 초기화 -->
+      <a href="chapters/anatomy.html"><g transform="translate(156,130)">
+        <rect width="138" height="160" rx="12" class="soft-state"/>
+        <text x="69" y="24" text-anchor="middle" class="t-b">초기화 세션</text>
+        <rect x="14" y="38" width="110" height="18" rx="4" class="f-elev"/><text x="22" y="51" class="t-mono" style="font-size:9.5px">features.json</text>
+        <rect x="14" y="60" width="110" height="18" rx="4" class="f-elev"/><text x="22" y="73" class="t-mono" style="font-size:9.5px">progress.md</text>
+        <rect x="14" y="82" width="110" height="18" rx="4" class="f-elev"/><text x="22" y="95" class="t-mono" style="font-size:9.5px">init.sh · git init</text>
+        <text x="69" y="122" text-anchor="middle" class="t-dim">모든 기능 = 실패</text>
+        <text x="69" y="180" text-anchor="middle" class="t-mono">Ch.02 · Ch.06</text>
+      </g></a>
+      <path d="M298 210 H322" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- 세션 루프 큰 상자 -->
+      <rect x="326" y="58" width="640" height="300" rx="18" fill="none" stroke="var(--ctx)" stroke-width="2" stroke-dasharray="7 6"/>
+      <text x="346" y="82" class="t-b" style="fill:var(--ctx)">한 세션 = 컨텍스트 창 하나</text>
+      <!-- 읽기 -->
+      <a href="chapters/memory.html"><g transform="translate(346,110)">
+        <rect width="120" height="130" rx="12" class="soft-state"/>
+        <text x="60" y="24" text-anchor="middle" class="t-b">기억 읽기</text>
+        <path d="M30 46h60M30 58h44M30 70h52" stroke="var(--state)" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+        <text x="60" y="96" text-anchor="middle" class="t-mono" style="font-size:9.5px">git log · progress</text>
+        <text x="60" y="150" text-anchor="middle" class="t-mono">Ch.04</text>
+      </g></a>
+      <path d="M470 175 H494" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- 구현 -->
+      <a href="chapters/plan.html"><g transform="translate(498,96)">
+        <rect width="150" height="158" rx="12" class="f-acc-soft"/>
+        <text x="75" y="24" text-anchor="middle" class="t-b">기능 하나 구현</text>
+        <circle cx="75" cy="76" r="32" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-dasharray="7 5" class="flow"/>
+        <circle cx="75" cy="44" r="6" fill="var(--accent)"/><circle cx="107" cy="76" r="6" class="c-ctx"/><circle cx="75" cy="108" r="6" class="c-env"/><circle cx="43" cy="76" r="6" class="c-tool"/>
+        <text x="75" y="80" text-anchor="middle" class="t-mono" style="font-size:9.5px">안쪽 루프</text>
+        <text x="75" y="136" text-anchor="middle" class="t-dim">모델 → 도구 → 관찰</text>
+        <text x="75" y="178" text-anchor="middle" class="t-mono">Ch.02 · Ch.06</text>
+      </g></a>
+      <path d="M652 175 H676" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- 검증 -->
+      <a href="chapters/verify.html"><g transform="translate(680,110)">
+        <rect width="124" height="130" rx="12" class="soft-env"/>
+        <text x="62" y="24" text-anchor="middle" class="t-b">스스로 검증</text>
+        <rect x="14" y="38" width="96" height="16" rx="4" class="f-elev"/><text x="22" y="50" class="t-mono" style="font-size:9.5px">unit</text><path d="M88 46l4 4 8-8" stroke="var(--env)" stroke-width="2" fill="none"/>
+        <rect x="14" y="58" width="96" height="16" rx="4" class="f-elev"/><text x="22" y="70" class="t-mono" style="font-size:9.5px">e2e 브라우저</text><path d="M88 66l4 4 8-8" stroke="var(--env)" stroke-width="2" fill="none"/>
+        <text x="62" y="100" text-anchor="middle" class="t-dim">끝났다고 말하기 전에</text>
+        <text x="62" y="150" text-anchor="middle" class="t-mono">Ch.07</text>
+      </g></a>
+      <path d="M808 175 H832" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- 커밋 -->
+      <a href="chapters/checkpoint.html"><g transform="translate(836,120)">
+        <rect width="112" height="110" rx="12" class="soft-env"/>
+        <circle cx="56" cy="40" r="10" fill="none" stroke="var(--env)" stroke-width="2.6"/><path d="M56 16v14M56 50v14" stroke="var(--env)" stroke-width="2.6"/>
+        <text x="56" y="84" text-anchor="middle" class="t-b" style="fill:var(--env)">커밋</text>
+        <text x="56" y="100" text-anchor="middle" class="t-mono" style="font-size:9.5px">체크포인트</text>
+        <text x="56" y="130" text-anchor="middle" class="t-mono">Ch.05</text>
+      </g></a>
+      <!-- 진행 파일 갱신: 커밋 → 아래 → 기억 읽기로 (보라) -->
+      <path d="M892 234 V300 Q892 314 878 314 H420 Q406 314 406 300 V246" fill="none" stroke="var(--state)" stroke-width="2.2" marker-end="url(#arrm)" class="flow"/>
+      <rect x="560" y="302" width="200" height="24" rx="12" class="soft-state"/><text x="660" y="319" text-anchor="middle" class="t" style="fill:var(--state)">진행 파일 갱신 → 다음 기능</text>
+      <!-- 창이 차면 새 세션 -->
+      <path d="M966 120 C 1040 120, 1040 40, 960 40 L 420 40 C 380 40, 380 70, 390 104" fill="none" stroke="var(--ctx)" stroke-width="2.2" stroke-dasharray="6 5" class="flow" marker-end="url(#arrc)"/>
+      <a href="chapters/context.html"><rect x="600" y="28" width="250" height="24" rx="12" class="f-elev" stroke="var(--ctx)"/><text x="725" y="45" text-anchor="middle" class="t" style="fill:var(--ctx)">창이 차면 → 압축 또는 새 세션 (Ch.03)</text></a>
+      <!-- 충돌 재개 -->
+      <g transform="translate(990,150)">
+        <circle cx="50" cy="26" r="20" class="soft-guard"/><path d="M42 18l16 16M58 18l-16 16" stroke="var(--guard)" stroke-width="2.6"/>
+        <text x="50" y="68" text-anchor="middle" class="t-b" style="fill:var(--guard)">충돌</text>
+        <text x="50" y="86" text-anchor="middle" class="t-mono" style="font-size:9.5px">마지막 커밋에서</text>
+        <text x="50" y="100" text-anchor="middle" class="t-mono" style="font-size:9.5px">재개</text>
+      </g>
+      <path d="M1000 196 C 970 210, 960 200, 952 192" fill="none" stroke="var(--guard)" stroke-width="2" marker-end="url(#arrg)"/>
+      <!-- 하단 띠 -->
+      <g transform="translate(40,378)">
+        <rect width="1040" height="80" rx="14" class="f-surface"/>
+        <text x="16" y="24" class="t-b">긴 실행 전체를 감싸는 장치</text>
+        <a href="chapters/drift.html"><rect x="16" y="36" width="190" height="30" rx="8" class="soft-guard"/><text x="111" y="56" text-anchor="middle" class="t">표류·맴돌기 감지 (Ch.08)</text></a>
+        <a href="chapters/cost.html"><rect x="220" y="36" width="190" height="30" rx="8" class="soft-tool"/><text x="315" y="56" text-anchor="middle" class="t">비용·예산 상한 (Ch.09)</text></a>
+        <a href="chapters/oversight.html"><rect x="424" y="36" width="190" height="30" rx="8" class="f-acc2-soft"/><text x="519" y="56" text-anchor="middle" class="t">사람 승인·감독 (Ch.10)</text></a>
+        <a href="chapters/safety.html"><rect x="628" y="36" width="190" height="30" rx="8" class="soft-guard"/><text x="723" y="56" text-anchor="middle" class="t">샌드박스·권한 (Ch.11)</text></a>
+        <a href="chapters/ops.html"><rect x="832" y="36" width="192" height="30" rx="8" class="soft-ctx"/><text x="928" y="56" text-anchor="middle" class="t">트레이스·운영 (Ch.12)</text></a>
+      </g>
+    </svg>
+    <figcaption><b>그림 0-1.</b> 장기 실행의 한 바퀴. 초기화 세션이 큰 목표를 검사 가능한 기능 목록과 진행 파일, 실행 스크립트로 바꿔 둔다. 이후 각 세션은 기억을 읽고, 기능 하나를 안쪽 루프로 구현하고, 스스로 검증한 뒤 커밋하고, 진행 파일을 갱신한다. 창이 차면 새 세션이 같은 파일을 읽고 이어 간다. 프로세스가 죽어도 마지막 커밋이 출발점이 된다.</figcaption>
+  </figure>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>이 책의 색 언어</h2>
+  <p class="sub">모든 그림과 실험에서 같은 색은 같은 역할을 뜻합니다. 표지 3D 그림의 색도 같습니다.</p>
+  <div class="colorlang">
+    <div style="--k:var(--accent)"><b>실행 · 에이전트</b>달리고 있는 에이전트, 안쪽 루프, 진행 중인 작업.</div>
+    <div style="--k:var(--accent-2)"><b>사람 · 감독</b>승인, 개입, 아침 검토, 책임 있는 결정.</div>
+    <div style="--k:var(--ctx)"><b>컨텍스트 창</b>한 세션이 볼 수 있는 토큰, 압축, 창의 경계.</div>
+    <div style="--k:var(--state)"><b>외부 기억 · 계획</b>진행 파일, 기능 목록, 노트, 계획, git 기록.</div>
+    <div style="--k:var(--env)"><b>검증 · 체크포인트</b>통과한 테스트, 커밋, 저장된 상태, 안정.</div>
+    <div style="--k:var(--tool)"><b>비용 · 시간</b>토큰, 돈, 벽시계 시간, 사람의 주의.</div>
+    <div style="--k:var(--guard)"><b>실패 · 위험</b>충돌, 표류, 맴돌기, 주입, 되돌릴 수 없는 행동.</div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>숫자로 보는 장기 실행</h2>
+  <p class="sub">이 교과서를 끝내면 아래 숫자가 왜 중요한지, 서로 어떻게 얽혀 있는지 설명할 수 있게 됩니다.</p>
+  <div class="numbers">
+    <div><b>0.99<sup>100</sup> ≈ 0.37</b><span>단계마다 99% 성공해도 실수를 고치지 못하면 100단계 실행의 성공 확률은 37% (1장)</span></div>
+    <div><b>≈ 7개월</b><span>AI가 절반의 확률로 끝내는 과제 길이가 두 배가 되는 데 걸린 시간 (METR, 1장)</span></div>
+    <div><b>Σ = O(n²)</b><span>매 턴 전체 대화를 다시 읽으면 n턴의 입력 토큰은 n²에 비례해 는다 (9장)</span></div>
+    <div><b>τ ≈ √(2CM)</b><span>저장 비용 C, 평균 고장 간격 M일 때 체크포인트를 남길 최적 간격 (영의 공식, 5장)</span></div>
+    <div><b>1 − (1 − q)<sup>n</sup></b><span>외부 문서 n개를 읽는 동안 주입 공격을 하나 이상 만날 확률. 오래 돌수록 1에 다가간다 (11장)</span></div>
+    <div><b>× 0.1</b><span>프롬프트 캐시에서 다시 읽는 입력 토큰의 대략적인 가격 배율. 긴 실행의 비용을 바꾼다 (9장)</span></div>
+    <div><b>1 세션 = 1 기능</b><span>한 번에 다 하려다 창이 끝나면 반쯤 만든 코드만 남는다. 하나씩 끝내고 커밋한다 (2장)</span></div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>전체 챕터</h2>
+  <p class="sub">순서대로 읽어도 좋고, 관심 있는 장부터 골라 읽어도 됩니다. 각 장은 개념 → 그림 → 수식 → 실험 → 퀴즈 순서로 구성됩니다.</p>
+  <div class="ch-grid" id="chgrid"></div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>추천 학습 경로</h2>
+  <p class="sub">목적에 따라 이렇게 읽어 보세요.</p>
+  <div class="paths">
+    <div class="path"><h3>입문 · 처음 긴 작업을 맡겨 볼 때</h3><p>에이전트에게 몇 시간짜리 일을 맡기기 전에, 무엇이 무너지는지부터.</p><div class="steps"><a href="chapters/horizon.html">01</a><a href="chapters/anatomy.html">02</a><a href="chapters/memory.html">04</a><a href="chapters/verify.html">07</a></div></div>
+    <div class="path"><h3>하네스를 만드는 개발자</h3><p>컨텍스트, 기억, 체크포인트, 계획을 직접 코드로 짜야 한다면.</p><div class="steps"><a href="chapters/context.html">03</a><a href="chapters/memory.html">04</a><a href="chapters/checkpoint.html">05</a><a href="chapters/plan.html">06</a><a href="chapters/drift.html">08</a></div></div>
+    <div class="path"><h3>플랫폼 · 운영 담당</h3><p>밤새 도는 에이전트 수십 개를 책임진다면. 비용, 감독, 관측.</p><div class="steps"><a href="chapters/cost.html">09</a><a href="chapters/oversight.html">10</a><a href="chapters/ops.html">12</a></div></div>
+    <div class="path"><h3>보안 · 신뢰 담당</h3><p>에이전트가 오래, 넓게, 혼자 움직일 때 생기는 위험.</p><div class="steps"><a href="chapters/safety.html">11</a><a href="chapters/oversight.html">10</a><a href="chapters/checkpoint.html">05</a><a href="chapters/ops.html">12</a></div></div>
+    <div class="path"><h3>함께 읽으면 좋은 책</h3><p>에이전트 하네스, 메모리, 여러 에이전트, 코딩 에이전트를 더 깊게.</p><div class="steps"><a href="../agent-harness/">HarnessBook ↗</a><a href="../agent-memory/">RecallBook ↗</a><a href="../multi-agent/">ChorusBook ↗</a><a href="../coding-agents/">LoopBook ↗</a><a href="../vibe-coding/">VibeBook ↗</a></div></div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0;padding-bottom:20px">
+  <h2>이 사이트 사용법</h2>
+  <div class="flow">
+    <div><b>읽기</b>개념과 직관을 먼저. 영어 용어는 괄호로 병기합니다.</div>
+    <div><b>보기</b>SVG 도해와 애니메이션으로 세션과 세션 사이의 흐름을 그립니다.</div>
+    <div><b>만지기</b>실험의 슬라이더를 끝까지 움직여 보세요. 극단에서 배웁니다.</div>
+    <div><b>예측하기</b>버튼을 누르기 전에 결과를 먼저 짐작해 보세요.</div>
+    <div><b>확인하기</b>장마다 퀴즈, 마지막 장에서 종합 퀴즈로 마무리합니다.</div>
+  </div>
+</section>
+</main>
+
+<script src="js/hero.js"></script>
+<script>
+(function () {
+  const ICON = {
+    horizon: '<path d="M6 46h64M6 46V6" stroke="var(--axis)" stroke-width="1.6"/><path d="M8 10 C 26 12, 40 30, 68 44" fill="none" stroke="var(--guard)" stroke-width="3"/><path d="M8 10 C 30 10, 52 14, 68 22" fill="none" stroke="var(--env)" stroke-width="2.4" stroke-dasharray="4 3"/><circle cx="8" cy="10" r="3.5" fill="var(--accent)"/>',
+    anatomy: '<circle cx="37" cy="27" r="20" fill="none" stroke="var(--ctx)" stroke-width="2" stroke-dasharray="5 4"/><circle cx="37" cy="27" r="9" fill="none" stroke="var(--accent)" stroke-width="2.4"/><circle cx="46" cy="27" r="3" fill="var(--accent)"/><rect x="58" y="4" width="14" height="10" rx="2" class="c-state" opacity=".8"/>',
+    context: '<path d="M6 46 L22 14 L22 40 L40 12 L40 38 L58 10 L58 36 L70 20" fill="none" stroke="var(--ctx)" stroke-width="2.6"/><path d="M6 12h64" stroke="var(--guard)" stroke-width="1.4" stroke-dasharray="3 3"/>',
+    memory: '<rect x="14" y="4" width="46" height="46" rx="5" class="soft-state"/><rect x="20" y="12" width="30" height="5" rx="2" class="c-state"/><path d="M20 26l3 3 6-7" stroke="var(--env)" stroke-width="2.2" fill="none"/><rect x="32" y="24" width="20" height="5" rx="2" class="c-env" opacity=".6"/><rect x="20" y="36" width="9" height="5" rx="2" fill="var(--guard)" opacity=".7"/><rect x="32" y="36" width="16" height="5" rx="2" class="c-state" opacity=".5"/>',
+    checkpoint: '<path d="M4 27h66" stroke="var(--accent)" stroke-width="2.4"/><circle cx="16" cy="27" r="6" class="c-env"/><circle cx="37" cy="27" r="6" class="c-env"/><circle cx="58" cy="27" r="6" fill="var(--guard)"/><path d="M58 12 C 50 4, 40 6, 38 18" fill="none" stroke="var(--guard)" stroke-width="2" stroke-dasharray="3 3"/>',
+    plan: '<circle cx="10" cy="27" r="5" class="c-state"/><circle cx="34" cy="12" r="5" class="c-state"/><circle cx="34" cy="42" r="5" class="c-state"/><circle cx="60" cy="27" r="5" class="c-env"/><path d="M14 25 L30 14M14 29 L30 40M38 14 L56 25M38 40 L56 29" stroke="var(--state)" stroke-width="1.8"/><path d="M14 25 L30 14 M38 14 L56 25" stroke="var(--accent)" stroke-width="3"/>',
+    verify: '<rect x="8" y="6" width="58" height="10" rx="3" class="soft-env"/><rect x="8" y="20" width="58" height="10" rx="3" class="soft-env"/><rect x="8" y="34" width="58" height="10" rx="3" class="soft-guard"/><path d="M52 11l3 3 6-6M52 25l3 3 6-6" stroke="var(--env)" stroke-width="2" fill="none"/><path d="M53 35l7 7M60 35l-7 7" stroke="var(--guard)" stroke-width="2"/>',
+    drift: '<circle cx="54" cy="12" r="6" fill="none" stroke="var(--accent)" stroke-width="2.4"/><path d="M8 44 C 20 30, 30 40, 34 30 S 30 14, 22 22 S 30 34, 40 30" fill="none" stroke="var(--guard)" stroke-width="2.4"/><path d="M8 44 L50 16" stroke="var(--env)" stroke-width="1.6" stroke-dasharray="3 3"/>',
+    cost: '<path d="M6 46h64M6 46V6" stroke="var(--axis)" stroke-width="1.6"/><path d="M8 44 C 30 42, 50 30, 68 6" fill="none" stroke="var(--tool)" stroke-width="3"/><path d="M8 44 L68 30" fill="none" stroke="var(--env)" stroke-width="2" stroke-dasharray="4 3"/>',
+    oversight: '<ellipse cx="37" cy="27" rx="26" ry="14" fill="none" stroke="var(--accent-2)" stroke-width="2.4"/><circle cx="37" cy="27" r="7" fill="var(--accent-2)"/><rect x="58" y="4" width="12" height="12" rx="3" fill="var(--accent)" opacity=".8"/>',
+    safety: '<path d="M37 4l24 9v14c0 12-10 19-24 22-14-3-24-10-24-22V13z" class="soft-guard" stroke-width="2"/><rect x="27" y="22" width="20" height="14" rx="2" fill="none" stroke="var(--guard)" stroke-width="2"/><path d="M31 22v-4a6 6 0 0 1 12 0v4" fill="none" stroke="var(--guard)" stroke-width="2"/>',
+    ops: '<rect x="6" y="6" width="40" height="7" rx="2" fill="var(--accent)" opacity=".8"/><rect x="14" y="17" width="22" height="7" rx="2" class="c-ctx"/><rect x="24" y="28" width="30" height="7" rx="2" class="c-tool"/><rect x="40" y="39" width="28" height="7" rx="2" class="c-env"/>',
+  };
+  const tagName = { sim: "실험", anim: "애니메이션", viz: "시각화", game: "게임" };
+  document.getElementById("chgrid").innerHTML = LR.CHAPTERS.map((c) => `
+    <a class="ch-card" href="chapters/${c.slug}.html">
+      <svg class="ico" viewBox="0 0 74 54" aria-hidden="true">${ICON[c.slug] || ""}</svg>
+      <span class="num">CHAPTER ${c.num}</span>
+      <h3>${c.title}</h3>
+      <p>${c.desc}</p>
+      <span class="tags">${c.tags.map((t) => `<span>${tagName[t] || t}</span>`).join("")}</span>
+    </a>`).join("");
+})();
+</script>
+</body>
+</html>

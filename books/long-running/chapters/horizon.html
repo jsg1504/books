@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>장기 실행 에이전트란 무엇인가 · MarathonBook</title>
+<meta name="description" content="몇 시간, 며칠을 일하는 장기 실행 에이전트의 정의, 단계 신뢰도가 곱해지는 복리의 법칙, 8시간 실행의 타임라인을 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="horizon">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 01</div>
+    <h1>장기 실행 에이전트란 무엇인가</h1>
+    <p class="lead">에이전트에게 “이 함수에 테스트를 붙여 줘”라고 하면 몇 분 만에 끝난다. “이 서비스를 새 프레임워크로 옮기고 모든 테스트를 통과시켜 줘”라고 하면 이야기가 달라진다. 수백 번의 도구 호출, 몇 번이고 넘치는 컨텍스트 창, 중간에 죽는 프로세스, 어제 한 일을 잊은 오늘의 세션. 이 장에서는 <b>장기 실행 에이전트</b>를 정의하고, 긴 실행이 왜 짧은 실행의 단순한 연장이 아닌지 숫자로 확인한다.</p>
+    <ul class="objectives">
+      <li>장기 실행 에이전트를 짧은 대화형 에이전트와 구별하고, 무엇이 새로 필요해지는지 말할 수 있다.</li>
+      <li>단계 성공 확률이 곱해지는 신뢰도 복리를 계산하고, 자기 교정이 왜 결정적인지 설명할 수 있다.</li>
+      <li>몇 시간짜리 실행의 타임라인에서 세션, 압축, 커밋, 충돌, 승인 대기를 읽을 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="what">
+    <h2>몇 분과 몇 시간의 차이</h2>
+    <p><span class="term">장기 실행 에이전트</span><span class="en">long-running agent</span>는 하나의 큰 목표를 위해 몇 시간에서 며칠 동안, <b>여러 컨텍스트 창과 여러 세션을 넘나들며</b> 일하는 에이전트다. 정의의 핵심은 시간 자체가 아니라 그 시간 동안 생기는 일이다. 한 컨텍스트 창 안에서 끝나는 일은 아무리 오래 걸려도 “긴 대화”일 뿐이다. 창을 넘어서는 순간 에이전트는 기억을 잃고, 다음 창의 자신에게 일을 넘겨줄 방법이 필요해진다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 250" role="img" aria-label="짧은 작업은 컨텍스트 창 하나에서 끝나지만, 긴 작업은 여러 창을 이어 가며 그 사이에 파일과 커밋으로 상태를 넘긴다">
+        <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--state)"/></marker></defs>
+        <text x="16" y="28" class="t-b">짧은 작업</text><text x="16" y="46" class="t-mono">몇 분 · 수십 단계</text>
+        <rect x="140" y="12" width="180" height="44" rx="10" class="soft-ctx"/>
+        <rect x="148" y="20" width="110" height="28" rx="6" fill="var(--ctx)" opacity=".35"/>
+        <text x="230" y="40" text-anchor="middle" class="t-mono">창 하나에 다 들어간다</text>
+        <circle cx="340" cy="34" r="10" class="soft-env"/><path d="M335 34l4 4 6-7" stroke="var(--env)" stroke-width="2" fill="none"/>
+        <text x="16" y="118" class="t-b">긴 작업</text><text x="16" y="136" class="t-mono">몇 시간 · 수천 단계</text>
+        <g transform="translate(140,96)">
+          <rect width="128" height="44" rx="10" class="soft-ctx"/><rect x="6" y="8" width="116" height="28" rx="6" fill="var(--ctx)" opacity=".5"/><text x="64" y="27" text-anchor="middle" class="t-mono">세션 1 · 가득</text>
+          <rect x="160" width="128" height="44" rx="10" class="soft-ctx"/><rect x="166" y="8" width="116" height="28" rx="6" fill="var(--ctx)" opacity=".5"/><text x="224" y="27" text-anchor="middle" class="t-mono">세션 2 · 가득</text>
+          <rect x="320" width="128" height="44" rx="10" class="soft-ctx"/><rect x="326" y="8" width="70" height="28" rx="6" fill="var(--ctx)" opacity=".5"/><text x="384" y="27" text-anchor="middle" class="t-mono">세션 3 …</text>
+          <circle cx="484" cy="22" r="10" class="soft-env"/><path d="M479 22l4 4 6-7" stroke="var(--env)" stroke-width="2" fill="none"/>
+          <path d="M128 22 H158" stroke="var(--state)" stroke-width="2" marker-end="url(#m1)"/><path d="M288 22 H318" stroke="var(--state)" stroke-width="2" marker-end="url(#m1)"/>
+          <rect x="94" y="62" width="100" height="40" rx="8" class="soft-state"/><text x="144" y="80" text-anchor="middle" class="t-mono" style="font-size:10px">progress.md</text><text x="144" y="94" text-anchor="middle" class="t-mono" style="font-size:10px">git commit</text>
+          <rect x="254" y="62" width="100" height="40" rx="8" class="soft-state"/><text x="304" y="80" text-anchor="middle" class="t-mono" style="font-size:10px">features.json</text><text x="304" y="94" text-anchor="middle" class="t-mono" style="font-size:10px">git commit</text>
+          <path d="M144 62 V46" stroke="var(--state)" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M304 62 V46" stroke="var(--state)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <g transform="translate(220,-10)"><circle r="9" class="soft-guard"/><path d="M-4 -4l8 8M4 -4l-8 8" stroke="var(--guard)" stroke-width="2"/></g>
+          <text x="236" y="-14" class="t-mono" style="fill:var(--guard);font-size:10px">충돌 → 재개</text>
+        </g>
+        <text x="140" y="232" class="t-dim">창과 창 사이에서 에이전트는 모든 것을 잊는다. 남는 것은 파일, 커밋, 로그뿐이다. 그것이 장기 실행 설계의 출발점이다.</text>
+      </svg>
+      <figcaption><b>그림 1-1.</b> 짧은 작업과 긴 작업. 긴 작업은 여러 세션으로 나뉘고, 세션 사이의 다리는 보라색 외부 기억(진행 파일, 기능 목록, git)이다. 중간에 프로세스가 죽어도 마지막 커밋에서 다시 출발한다.</figcaption>
+    </figure>
+    <table class="tbl">
+      <thead><tr><th></th><th>짧은 대화형 에이전트</th><th>장기 실행 에이전트</th></tr></thead>
+      <tbody>
+        <tr><td>시간</td><td>몇 초 ~ 몇 분</td><td>몇 시간 ~ 며칠</td></tr>
+        <tr><td>컨텍스트</td><td>창 하나 안에서 끝</td><td>창이 여러 번 넘친다 → 압축, 새 세션</td></tr>
+        <tr><td>기억</td><td>대화 기록이 곧 기억</td><td>파일·커밋·노트 같은 외부 기억이 필요</td></tr>
+        <tr><td>실패</td><td>사람이 바로 보고 다시 시킨다</td><td>아무도 안 볼 때 실패한다 → 체크포인트, 재개, 자기 검증</td></tr>
+        <tr><td>사람</td><td>매 턴 함께 있다</td><td>가끔 승인하고, 아침에 결과를 검토한다</td></tr>
+        <tr><td>비용</td><td>요청 하나의 가격</td><td>누적 토큰, 벽시계 시간, 예산 상한</td></tr>
+      </tbody>
+    </table>
+    <p>왜 지금 이 주제인가. 연구 기관 METR은 AI가 50% 확률로 해내는 과제의 길이, 즉 <span class="term">과제 지평선</span><span class="en">task time horizon</span>이 2019년 이후 대략 <b>7개월마다 두 배</b>로 늘어 왔다고 보고했다. 모델 회사들도 2025년부터 에이전트가 한 번 시작해 수십 시간 동안 코딩을 이어 갔다는 사례를 발표하기 시작했다. 맡길 수 있는 일이 길어지면, 그 긴 시간을 버티게 하는 <b>하네스</b>의 설계가 모델 못지않게 결과를 좌우한다.</p>
+  </section>
+
+  <section id="compound">
+    <h2>신뢰도의 복리</h2>
+    <p>장기 실행의 첫 번째 법칙은 곱셈이다. 에이전트가 한 단계(도구 호출 하나, 편집 하나)를 99% 확률로 제대로 한다고 하자. 꽤 믿음직해 보인다. 하지만 실수가 고쳐지지 않고 쌓인다면, 100단계를 모두 제대로 할 확률은 0.99<sup>100</sup> ≈ 37%다. 1,000단계라면 0.004%다. 이것이 <span class="term">신뢰도 복리</span><span class="en">compounding reliability</span>다.</p>
+    <p>다행히 실수가 모두 치명적이지는 않다. 테스트가 실패를 보여 주고, 에이전트가 오류 메시지를 읽고 고친다. 실수 가운데 비율 <var>r</var>을 스스로 잡아 고친다면, 실행을 망치는 실수의 확률은 (1 − <var>p</var>)(1 − <var>r</var>)로 줄어든다. 긴 실행에서는 단계 정확도를 0.99에서 0.995로 올리는 것보다 <b>자기 교정률을 0에서 0.9로 올리는 것</b>이 훨씬 큰 차이를 만든다.</p>
+    <div class="formula"><div class="eq"><var>P</var><sub>성공</sub>(<var>n</var>) = (1 − <var>f</var>)<sup><var>n</var></sup> &nbsp;·&nbsp; <var>f</var> = (1 − <var>p</var>)(1 − <var>r</var>) &nbsp;·&nbsp; <var>n</var><sub>50</sub> = ln 0.5 / ln(1 − <var>f</var>)</div>
+      <div class="where"><var>p</var>: 단계 정확도, <var>r</var>: 실수를 스스로 발견해 고치는 비율, <var>f</var>: 실행을 망치는 단계 실패 확률, <var>n</var><sub>50</sub>: 성공 확률이 50%로 떨어지는 단계 수. 단계가 서로 독립이라는 단순화된 모형이다.</div></div>
+    <div class="sim" id="sim-compound">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>신뢰도 복리 계산기 — 단계 정확도와 자기 교정</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="cp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>단계 정확도 p <output id="cp-p-out"></output></span><input type="range" id="cp-p" min="0.9" max="0.9995" step="0.0005" value="0.99"></label>
+          <label class="ctrl"><span>자기 교정률 r <output id="cp-r-out"></output></span><input type="range" id="cp-r" min="0" max="0.99" step="0.01" value="0.8"></label>
+          <label class="ctrl"><span>실행 길이 n (단계) <output id="cp-n-out"></output></span><input type="range" id="cp-n" min="1" max="4" step="0.01" value="2"></label>
+          <label class="ctrl"><span>목표 성공 확률 <output id="cp-t-out"></output></span><input type="range" id="cp-t" min="0.5" max="0.99" step="0.01" value="0.9"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>교정 없음 (r = 0)</span><span><i style="background:var(--env)"></i>교정 있음</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">n단계 성공 · 교정 없음</span><span class="v" id="cp-o1">—</span></div>
+        <div class="stat"><span class="k">n단계 성공 · 교정 있음</span><span class="v" id="cp-o2">—</span></div>
+        <div class="stat"><span class="k">50%로 떨어지는 단계 수</span><span class="v" id="cp-o3">—</span></div>
+        <div class="stat"><span class="k">목표를 위한 필요 정확도 (r 반영)</span><span class="v" id="cp-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 교정률을 0으로 내리면 p = 0.99, 100단계에서 37%다. ② 교정률 0.8이면 같은 100단계가 82%, 0.9면 90%로 오른다. ③ n을 1,000단계로 밀고 p를 0.995로 올려 보자. 교정이 없으면 여전히 1% 아래다. 정확도만으로는 긴 실행을 버틸 수 없다. ④ 마지막 칸은 목표 확률을 n단계에서 얻으려면 단계 정확도가 얼마여야 하는지다. 길이가 열 배가 되면 필요한 “9의 개수”가 하나 는다.</div>
+    </div>
+  </section>
+
+  <section id="timeline">
+    <h2>8시간 실행 들여다보기</h2>
+    <p>숫자 대신 실제 모양을 보자. 아래는 웹 앱 하나를 처음부터 만드는 8시간짜리 실행을 단순하게 흉내 낸 타임라인이다. 맨 위 청록 톱니는 컨텍스트 창의 사용률이다. 창이 85%에 이르면 하네스가 <b>압축</b>을 하고, 압축을 두 번 한 뒤에도 차면 진행 파일을 갱신하고 <b>새 세션</b>을 연다. 가운데 초록 계단은 통과한 기능의 수, 아래 줄은 충돌·승인 대기·테스트 실패 같은 사건이다.</p>
+    <div class="sim" id="sim-run">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>8시간 실행 타임라인 — 시간을 끌어 보며 읽기</h3></div>
+      <div class="sim-body">
+        <div class="sim-view"><canvas id="rn-cv"></canvas></div>
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:220px"><span>경과 시간 <output id="rn-t-out"></output></span><input type="range" id="rn-t" min="0" max="480" step="1" value="150"></label>
+          <div class="btns"><button class="btn primary" id="rn-play">▶ 재생</button></div>
+        </div>
+        <div class="verdict" id="rn-ev">—</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">세션</span><span class="v" id="rn-o1">—</span></div>
+        <div class="stat"><span class="k">컨텍스트 사용률</span><span class="v" id="rn-o2">—</span></div>
+        <div class="stat"><span class="k">통과한 기능</span><span class="v" id="rn-o3">—</span></div>
+        <div class="stat"><span class="k">누적 입력 토큰</span><span class="v" id="rn-o4">—</span></div>
+      </div>
+      <div class="sim-note">읽을 것: ① 세션 경계(세로 점선)마다 컨텍스트가 바닥으로 떨어지지만, 초록 계단은 떨어지지 않는다. 진행은 창이 아니라 커밋에 저장된다. ② 3시간 20분쯤의 충돌 뒤에는 마지막 커밋 이후의 작업이 사라지고 새 세션이 열린다. 커밋이 잦을수록 잃는 것이 적다(5장). ③ 5시간 10분쯤 에이전트가 배포 설정 변경 승인을 기다리며 25분 동안 멈춘다. 막히는 승인은 벽시계 시간을 먹는다(10장). ④ 누적 입력 토큰은 한 세션 안에서는 점점 빨리 는다. 매 턴 창 전체를 다시 읽기 때문이다. 압축과 새 세션이 그 가속을 끊는다. 창을 비우지 않았다면 제곱으로 불어났을 것이다(9장).</div>
+    </div>
+  </section>
+
+  <section id="sort">
+    <h2>이 일에 장기 실행이 필요할까</h2>
+    <p>모든 일을 장기 실행으로 만들 필요는 없다. 세션과 기억과 체크포인트를 갖춘 하네스는 그 자체로 비용이다. 한 번의 대화로 끝나는 일은 그냥 끝내고, 같은 짧은 일을 주기적으로 반복하는 일은 <b>예약 작업</b>으로 돌리는 편이 낫다. 상황마다 알맞은 형태를 골라 보자.</p>
+    <div class="sim" id="sim-sort">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>실행 형태 판정 — 여덟 가지 일 분류하기</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="so-card"></div>
+        <div class="bins">
+          <button data-v="chat" style="--k:var(--ctx)">한 번의 대화</button>
+          <button data-v="long" style="--k:var(--accent)">장기 실행 에이전트</button>
+          <button data-v="cron" style="--k:var(--state)">예약 반복 작업</button>
+        </div>
+        <div class="verdict" id="so-fb">첫 상황을 읽고 버튼을 눌러 보세요.</div>
+        <div class="budget"><i id="so-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="so-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="so-o2">0</span></div>
+      </div>
+      <div class="sim-note">기준: 창 하나 안에서 끝나면 <b>한 번의 대화</b>. 창을 여러 번 넘고 중간 상태가 쌓이는 하나의 큰 목표면 <b>장기 실행</b>. 짧은 일이 시간마다·날마다 되풀이되고 각 회차가 독립이면 <b>예약 반복 작업</b>.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>장기 실행 에이전트의 핵심은 시간이 아니라 <b>컨텍스트 창과 세션의 경계를 넘는다</b>는 점이다. 경계를 넘으면 기억을 외부에 두어야 한다.</li>
+      <li>단계 성공 확률은 곱해진다. 0.99<sup>100</sup> ≈ 37%. 긴 실행은 높은 정확도만으로 버틸 수 없다.</li>
+      <li>실수를 스스로 발견하고 고치는 <b>자기 교정</b>이 긴 실행의 성패를 가른다. 테스트와 관찰 가능한 결과가 그 눈이다.</li>
+      <li>긴 실행의 타임라인에는 압축, 새 세션, 커밋, 충돌, 승인 대기가 반복된다. 진행은 창이 아니라 커밋에 쌓인다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 다음 중 장기 실행 에이전트를 가장 잘 구별하는 특징은?</p><div class="opts">
+        <button class="opt">더 큰 모델을 쓴다</button>
+        <button class="opt" data-correct>여러 컨텍스트 창과 세션을 넘나들며 하나의 목표를 이어 간다</button>
+        <button class="opt">사용자와 대화를 더 많이 한다</button>
+      </div><div class="quiz-exp">창의 경계를 넘는 순간 기억을 잃는다. 그래서 진행 파일, 커밋 같은 외부 기억과 재개 장치가 필요해진다.</div></div>
+      <div class="quiz-q"><p>2. 단계 정확도 0.99, 자기 교정 없음, 200단계 실행의 성공 확률에 가장 가까운 값은?</p><div class="opts">
+        <button class="opt">99%</button>
+        <button class="opt">80%</button>
+        <button class="opt" data-correct>13%</button>
+      </div><div class="quiz-exp">0.99<sup>200</sup> ≈ 0.134. 단계가 길어질수록 작은 실패 확률이 곱해져 커진다.</div></div>
+      <div class="quiz-q"><p>3. 긴 실행의 성공 확률을 가장 크게 올리는 방법은?</p><div class="opts">
+        <button class="opt">단계 정확도를 0.990에서 0.992로 올린다</button>
+        <button class="opt" data-correct>테스트 실행과 오류 관찰로 실수의 대부분을 스스로 잡아 고치게 한다</button>
+        <button class="opt">한 번에 더 많은 코드를 쓰게 한다</button>
+      </div><div class="quiz-exp">실행을 망치는 실패 확률은 (1 − p)(1 − r)이다. r을 0.9로 올리면 실패가 열 배 줄어든다.</div></div>
+      <div class="quiz-q"><p>4. 매일 아침 지난밤 오류 로그를 요약해 슬랙에 올리는 일은 어떤 형태가 알맞은가?</p><div class="opts">
+        <button class="opt">하나의 장기 실행 에이전트를 계속 켜 둔다</button>
+        <button class="opt" data-correct>매일 독립적으로 도는 예약 반복 작업</button>
+        <button class="opt">사람이 매일 직접 대화로 시킨다</button>
+      </div><div class="quiz-exp">회차마다 독립이고 창 하나에 들어가는 짧은 일이다. 상태를 이어 갈 필요가 없으니 예약 작업이 가장 싸고 단순하다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 신뢰도 복리 ---------------- */
+(function () {
+  const nOf = (v) => Math.round(Math.pow(10, v));
+  const cv = LR.canvas("cp-cv", { aspect: 0.62, draw });
+  function draw(c, w, h) {
+    const p = LR.val("cp-p"), r = LR.val("cp-r"), n = nOf(LR.val("cp-n")), T = LR.val("cp-t");
+    const f0 = 1 - p, f1 = (1 - p) * (1 - r);
+    const box = { l: 46, t: 14, r: w - 14, b: h - 42 };
+    const A = LR.axes(c, { box, x: [1, 10000], y: [0, 1], logx: true, xt: [1, 10, 100, 1000, 10000], xf: (v) => LR.si(v), yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "실행 길이 (단계, 로그 눈금)", yl: "실행 전체 성공 확률" });
+    const curve = (f) => Array.from({ length: 160 }, (_, i) => { const x = Math.pow(10, (i / 159) * 4); return [A.X(x), A.Y(Math.pow(1 - f, x))]; });
+    c.save(); c.strokeStyle = LR.col("text-faint"); c.setLineDash([2, 4]); c.beginPath(); c.moveTo(box.l, A.Y(T)); c.lineTo(box.r, A.Y(T)); c.stroke(); c.restore();
+    LR.text(c, "목표 " + LR.pct(T), box.r - 4, A.Y(T) - 9, { size: 10.5, align: "right", color: LR.col("text-faint") });
+    // 교정으로 얻은 영역
+    const c0 = curve(f0), c1 = curve(f1);
+    c.fillStyle = LR.alpha(LR.col("env"), 0.12); c.beginPath(); c1.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c0.slice().reverse().forEach(([x, y]) => c.lineTo(x, y)); c.closePath(); c.fill();
+    LR.line(c, c0, LR.col("guard"), 2.4);
+    LR.line(c, c1, LR.col("env"), 2.8);
+    const x = A.X(n);
+    c.strokeStyle = LR.col("accent"); c.lineWidth = 1.8; c.beginPath(); c.moveTo(x, box.t); c.lineTo(x, box.b); c.stroke();
+    const s0 = Math.pow(1 - f0, n), s1 = Math.pow(1 - f1, n);
+    [[s0, "guard"], [s1, "env"]].forEach(([s, k]) => { c.fillStyle = LR.col(k); c.beginPath(); c.arc(x, A.Y(s), 5, 0, 7); c.fill(); });
+    LR.text(c, n.toLocaleString("ko-KR") + "단계", x + 6, box.t + 8, { size: 11.5, weight: 700, color: LR.col("accent") });
+    const n50 = f1 > 0 ? Math.log(0.5) / Math.log(1 - f1) : Infinity;
+    const need = 1 - (1 - Math.pow(T, 1 / n)) / Math.max(1e-9, 1 - r);
+    const cls = (s) => (s >= 0.8 ? "good" : s < 0.4 ? "bad" : "warn");
+    LR.set("cp-o1", LR.pct(s0, s0 < 0.01 ? 2 : 0), cls(s0));
+    LR.set("cp-o2", LR.pct(s1, s1 < 0.01 ? 2 : 0), cls(s1));
+    LR.set("cp-o3", isFinite(n50) ? LR.si(n50) + "단계" : "∞");
+    LR.set("cp-o4", r >= 0.99 && need < 0 ? "—" : need <= 0 ? "어떤 값이든 충분" : (need * 100).toFixed(need > 0.999 ? 3 : 2) + "%", need > 0.9995 ? "bad" : "");
+  }
+  LR.wire(["cp-p", "cp-r", "cp-n", "cp-t"], () => cv.redraw(), { "cp-p": (v) => (v * 100).toFixed(2) + "%", "cp-r": (v) => LR.pct(v), "cp-n": (v) => nOf(v).toLocaleString("ko-KR"), "cp-t": (v) => LR.pct(v) });
+})();
+
+/* ---------------- 2. 8시간 실행 타임라인 ---------------- */
+(function () {
+  const T = 480, WIN = 200000;
+  /* 결정적인 실행 기록을 분 단위로 만든다 */
+  const r = LR.rng(42);
+  const S = []; const EV = [];
+  let ctx = 10, ses = 1, comp = 0, feats = 0, pending = 0, tok = 0, blocked = 0, crashed = false;
+  EV.push({ t: 0, k: "mem", s: "세션 1 시작 · 초기화: features.json(기능 24개, 모두 실패), progress.md, init.sh 작성" });
+  for (let t = 0; t <= T; t++) {
+    if (t === 310) { blocked = 25; EV.push({ t, k: "human", s: "배포 설정을 바꾸려 함 → 승인 게이트에서 사람을 기다림 (25분)" }); }
+    if (t === 200 && !crashed) {
+      crashed = true; EV.push({ t, k: "risk", s: `프로세스 충돌 · 마지막 커밋 이후 ${Math.round(pending * 100)}%까지 만든 기능 #${feats + 1}의 작업을 잃음 → 새 세션에서 재개` });
+      pending = 0; ses++; comp = 0; ctx = 12; EV.push({ t: t + 1, k: "mem", s: `세션 ${ses} 시작 · git log와 progress.md를 읽고 기능 #${feats + 1}부터 다시` });
+    }
+    if (blocked > 0) { blocked--; if (blocked === 0) EV.push({ t, k: "human", s: "사람이 승인 · 실행 재개" }); }
+    else if (feats < 24) {
+      ctx += 0.55 + r() * 1.1;
+      pending += 0.042 + r() * 0.03;
+      tok += 2 * (ctx / 100) * WIN; // 분당 두 턴, 매 턴 창 전체를 읽는다
+      if (pending >= 1) {
+        pending = 0; feats++;
+        if (feats === 24) EV.push({ t, k: "ok", s: "기능 24개 모두 통과 · 마지막 commit · 사람에게 완료 보고" });
+        else if (feats === 7 || feats === 15) EV.push({ t, k: "risk", s: `기능 #${feats} 종단 간 테스트 실패 → 고친 뒤 통과 · commit` });
+        else EV.push({ t, k: "ok", s: `기능 #${feats} 통과 · features.json 갱신 · commit` });
+      }
+      if (ctx >= 85) {
+        if (comp < 2) { comp++; ctx = 32 + r() * 6; EV.push({ t, k: "ctx", s: `컨텍스트 85% → 압축 ${comp}회차 (대화를 요약해 새 창의 첫머리로)` }); }
+        else { ses++; comp = 0; ctx = 9 + r() * 4; EV.push({ t, k: "mem", s: `progress.md 갱신 → 세션 ${ses} 시작 · 진행 파일과 git log 읽기` }); }
+      }
+    }
+    S.push({ t, ctx, ses, feats, tok, blocked: blocked > 0 });
+  }
+  const K = { mem: "state", ok: "env", ctx: "ctx", risk: "guard", human: "accent-2" };
+  const cv = LR.canvas("rn-cv", { aspect: 0.52, draw });
+  const fmtT = (m) => `${Math.floor(m / 60)}시간 ${String(Math.round(m % 60)).padStart(2, "0")}분`;
+  let now = LR.val("rn-t");
+  function draw(c, w, h) {
+    const l = 50, rr = w - 14, X = (t) => l + (t / T) * (rr - l);
+    const top = 12, h1 = (h - 70) * 0.5, y1b = top + h1, y2t = y1b + 18, y2b = y2t + (h - 70) * 0.32, y3 = y2b + 22;
+    c.font = "11px " + LR.monoFont();
+    // 레인 1: 컨텍스트
+    c.strokeStyle = LR.col("grid"); c.lineWidth = 1;
+    [0, 50, 85, 100].forEach((v) => { const y = y1b - (v / 100) * h1; c.beginPath(); c.moveTo(l, y); c.lineTo(rr, y); c.stroke(); LR.text(c, v + "%", l - 6, y, { size: 10, mono: true, align: "right", color: LR.col("text-faint") }); });
+    c.save(); c.strokeStyle = LR.col("guard"); c.setLineDash([3, 4]); const y85 = y1b - 0.85 * h1; c.beginPath(); c.moveTo(l, y85); c.lineTo(rr, y85); c.stroke(); c.restore();
+    // 승인 대기 음영
+    S.forEach((s) => { if (s.blocked) { c.fillStyle = LR.alpha(LR.col("accent-2"), 0.12); c.fillRect(X(s.t), top, X(1) - X(0) + 0.5, y2b - top); } });
+    c.fillStyle = LR.alpha(LR.col("ctx"), 0.18); c.beginPath(); c.moveTo(X(0), y1b); S.forEach((s) => c.lineTo(X(s.t), y1b - (Math.min(100, s.ctx) / 100) * h1)); c.lineTo(X(T), y1b); c.closePath(); c.fill();
+    LR.line(c, S.map((s) => [X(s.t), y1b - (Math.min(100, s.ctx) / 100) * h1]), LR.col("ctx"), 1.8);
+    LR.text(c, "컨텍스트 사용률", l + 4, top + 6, { size: 11, weight: 700, color: LR.col("ctx") });
+    // 세션 경계
+    S.forEach((s, i) => { if (i && s.ses !== S[i - 1].ses) { c.save(); c.strokeStyle = LR.col("state"); c.setLineDash([3, 3]); c.beginPath(); c.moveTo(X(s.t), top); c.lineTo(X(s.t), y2b); c.stroke(); c.restore(); LR.text(c, "S" + s.ses, X(s.t) + 3, y1b - 8, { size: 10, mono: true, color: LR.col("state") }); } });
+    // 레인 2: 기능
+    const FM = 26;
+    c.strokeStyle = LR.col("axis"); c.beginPath(); c.moveTo(l, y2b); c.lineTo(rr, y2b); c.stroke();
+    LR.line(c, S.map((s) => [X(s.t), y2b - (s.feats / FM) * (y2b - y2t)]), LR.col("env"), 2.4);
+    LR.text(c, "통과한 기능", l + 4, y2t + 4, { size: 11, weight: 700, color: LR.col("env") });
+    [0, 12, 24].forEach((v) => LR.text(c, String(v), l - 6, y2b - (v / FM) * (y2b - y2t), { size: 10, mono: true, align: "right", color: LR.col("text-faint") }));
+    // 레인 3: 사건
+    EV.forEach((e) => {
+      if (e.k === "ok" || e.k === "mem" && e.t === 0) return;
+      const x = X(e.t), col = LR.col(K[e.k]);
+      c.fillStyle = col;
+      if (e.k === "risk") { c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 4, y3 - 4); c.lineTo(x + 4, y3 + 4); c.moveTo(x + 4, y3 - 4); c.lineTo(x - 4, y3 + 4); c.stroke(); }
+      else if (e.k === "ctx") { c.beginPath(); c.arc(x, y3, 3, 0, 7); c.fill(); }
+      else if (e.k === "human") { c.fillRect(x - 4, y3 - 4, 8, 8); }
+      else { c.beginPath(); c.moveTo(x, y3 - 5); c.lineTo(x + 5, y3 + 4); c.lineTo(x - 5, y3 + 4); c.closePath(); c.fill(); }
+    });
+    LR.text(c, "사건", l - 6, y3, { size: 10, align: "right", color: LR.col("text-faint") });
+    [0, 120, 240, 360, 480].forEach((t) => LR.text(c, t / 60 + "h", X(t), h - 10, { size: 10.5, mono: true, align: "center", color: LR.col("text-faint") }));
+    // 커서
+    const x = X(now);
+    c.strokeStyle = LR.col("accent"); c.lineWidth = 2; c.beginPath(); c.moveTo(x, top); c.lineTo(x, y3 + 8); c.stroke();
+    c.fillStyle = LR.col("accent"); c.beginPath(); c.arc(x, top, 4, 0, 7); c.fill();
+    const s = S[Math.min(T, Math.round(now))];
+    LR.set("rn-o1", "S" + s.ses);
+    LR.set("rn-o2", Math.round(Math.min(100, s.ctx)) + "%", s.ctx > 80 ? "warn" : "");
+    LR.set("rn-o3", s.feats + " / 24", s.feats >= 24 ? "good" : "");
+    LR.set("rn-o4", LR.si(s.tok));
+    const last = EV.filter((e) => e.t <= now).slice(-1)[0];
+    const ev = LR.el("rn-ev");
+    ev.style.setProperty("--k", `var(--${K[last.k]})`);
+    ev.innerHTML = `<b>${fmtT(last.t)}</b> — ${LR.esc(last.s)}`;
+  }
+  const up = LR.wire(["rn-t"], () => { now = LR.val("rn-t"); cv.redraw(); }, { "rn-t": fmtT });
+  LR.player("rn-play", LR.el("sim-run"), (dt) => {
+    now += dt * 24; if (now >= T) { now = T; }
+    LR.el("rn-t").value = Math.round(now); LR.el("rn-t-out").textContent = fmtT(now); cv.redraw();
+    if (now >= T) { now = 0; return false; }
+  });
+})();
+
+/* ---------------- 3. 실행 형태 판정 ---------------- */
+LR.sortGame({
+  root: "sim-sort", prefix: "so",
+  names: { chat: "한 번의 대화", long: "장기 실행 에이전트", cron: "예약 반복 작업" },
+  cards: [
+    ["이 정규식이 이메일 주소를 제대로 거르는지 예시 열 개로 확인해 줘.", "chat", "몇 분이면 끝나고 창 하나에 다 들어간다. 진행 파일도 체크포인트도 필요 없다."],
+    ["30만 줄짜리 자바 8 서비스를 자바 21과 새 프레임워크로 옮기고 테스트 2,000개를 모두 통과시켜라.", "long", "수천 단계, 수십 번의 창 교체가 필요한 하나의 목표다. 진행 상태와 실패한 테스트 목록을 세션 사이에 넘겨야 한다."],
+    ["매시간 경쟁사 가격 페이지 다섯 곳을 읽어 바뀐 값이 있으면 알림을 보낸다.", "cron", "회차마다 짧고 독립적이다. 이전 회차의 값만 파일에 남기면 되고, 한 에이전트를 계속 켜 둘 이유가 없다."],
+    ["명세서와 디자인 시안만 주고 할 일 관리 웹 앱을 처음부터 끝까지 만들게 한다(기능 120개).", "long", "기능 하나하나는 작지만 전체는 여러 세션에 걸친다. 기능 목록과 진행 파일, 커밋이 필요한 전형적인 장기 실행이다."],
+    ["이 에러 스택 트레이스가 무슨 뜻인지 설명해 줘.", "chat", "질문 하나에 답 하나. 장기 실행 하네스는 비용만 늘린다."],
+    ["사내 위키 문서 4,000개를 읽어 오래되거나 서로 모순되는 문서를 찾아 보고서를 쓴다.", "long", "읽을 양이 창 수십 개 분량이다. 어디까지 읽었는지, 지금까지 찾은 모순이 무엇인지를 외부에 기록하며 이어 가야 한다."],
+    ["매일 밤 의존성 업데이트를 확인하고, 깨지는 테스트가 없으면 PR을 연다.", "cron", "날마다 같은 짧은 일이 반복되고 회차 사이에 이어 갈 상태가 거의 없다. 다만 한 회차가 길어지면 그 회차 안에서 장기 실행 기법을 쓸 수 있다."],
+    ["재현이 어려운 경쟁 상태 버그를, 수백 번 테스트를 돌려 가며 원인을 좁히고 고친다.", "long", "가설과 실험 결과를 오래 쌓아 가야 하고, 이미 배제한 가설을 잊으면 같은 실험을 반복한다. 가설 노트를 외부에 두는 장기 실행이 맞다."],
+  ],
+});
+</script>
+</body>
+</html>

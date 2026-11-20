@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>외부 기억: 진행 파일과 노트 · MarathonBook</title>
+<meta name="description" content="세션이 바뀔 때마다 기억을 잃는 에이전트를 위한 외부 기억. 진행 파일의 재적응 비용, 기능 목록 JSON의 규칙, 오래된 노트의 표류를 실험과 게임으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="memory">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 04</div>
+    <h1>외부 기억: 진행 파일과 노트</h1>
+    <p class="lead">교대 근무하는 간호사는 기억력이 아니라 <b>인수인계 기록</b>으로 환자를 이어 본다. 장기 실행 에이전트도 같다. 새 세션은 아무것도 모른 채 깨어난다. 무엇을 했고, 무엇이 남았고, 무엇을 시도했다가 실패했는지를 알려 주는 것은 창 밖의 파일뿐이다. 이 장에서는 외부 기억의 세 가지 형태 — 자유 서술 진행 파일, 구조화된 기능 목록, git 기록 — 와 그것을 오래 믿을 수 있게 유지하는 규칙을 본다.</p>
+    <ul class="objectives">
+      <li>인수인계의 질이 세션마다의 재적응 비용과 중복 작업을 어떻게 바꾸는지 모형으로 설명할 수 있다.</li>
+      <li>기능 목록을 에이전트가 함부로 고치지 못하게 하는 규칙과 그 이유를 말할 수 있다.</li>
+      <li>코드가 바뀌면 노트가 낡는다는 점을 이해하고, 노트를 최신으로 유지하는 방법을 고를 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="handoff">
+    <h2>기억상실 세션의 재적응 비용</h2>
+    <p>새 세션이 처음 몇 턴을 쓰는 일은 늘 같다. “여기가 어디지? 무엇이 끝났지? 다음은 뭐지?” 이것이 <span class="term">재적응 비용</span><span class="en">re-orientation cost</span>이다. 인수인계가 없으면 에이전트는 코드를 처음부터 읽어 상태를 추측한다. 프로젝트가 커질수록 이 비용도 커진다. 더 나쁜 것은 <b>잘못 추측하는 것</b>이다. 이미 끝난 기능을 다시 만들거나, 반쯤 된 기능을 끝났다고 여긴다.</p>
+    <div class="cards3">
+      <div style="--k:var(--guard)"><b>인수인계 없음</b>코드와 디렉터리를 뒤져 상태를 추측한다. 재적응 비용이 프로젝트 크기에 비례해 늘고, 중복 작업이 잦다.</div>
+      <div style="--k:var(--tool)"><b>자유 서술 노트</b>progress.md에 지난 세션이 한 일을 적는다. 훨씬 낫지만 형식이 들쭉날쭉하고, 무엇이 “끝났는지”의 판단이 모호하다.</div>
+      <div style="--k:var(--env)"><b>구조화된 기억</b>features.json(기능마다 passes), progress.md(최근 세션 요약), git log(정확한 변경 기록). 몇 턴 만에 정확히 이어 간다.</div>
+    </div>
+    <div class="sim" id="sim-handoff">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>인수인계의 질과 누적 진척 — 20세션</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ho-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>세션당 턴 <output id="ho-b-out"></output></span><input type="range" id="ho-b" min="40" max="200" step="10" value="80"></label>
+          <label class="ctrl"><span>기능 하나에 드는 턴 <output id="ho-w-out"></output></span><input type="range" id="ho-w" min="4" max="30" step="1" value="10"></label>
+          <label class="ctrl"><span>탐색 비용 증가 (기능 하나당) <output id="ho-a-out"></output></span><input type="range" id="ho-a" min="0" max="2" step="0.1" value="0.8"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>인수인계 없음</span><span><i style="background:var(--tool)"></i>자유 서술</span><span><i style="background:var(--env)"></i>구조화</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">20세션 뒤 · 없음</span><span class="v" id="ho-o1">—</span></div>
+        <div class="stat"><span class="k">20세션 뒤 · 자유 서술</span><span class="v" id="ho-o2">—</span></div>
+        <div class="stat"><span class="k">20세션 뒤 · 구조화</span><span class="v" id="ho-o3">—</span></div>
+        <div class="stat"><span class="k">마지막 세션 재적응 비율 · 없음</span><span class="v" id="ho-o4">—</span></div>
+      </div>
+      <div class="sim-note">모형: 재적응 비용은 없음 = 6턴 + (끝낸 기능 수 × 탐색 비용 증가), 자유 서술 = 8턴 + 그 값의 15%, 구조화 = 4턴. 잘못 추측해 이미 한 일을 다시 할 확률은 기능마다 20% · 6% · 1%. 해볼 것: ① 기본값에서 인수인계 없는 실행은 프로젝트가 커질수록 거의 멈춘다. 세션 대부분을 “어디까지 했더라”에 쓴다. ② 탐색 비용 증가를 0으로 내리면(작은 프로젝트) 차이가 줄어든다. 외부 기억의 가치는 프로젝트 크기와 함께 자란다. ③ 세션당 턴을 200으로 올려도 순서는 바뀌지 않는다. 큰 창이 인수인계를 대신하지 못한다.</div>
+    </div>
+  </section>
+
+  <section id="json">
+    <h2>기능 목록은 계약서다</h2>
+    <p>기능 목록은 에이전트의 할 일 목록이자 <b>완료의 정의</b>다. 그런데 에이전트가 이 목록을 마음대로 고칠 수 있다면? 어려운 기능을 지우거나, 확인 단계를 빼거나, 테스트 없이 통과로 표시할 수 있다. 목록이 쉬워지면 “다 끝났다”도 쉬워진다. 그래서 규칙은 단순하다. <b>에이전트가 바꿀 수 있는 것은 passes 필드뿐이고, 그것도 실제로 확인한 뒤에만.</b> 앞의 하네스 사례에서 Anthropic은 이 파일을 마크다운이 아닌 JSON으로 두었는데, 모델이 JSON 파일은 마크다운보다 덜 함부로 고쳐 쓰는 경향이 있었기 때문이라고 설명했다.</p>
+    <div class="two">
+      <div class="jsonbox" id="js-box"></div>
+      <div class="sim" id="sim-json" style="margin:0">
+        <div class="sim-head"><span class="sim-tag game">GAME</span><h3>이 수정을 허용할까</h3></div>
+        <div class="sim-body">
+          <div class="sort-card" id="js-card" style="font-family:var(--mono);font-size:13px"></div>
+          <div class="bins">
+            <button data-v="ok" style="--k:var(--env)">허용</button>
+            <button data-v="no" style="--k:var(--guard)">거부</button>
+          </div>
+          <div class="verdict" id="js-fb">왼쪽 파일을 보고, 에이전트가 제안한 수정을 판정해 보세요.</div>
+          <div class="budget"><i id="js-bar" style="width:0"></i></div>
+        </div>
+        <div class="sim-readout">
+          <div class="stat"><span class="k">진행</span><span class="v" id="js-o1">0 / 7</span></div>
+          <div class="stat"><span class="k">맞힌 수</span><span class="v" id="js-o2">0</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="stale">
+    <h2>노트는 낡는다</h2>
+    <p>진행 파일과 아키텍처 노트는 쓰는 순간부터 낡기 시작한다. 코드가 바뀌면 “인증은 src/auth.ts에 있다”는 메모가 틀린 말이 된다. 틀린 메모는 메모가 없는 것보다 나쁘다. 에이전트는 그 메모를 믿고 엉뚱한 곳을 고친다. 노트를 최신으로 유지하는 방법은 두 가지다. 매 세션 끝에 <b>바꾼 부분의 메모를 고치는 습관</b>, 그리고 몇 세션마다 <b>노트 전체를 코드와 대조하는 정리</b>. git 기록은 이 문제가 없다. 커밋은 그 시점의 사실이고 다시 쓰이지 않는다.</p>
+    <div class="formula"><div class="eq"><var>a</var><sub><var>s</var>+1</sub> = <var>a</var><sub><var>s</var></sub>(1 − <var>c</var>) + <var>u</var> · <var>a</var><sub><var>s</var></sub><var>c</var></div>
+      <div class="where"><var>a</var>: 노트 가운데 아직 맞는 메모의 비율, <var>c</var>: 세션마다 코드 변경으로 틀려지는 비율, <var>u</var>: 바꾼 부분의 메모를 그 세션에 고치는 비율. 정리 주기마다 <var>a</var>를 98%로 되돌린다.</div></div>
+    <div class="sim" id="sim-stale">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>낡아 가는 노트 — 30세션</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sl-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>세션당 코드 변경으로 낡는 비율 c <output id="sl-c-out"></output></span><input type="range" id="sl-c" min="0" max="0.2" step="0.01" value="0.03"></label>
+          <label class="ctrl"><span>바꾼 부분 메모 갱신률 u <output id="sl-u-out"></output></span><input type="range" id="sl-u" min="0" max="1" step="0.05" value="0.5"></label>
+          <label class="ctrl"><span>전체 정리 주기 <output id="sl-k-out"></output></span><input type="range" id="sl-k" min="0" max="15" step="1" value="0"></label>
+          <label class="ctrl"><span>세션당 메모 참조 횟수 <output id="sl-n-out"></output></span><input type="range" id="sl-n" min="1" max="30" step="1" value="10"></label>
+          <div class="legend"><span><i style="background:var(--state)"></i>노트 정확도</span><span><i style="background:var(--guard)"></i>누적 잘못된 메모 사용</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">30세션 뒤 정확도</span><span class="v" id="sl-o1">—</span></div>
+        <div class="stat"><span class="k">평균 정확도</span><span class="v" id="sl-o2">—</span></div>
+        <div class="stat"><span class="k">잘못된 메모를 따른 횟수</span><span class="v" id="sl-o3">—</span></div>
+        <div class="stat"><span class="k">정리에 쓴 세션</span><span class="v" id="sl-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 세션마다 메모의 3%가 낡고 그중 절반만 고치면, 정리 없이 30세션 뒤 노트의 3분의 1 이상이 틀린다. ② 갱신률을 100%로 올리면 노트가 낡지 않는다. 바꾼 사람이 그 자리에서 메모를 고치는 것이 가장 싸다. ③ 갱신률 0에서 정리 주기를 5로 두면 톱니 모양이 된다. 정리는 습관을 대신하지 못하고, 사이사이에 틀린 메모가 쌓인다. 정리 하나에 세션 하나의 4분의 1을 쓴다고 셌다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>새 세션의 첫 턴들은 재적응에 쓰인다. 인수인계가 없으면 이 비용이 프로젝트 크기와 함께 자라고, 잘못된 추측이 중복 작업을 만든다.</li>
+      <li>구조화된 기억 — 기능 목록, 진행 파일, git 기록 — 이 가장 싸고 정확하다. 큰 창은 인수인계를 대신하지 못한다.</li>
+      <li>기능 목록은 계약서다. 에이전트는 확인한 뒤에 passes만 바꿀 수 있고, 항목을 지우거나 쉽게 고칠 수 없다.</li>
+      <li>노트는 낡는다. 바꾼 부분을 그 자리에서 고치는 습관이 기본이고, 주기적 정리는 보조다. git 기록은 낡지 않는 기억이다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 인수인계 없는 실행이 프로젝트가 커질수록 느려지는 가장 큰 이유는?</p><div class="opts">
+        <button class="opt">모델이 피곤해져서</button>
+        <button class="opt" data-correct>매 세션 상태를 파악하려고 읽어야 할 코드가 늘고, 잘못된 추측으로 중복 작업이 생겨서</button>
+        <button class="opt">토큰 가격이 올라서</button>
+      </div><div class="quiz-exp">재적응 비용이 프로젝트 크기에 비례하면 결국 세션 대부분을 “어디까지 했더라”에 쓴다.</div></div>
+      <div class="quiz-q"><p>2. 에이전트가 features.json에서 “너무 어려워서” 기능 하나를 지우려 한다. 하네스의 올바른 대응은?</p><div class="opts">
+        <button class="opt">지우게 둔다</button>
+        <button class="opt" data-correct>거부하고, 막힌 이유를 진행 파일에 적어 사람에게 알리게 한다</button>
+        <button class="opt">passes를 true로 바꾸게 한다</button>
+      </div><div class="quiz-exp">기능 목록은 완료의 정의다. 목록을 줄이는 것은 일을 끝내는 것이 아니라 정의를 바꾸는 것이다.</div></div>
+      <div class="quiz-q"><p>3. 회귀가 발견되어 이미 통과로 표시된 기능을 다시 실패로 바꾸는 것은?</p><div class="opts">
+        <button class="opt">규칙 위반이다</button>
+        <button class="opt" data-correct>정직한 기록이다. 목록은 현재의 사실을 반영해야 한다</button>
+        <button class="opt">진행률이 떨어지니 피해야 한다</button>
+      </div><div class="quiz-exp">passes는 확인된 사실이다. 사실이 바뀌었으면 기록도 바뀌어야 다음 세션이 올바른 일을 고른다.</div></div>
+      <div class="quiz-q"><p>4. 노트를 최신으로 유지하는 가장 싼 방법은?</p><div class="opts">
+        <button class="opt">한 달에 한 번 전체 정리</button>
+        <button class="opt" data-correct>코드를 바꾼 세션이 바뀐 부분의 메모를 그 자리에서 고치기</button>
+        <button class="opt">노트를 쓰지 않기</button>
+      </div><div class="quiz-exp">바꾼 사람이 가장 잘 알고, 가장 적은 비용으로 고칠 수 있다. 전체 정리는 그 습관을 보완한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 인수인계의 질 ---------------- */
+(function () {
+  const S = 20, NF = 200;
+  const MODES = [
+    { k: "guard", R: (a, d) => 6 + d * a, dup: 0.2 },
+    { k: "tool", R: (a, d) => 8 + 0.15 * d * a, dup: 0.06 },
+    { k: "env", R: () => 4, dup: 0.01 },
+  ];
+  const cv = LR.canvas("ho-cv", { aspect: 0.62, draw });
+  function run(m) {
+    const B = LR.val("ho-b"), W = LR.val("ho-w"), a = LR.val("ho-a");
+    let done = 0; const out = []; let lastR = 0;
+    for (let s = 0; s < S; s++) {
+      const R = Math.min(B, m.R(a, done)); lastR = R / B;
+      const made = Math.max(0, B - R) / W;
+      done = Math.min(NF, done + made * (1 - m.dup));
+      out.push(done);
+    }
+    return { out, lastR };
+  }
+  function draw(c, w, h) {
+    const R = MODES.map(run);
+    const ymax = Math.max(20, Math.ceil(Math.max(...R.map((r) => r.out[S - 1])) / 20) * 20);
+    const box = { l: 46, t: 14, r: w - 14, b: h - 42 };
+    const A = LR.axes(c, { box, x: [0, S], y: [0, ymax], xt: [0, 5, 10, 15, 20], yt: [0, ymax / 4, ymax / 2, (3 * ymax) / 4, ymax], yf: (v) => Math.round(v), xl: "세션", yl: "끝낸 기능 (누적)" });
+    R.forEach((r, i) => LR.line(c, [[A.X(0), A.Y(0)], ...r.out.map((v, j) => [A.X(j + 1), A.Y(v)])], LR.col(MODES[i].k), 2.6));
+    ["ho-o1", "ho-o2", "ho-o3"].forEach((id, i) => LR.set(id, R[i].out[S - 1].toFixed(0) + "개", i === 2 ? "good" : i === 0 ? "bad" : ""));
+    LR.set("ho-o4", LR.pct(R[0].lastR), R[0].lastR > 0.5 ? "bad" : "warn");
+  }
+  LR.wire(["ho-b", "ho-w", "ho-a"], () => cv.redraw(), { "ho-b": (v) => v + "턴", "ho-w": (v) => v + "턴", "ho-a": (v) => v.toFixed(1) + "턴" });
+})();
+
+/* ---------------- 2. 기능 목록 규칙 ---------------- */
+(function () {
+  const F = [
+    { id: 1, d: "사용자가 할 일을 추가할 수 있다", steps: ["입력창에 제목 입력", "Enter", "목록 맨 위에 보인다"], p: true },
+    { id: 2, d: "할 일을 완료로 표시할 수 있다", steps: ["체크박스 클릭", "취소선과 함께 아래로 이동"], p: true },
+    { id: 3, d: "새로 고침해도 할 일이 남아 있다", steps: ["할 일 추가", "페이지 새로 고침", "그대로 보인다"], p: false },
+    { id: 4, d: "모바일 폭(375px)에서 레이아웃이 깨지지 않는다", steps: ["375px로 축소", "가로 스크롤 없음", "버튼이 겹치지 않음"], p: false },
+    { id: 5, d: "반복 일정(매주 월요일)을 만들 수 있다", steps: ["반복 선택", "다음 주 월요일에 자동 생성 확인"], p: false },
+    { id: 6, d: "다크 모드를 지원한다", steps: ["시스템 테마 전환", "모든 화면 색 확인"], p: false },
+  ];
+  const state = F.map((f) => ({ ...f, steps: f.steps.slice() }));
+  let hi = null;
+  function render() {
+    const lines = ["["];
+    state.forEach((f, i) => {
+      if (f.gone) return;
+      const mark = (k) => (hi && hi.id === f.id && hi.k === k ? ' class="chg"' : "");
+      lines.push(`  { <span class="k">"id"</span>: ${f.id}, <span class="k">"description"</span>: <span class="s"${mark("d")}>"${LR.esc(f.d)}"</span>,`);
+      lines.push(`    <span class="k">"steps"</span>: [<span${mark("s")}>${f.steps.map((s) => `<span class="s">"${LR.esc(s)}"</span>`).join(", ")}</span>],`);
+      lines.push(`    <span class="k">"passes"</span>: <span class="${f.p ? "t" : "f"}"${mark("p")}>${f.p}</span> }${i < state.length - 1 ? "," : ""}`);
+    });
+    lines.push("]");
+    LR.el("js-box").innerHTML = `<span style="color:var(--text-faint)">// features.json — 에이전트는 passes만 바꿀 수 있다</span>\n` + lines.join("\n");
+  }
+  const P = [
+    ["기능 #3: passes false → true\n근거: 브라우저로 추가 → 새로 고침 → 그대로 보임을 스크린숏으로 확인", "ok", "실제로 사용자 흐름을 따라 확인했다. 허용되는 유일한 종류의 변경이다.", () => { state[2].p = true; hi = { id: 3, k: "p" }; }],
+    ["기능 #5 항목 삭제\n이유: 반복 일정은 너무 복잡해 이번 범위에서 빼는 것이 낫다", "no", "범위를 바꾸는 것은 에이전트가 아니라 사람의 결정이다. 막힌 이유를 진행 파일에 적고 다음 기능으로 넘어가야 한다.", () => { hi = { id: 5, k: "d" }; }],
+    ["기능 #4: steps에서 \"버튼이 겹치지 않음\" 제거\n이유: 이 단계 때문에 계속 실패한다", "no", "실패하는 확인 단계를 지우면 기능이 통과하는 것이 아니라 완료의 정의가 약해진다. 전형적인 보상 해킹이다(7장).", () => { hi = { id: 4, k: "s" }; }],
+    ["기능 #6: passes false → true\n근거: CSS 변수를 다 바꿨으니 코드상 맞아 보인다", "no", "“코드상 맞아 보인다”는 확인이 아니다. 화면을 직접 보거나 테스트로 확인하기 전에는 통과가 아니다.", () => { hi = { id: 6, k: "p" }; }],
+    ["기능 #2: passes true → false\n근거: 오늘 정렬 코드 수정 후 완료한 항목이 아래로 가지 않는 회귀를 발견", "ok", "정직한 기록이다. 목록이 현재의 사실을 보여 줘야 다음 세션이 회귀를 먼저 고친다.", () => { state[1].p = false; hi = { id: 2, k: "p" }; }],
+    ["기능 #1: description을 \"사용자가 할 일을 추가할 수 있다(제목 최대 200자)\"로 수정\n이유: 구현하면서 길이 제한을 정했다", "no", "작아 보여도 요구 사항을 에이전트가 다시 쓰는 일이다. 구현에서 내린 결정은 진행 파일에 적고, 요구 사항 변경은 사람에게 제안한다.", () => { hi = { id: 1, k: "d" }; }],
+    ["features.json은 그대로 두고 progress.md에 메모 추가\n\"#5 반복 일정: 시간대 처리 방식 미정. 사람의 결정 필요.\"", "ok", "막힌 일은 목록을 고치는 대신 기록하고 알린다. 다음 세션과 사람 모두 이 메모를 본다.", () => { hi = null; }],
+  ];
+  render();
+  const N = P.length;
+  let i = 0, score = 0, locked = false;
+  function show() {
+    if (i >= N) { LR.el("js-card").innerHTML = `<small>완료</small><b>${score} / ${N}</b> 맞혔습니다. 다시 하려면 아무 버튼이나 누르세요.`; return; }
+    LR.el("js-card").innerHTML = `<small>제안 ${i + 1} / ${N}</small>${LR.esc(P[i][0]).replace(/\n/g, "<br>")}`;
+  }
+  LR.$$("#sim-json .bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= N) { i = 0; score = 0; state.forEach((s, j) => { s.p = F[j].p; }); hi = null; render(); LR.set("js-o1", `0 / ${N}`); LR.set("js-o2", "0"); LR.el("js-bar").style.width = "0"; LR.el("js-fb").textContent = "다시 시작합니다."; LR.el("js-fb").style.removeProperty("--k"); show(); return; }
+    if (locked) return;
+    const [, ans, why, apply] = P[i];
+    const ok = b.dataset.v === ans;
+    if (ok) score++;
+    apply();
+    render();
+    const fb = LR.el("js-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + (ans === "ok" ? "허용" : "거부")}</b> — ${LR.esc(why)}`;
+    locked = true; i++;
+    LR.set("js-o1", `${i} / ${N}`); LR.set("js-o2", String(score), score === i ? "good" : "");
+    LR.el("js-bar").style.width = (i / N) * 100 + "%";
+    setTimeout(() => { locked = false; show(); }, 1200);
+  }));
+  show();
+})();
+
+/* ---------------- 3. 낡아 가는 노트 ---------------- */
+(function () {
+  const S = 30;
+  const cv = LR.canvas("sl-cv", { aspect: 0.62, draw });
+  function model() {
+    const c = LR.val("sl-c"), u = LR.val("sl-u"), k = LR.val("sl-k"), n = LR.val("sl-n");
+    let a = 0.98, wrong = 0, sum = 0, recon = 0; const A = [], Wr = [];
+    for (let s = 1; s <= S; s++) {
+      wrong += (1 - a) * n; sum += a;
+      a = a * (1 - c) + u * a * c;
+      if (k > 0 && s % k === 0) { a = 0.98; recon += 0.25; }
+      A.push(a); Wr.push(wrong);
+    }
+    return { A, Wr, avg: sum / S, wrong, recon };
+  }
+  function draw(c, w, h) {
+    const M = model();
+    const box = { l: 46, t: 14, r: w - 52, b: h - 42 };
+    const Ax = LR.axes(c, { box, x: [0, S], y: [0, 1], xt: [0, 5, 10, 15, 20, 25, 30], yt: [0, 0.25, 0.5, 0.75, 1], yf: (v) => v * 100 + "%", xl: "세션", yl: "노트 정확도" });
+    const wmax = Math.max(10, Math.ceil(M.wrong / 10) * 10);
+    const Y2 = (v) => box.b - (v / wmax) * (box.b - box.t);
+    [0, wmax / 2, wmax].forEach((v) => LR.text(c, Math.round(v) + "회", box.r + 6, Y2(v), { size: 10.5, mono: true, color: LR.col("guard") }));
+    c.fillStyle = LR.alpha(LR.col("guard"), 0.12); c.beginPath(); c.moveTo(Ax.X(0), Y2(0)); M.Wr.forEach((v, i) => c.lineTo(Ax.X(i + 1), Y2(v))); c.lineTo(Ax.X(S), Y2(0)); c.closePath(); c.fill();
+    LR.line(c, [[Ax.X(0), Y2(0)], ...M.Wr.map((v, i) => [Ax.X(i + 1), Y2(v)])], LR.col("guard"), 1.8, [5, 4]);
+    LR.line(c, [[Ax.X(0), Ax.Y(0.98)], ...M.A.map((v, i) => [Ax.X(i + 1), Ax.Y(v)])], LR.col("state"), 2.8);
+    const f = M.A[S - 1];
+    LR.set("sl-o1", LR.pct(f), f > 0.9 ? "good" : f < 0.6 ? "bad" : "warn");
+    LR.set("sl-o2", LR.pct(M.avg));
+    LR.set("sl-o3", Math.round(M.wrong) + "회", M.wrong > 50 ? "bad" : "");
+    LR.set("sl-o4", M.recon.toFixed(1) + "세션");
+  }
+  LR.wire(["sl-c", "sl-u", "sl-k", "sl-n"], () => cv.redraw(), { "sl-c": (v) => LR.pct(v), "sl-u": (v) => LR.pct(v), "sl-k": (v) => (v ? v + "세션마다" : "안 함"), "sl-n": (v) => v + "회" });
+})();
+</script>
+</body>
+</html>
