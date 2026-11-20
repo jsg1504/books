@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>운영 플레이북과 용어집 · WikiBook</title>
+<meta name="description" content="30일 동안 위키를 키우는 전략 게임, 설계 선택을 레이더로 비교하는 플레이그라운드, 용어집과 종합 퀴즈로 LLM 위키 운영을 정리한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<style>
+  .acts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .acts button { border: 1px solid var(--k); background: color-mix(in srgb, var(--k) 9%, var(--bg-elev)); color: var(--text); border-radius: 10px; padding: 9px 10px; cursor: pointer; text-align: left; font-size: 13.5px; line-height: 1.4; }
+  .acts button b { display: block; color: var(--k); font-size: 14.5px; }
+  .acts button:hover { background: color-mix(in srgb, var(--k) 18%, var(--bg-elev)); }
+  .acts button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pg-grid { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+  .pg-grid .row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 13px; }
+  .pg-grid .seg button { padding: 5px 9px; font-size: 12.5px; }
+  .pg-grid .row > span { color: var(--text-dim); font-weight: 600; }
+  .pg-grid .seg { flex-wrap: wrap; }
+  #gl-list { max-height: 520px; overflow-y: auto; }
+</style>
+</head>
+<body data-root="../" data-chapter="ops">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 12</div>
+    <h1>운영 플레이북과 용어집</h1>
+    <p class="lead">지금까지 위키의 부품을 하나씩 뜯어봤다. 마지막 장에서는 그것을 한데 모아 <b>운영</b>해 본다. 하루에 할 수 있는 일은 정해져 있다. 새 원천을 수집할까, 쌓인 문제를 린트할까, 스키마를 다듬을까, 검색 도구를 붙일까? 30일 동안 위키를 키우는 게임으로 감각을 확인하고, 설계 선택을 한눈에 비교하는 플레이그라운드로 자기 위키의 설정을 고르고, 용어집과 종합 퀴즈로 책을 마무리한다.</p>
+    <ul class="objectives">
+      <li>수집, 린트, 스키마, 검색, 환류 사이의 맞바꿈을 하나의 운영 전략으로 엮을 수 있다.</li>
+      <li>자기 상황에 맞는 위키 설계(페이지 크기, 검색, 린트, 환류, 출처, 권한)를 고를 수 있다.</li>
+      <li>이 책의 핵심 용어를 설명할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="grow">
+    <h2>30일 위키 키우기</h2>
+    <p>당신은 팀 위키의 운영자다. 매일 <b>행동 세 번</b>을 할 수 있다. 매일 저녁 팀원들이 질문을 던지고, 위키는 아는 만큼(지식 범위), 건강한 만큼(문제가 적을수록), 찾을 수 있는 만큼(검색) 답한다. 질문은 날마다 늘어난다. 수집만 하면 문제가 쌓이고, 린트만 하면 지식이 늘지 않는다. 30일 동안 답한 질문의 총수가 점수다.</p>
+    <div class="sim" id="sim-grow">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>30일 위키 키우기 — 하루 세 번의 선택</h3></div>
+      <div class="sim-body">
+        <div class="acts" id="gm-acts">
+          <button data-a="ingest" style="--k:var(--tool)"><b>📥 수집</b>지식 범위 ↑ · 페이지 +11 · 문제 +</button>
+          <button data-a="lint" style="--k:var(--guard)"><b>🧹 린트</b>문제 70% 해결 · 빈틈 하나 발견</button>
+          <button data-a="schema" style="--k:var(--accent-2)"><b>📐 스키마 다듬기</b>앞으로 수집의 문제 ↓ (최대 3번)</button>
+          <button data-a="search" style="--k:var(--ctx)"><b>🔎 검색 도구</b>행동 2번. 큰 위키에서도 찾기 유지</button>
+          <button data-a="file" style="--k:var(--state)"><b>📝 답 환류</b>좋은 답 저장 · 범위 ↑ (스키마 2 미만이면 중복)</button>
+        </div>
+        <div class="two">
+          <div class="sim-view"><canvas id="gm-cv"></canvas></div>
+          <div class="trace" id="gm-log" style="max-height:280px"></div>
+        </div>
+        <div class="btns"><button class="btn" id="gm-reset">처음부터</button><button class="btn" id="gm-bench">비교: “수집만” 전략 점수 보기</button></div>
+        <div class="verdict" id="gm-fb">1일째 아침입니다. 행동을 고르세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">날 · 남은 행동</span><span class="v" id="gm-o1">—</span></div>
+        <div class="stat"><span class="k">지식 범위 · 페이지</span><span class="v" id="gm-o2">—</span></div>
+        <div class="stat"><span class="k">건강 (문제 수)</span><span class="v" id="gm-o3">—</span></div>
+        <div class="stat"><span class="k">누적 답한 질문</span><span class="v" id="gm-o4">—</span></div>
+      </div>
+      <div class="sim-note">규칙: 그날 답하는 비율 = 지식 범위 × 건강 × 찾기. 건강은 100페이지당 문제 수가 늘수록 떨어진다. 페이지가 220개를 넘으면 검색 도구 없이는 찾기가 떨어진다. 질문은 하루 3개에서 시작해 사흘마다 하나씩 는다. 힌트: 처음 며칠은 수집이 가장 남는다. 스키마는 일찍 다듬을수록 오래 이득이다. 위키가 200페이지를 넘기 전에 검색 도구를 생각하자. 문제가 쌓이기 전에 린트하자.</div>
+    </div>
+  </section>
+
+  <section id="play">
+    <h2>설계 플레이그라운드</h2>
+    <p>책 전체의 선택지를 한 화면에 모았다. 각 줄에서 하나씩 골라 보자. 레이더의 여섯 축은 정확도, 비용 효율, 신선도, 확장성, 안전, 사람의 여유(사람이 덜 붙잡혀 있을수록 높다)다. 점선은 중간 규모 팀 위키에 권하는 설정의 모양이다. 완벽한 설정은 없다. 무엇을 얻고 무엇을 내주는지 보는 것이 목적이다.</p>
+    <div class="sim" id="sim-play">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>위키 설계 플레이그라운드 — 일곱 가지 선택</h3></div>
+      <div class="sim-body">
+        <div class="two" style="align-items:center">
+          <div class="sim-view"><canvas id="py-cv"></canvas></div>
+          <div class="pg-grid" id="py-ctl"></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">종합 점수</span><span class="v" id="py-o1">—</span></div>
+        <div class="stat"><span class="k">가장 약한 축</span><span class="v" id="py-o2">—</span></div>
+        <div class="stat"><span class="k">한마디</span><span class="v" id="py-o3" style="font-size:13.5px">—</span></div>
+      </div>
+      <div class="sim-note">점수는 이 책의 실험에서 본 경향을 손으로 옮긴 것이다. 예를 들어 원자적 페이지는 검색 도구가 있을 때 확장성이 크게 오르고(4·7장), 모든 답을 환류하면 정확도와 사람 여유가 떨어지며(6·8장), 출처를 원문 위치까지 남기면 정확도와 안전이 오르지만 수집 비용이 는다(9장).</div>
+    </div>
+  </section>
+
+  <section id="gloss">
+    <h2>용어집</h2>
+    <p>이 책에 나온 핵심 용어다. 상단 검색창에서도 찾을 수 있다. 오른쪽 링크는 그 용어를 다룬 장이다.</p>
+    <div class="sim" id="sim-gloss">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>용어집 — 검색하고 장으로 이동하기</h3></div>
+      <div class="sim-body">
+        <input type="text" id="gl-q" placeholder="용어나 설명으로 찾기 (예: 링크, 검색, 출처)" aria-label="용어집 검색">
+        <div class="gloss" id="gl-list"></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">보이는 용어</span><span class="v" id="gl-o1">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="playbook">
+    <h2>한 장짜리 운영 플레이북</h2>
+    <div class="cards3">
+      <div style="--k:var(--tool)"><b>시작할 때</b>폴더 세 개(raw, wiki, 스키마)와 index.md, log.md. 원천은 하나씩, 사람과 함께 수집한다. 스키마는 열 줄로 시작해 반복되는 실수마다 한 줄씩.</div>
+      <div style="--k:var(--state)"><b>매 수집</b>요약 → 관련 페이지 갱신 → 충돌은 ⚠ → 역링크 → 색인 → 기록 → 커밋. 팬아웃이 스물을 넘으면 원천을 나눈다.</div>
+      <div style="--k:var(--ctx)"><b>매 질의</b>색인부터. 근거가 모자라면 밝힌다. 여러 페이지를 엮은 답만 analyses/로 환류하고, 사실 문장마다 출처를 단다.</div>
+      <div style="--k:var(--guard)"><b>매주</b>증분 린트: 바뀐 페이지와 이웃의 모순·낡음·고아·출처. 빈틈 목록에서 다음 원천을 고른다.</div>
+      <div style="--k:var(--accent)"><b>커질 때</b>수백 페이지에서 분류 색인, 그 너머는 하이브리드 검색. 페이지는 원자적으로. 반감기가 짧은 분야는 재확인 주기를 짧게.</div>
+      <div style="--k:var(--accent-2)"><b>함께 쓸 때</b>기록은 나누고 색인은 생성. 검증 안 된 원천은 격리. 역할마다 최소 권한. 스키마는 사람이 고친다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>책 전체 핵심 정리</h2>
+    <ol>
+      <li>LLM 위키는 <b>종합을 읽는 시점으로 앞당겨</b> 지식을 쌓는다. 원천·위키·스키마의 세 층과 수집·질의·린트의 세 작업.</li>
+      <li>수집은 원천 하나로 열 페이지 남짓을 바꾼다. 페이지는 원자적으로, 링크는 역방향까지, 색인과 기록은 매번.</li>
+      <li>질의는 색인 → 페이지 → 링크로 걷는다. 커지면 검색 도구, 결과는 순위로 융합한다. 좋은 답만 환류한다.</li>
+      <li>위키는 자라며 썩고 오류는 복리로 번진다. 린트와 출처 사다리, 반감기에 맞춘 재확인이 면역계다.</li>
+      <li>에이전트 지식은 위키(무엇), 스킬(어떻게), 스키마(지킬 것)로 나누고 점진적으로 공개한다. 함께 쓸 때는 충돌·오염·권한을 설계한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>종합 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. LLM 위키에서 에이전트가 소유하는 층은?</p><div class="opts">
+        <button class="opt">원천 자료</button>
+        <button class="opt" data-correct>위키 페이지</button>
+        <button class="opt">스키마</button>
+      </div><div class="quiz-exp">원천은 읽기 전용, 스키마는 사람과 함께 다듬는다. 위키는 에이전트가 쓰고 고친다(2장).</div></div>
+      <div class="quiz-q"><p>2. 위키가 RAG보다 질문당 비용에서 크게 이기는 조건은?</p><div class="opts">
+        <button class="opt">질문이 적고 단순 조회가 많을 때</button>
+        <button class="opt" data-correct>질문이 많고 질문마다 여러 원천을 엮어야 할 때</button>
+        <button class="opt">원천이 매우 많고 색인 하나로 버틸 때</button>
+      </div><div class="quiz-exp">종합 깊이가 클수록 RAG는 매번 비싸고, 위키는 이미 엮은 페이지를 읽는다(1장).</div></div>
+      <div class="quiz-q"><p>3. 새 페이지가 고아가 되지 않게 하는 수집 단계는?</p><div class="opts">
+        <button class="opt">요약 페이지 쓰기</button>
+        <button class="opt" data-correct>관련된 기존 페이지에 새 페이지로 가는 링크 넣기</button>
+        <button class="opt">기록 덧붙이기</button>
+      </div><div class="quiz-exp">역링크 갱신이다(3·5장). 나가는 링크는 고아 여부와 상관없다.</div></div>
+      <div class="quiz-q"><p>4. 원자적 페이지가 가장 잘 작동하는 짝은?</p><div class="opts">
+        <button class="opt">평평한 색인 하나</button>
+        <button class="opt" data-correct>검색 도구</button>
+        <button class="opt">큰 컨텍스트 창</button>
+      </div><div class="quiz-exp">페이지가 작고 많으면 평평한 색인이 길어진다. 검색 도구는 페이지 수와 거의 무관하다(4·7장).</div></div>
+      <div class="quiz-q"><p>5. BM25와 임베딩 결과를 합치는 기본 방법은?</p><div class="opts">
+        <button class="opt">점수를 그대로 더한다</button>
+        <button class="opt" data-correct>순위마다 1/(k + 순위)를 더한다</button>
+        <button class="opt">임베딩 결과만 쓴다</button>
+      </div><div class="quiz-exp">역순위 융합, k = 60(7장).</div></div>
+      <div class="quiz-q"><p>6. 블로그 다섯 개가 같은 논문 하나를 옮겼다면 독립적인 출처는 몇 개인가?</p><div class="opts">
+        <button class="opt">다섯</button>
+        <button class="opt">여섯</button>
+        <button class="opt" data-correct>하나</button>
+      </div><div class="quiz-exp">베낀 출처는 독립적인 증거가 아니다(8·9장).</div></div>
+      <div class="quiz-q"><p>7. 스킬의 점진적 공개에서 항상 컨텍스트에 있는 것은?</p><div class="opts">
+        <button class="opt" data-correct>이름과 짧은 설명</button>
+        <button class="opt">본문 전체</button>
+        <button class="opt">부속 스크립트</button>
+      </div><div class="quiz-exp">설명만 항상, 본문은 필요할 때, 부속 파일은 정말 필요할 때(10장).</div></div>
+      <div class="quiz-q"><p>8. 오염된 원천의 피해를 가장 근본적으로 키우는 것은?</p><div class="opts">
+        <button class="opt">요약 페이지가 길어지는 것</button>
+        <button class="opt" data-correct>수집 에이전트가 스키마를 고칠 수 있는 것</button>
+        <button class="opt">린트가 주간인 것</button>
+      </div><div class="quiz-exp">스키마가 변조되면 이후 모든 세션이 공격자의 규칙을 따른다(11장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 30일 위키 키우기 ---------------- */
+(function () {
+  const DAYS = 30, SLOTS = 3;
+  let S;
+  const qOf = (d) => 3 + Math.floor((d - 1) / 3);
+  function reset() { S = { day: 1, left: SLOTS, C: 0.05, pages: 12, X: 0, schema: 0, search: false, score: 0, asked: 0, hist: [], log: [] }; say("1일째 아침입니다. 행동을 고르세요."); draw0(); logL("mem", "위키 시작: 페이지 12개, 원천 1개"); }
+  const health = (s) => Math.max(0, 1 - ((s.X / s.pages) * 100) / 25);
+  const findF = (s) => (s.search || s.pages <= 220 ? 1 : Math.max(0.5, 1 - (s.pages - 220) / 500));
+  const rate = (s) => s.C * health(s) * findF(s);
+  function logL(k, t) { S.log.push([k, t]); const el = WK.el("gm-log"); el.innerHTML = S.log.slice(-40).map(([k2, t2]) => `<div style="--k:var(--${{ mem: "state", ok: "env", bad: "guard", act: "accent", q: "ctx" }[k2]})">${WK.esc(t2)}</div>`).join(""); el.scrollTop = el.scrollHeight; }
+  function say(t, k) { const f = WK.el("gm-fb"); f.innerHTML = t; k ? f.style.setProperty("--k", `var(--${k})`) : f.style.removeProperty("--k"); }
+  function act(a, s = S, quiet = false) {
+    const cost = a === "search" ? 2 : 1;
+    if (s.day > DAYS || s.left < cost) return false;
+    if (a === "schema" && s.schema >= 3) return false;
+    if (a === "search" && s.search) return false;
+    s.left -= cost;
+    if (a === "ingest") { s.C += (1 - s.C) * 0.07; s.pages += 11; s.X += 1.6 * (1 - 0.28 * s.schema); if (!quiet) logL("act", `📥 수집 → 범위 ${WK.pct(s.C)}, 페이지 ${s.pages}`); }
+    if (a === "lint") { const fixed = Math.round(s.X * 0.7); s.X *= 0.3; s.C += (1 - s.C) * 0.01; if (!quiet) logL("bad", `🧹 린트 → 문제 ${fixed}개 해결, 빈틈 하나 발견`); }
+    if (a === "schema") { s.schema++; if (!quiet) logL("act", `📐 스키마 다듬기 ${s.schema}/3 → 수집당 문제 ${Math.round(28 * s.schema)}% 감소`); }
+    if (a === "search") { s.search = true; if (!quiet) logL("q", "🔎 검색 도구 설치 → 큰 위키에서도 찾기 유지"); }
+    if (a === "file") { s.C += (1 - s.C) * 0.025; s.pages += 2; if (s.schema < 2) s.X += 0.8; if (!quiet) logL("mem", `📝 답 환류 → 범위 ${WK.pct(s.C)}${s.schema < 2 ? " · 중복 페이지 생김" : ""}`); }
+    if (s.left <= 0) endDay(s, quiet);
+    return true;
+  }
+  function endDay(s, quiet) {
+    const q = qOf(s.day), got = Math.round(q * rate(s) * 10) / 10;
+    s.score += got; s.asked += q; s.hist.push({ q, got, C: s.C, h: health(s), f: findF(s) });
+    if (!quiet) logL("q", `🌙 ${s.day}일 저녁: 질문 ${q}개 중 ${got.toFixed(1)}개 답함 (범위 ${WK.pct(s.C)} × 건강 ${WK.pct(health(s))} × 찾기 ${WK.pct(findF(s))})`);
+    s.day++; s.left = SLOTS;
+    if (!quiet) {
+      if (s.day > DAYS) { const bench = benchmark(); say(`<b>30일 끝 — ${s.score.toFixed(1)}문항 답함</b> (질문 ${s.asked}개 중 ${WK.pct(s.score / s.asked)}). 참고로 ‘수집만’ 전략은 ${bench.toFixed(1)}문항. ${s.score > bench * 1.15 ? "운영의 균형을 잘 잡았습니다." : "린트·스키마·검색의 타이밍을 바꿔 다시 해 보세요."}`, s.score > bench * 1.15 ? "env" : "tool"); }
+      else say(`${s.day}일째 아침입니다. 오늘 질문은 ${qOf(s.day)}개 예정.`);
+    }
+  }
+  function run(strategy) { const s = { day: 1, left: SLOTS, C: 0.05, pages: 12, X: 0, schema: 0, search: false, score: 0, asked: 0, hist: [], log: [] }; let guard = 0; while (s.day <= DAYS && guard++ < 500) { const a = strategy(s); if (!act(a, s, true)) act("ingest", s, true) || act("lint", s, true); } return s.score; }
+  const benchmark = () => run(() => "ingest");
+  WK.growGame = { run, benchmark, smart: () => run((s) => (s.schema < 2 && s.day <= 2 ? "schema" : !s.search && s.pages > 170 && s.left >= 2 ? "search" : (s.X / s.pages) * 100 > 6 ? "lint" : "ingest")) };
+  const cv = WK.canvas("gm-cv", { aspect: 0.8, draw });
+  function draw0() { cv.redraw(); upd(); }
+  function draw(c, w, h) {
+    if (!S) return;
+    const box = { l: 46, t: 26, r: w - 12, b: h - 40 };
+    const yMax = qOf(DAYS) + 1;
+    const A = WK.axes(c, { box, x: [0, DAYS], y: [0, yMax], xt: [0, 10, 20, 30], yt: [0, Math.round(yMax / 2), yMax], xl: "일", yl: "질문" });
+    const bw = (box.r - box.l) / DAYS;
+    for (let d = 1; d <= DAYS; d++) { c.fillStyle = WK.alpha(WK.col("text-faint"), 0.18); c.fillRect(box.l + (d - 1) * bw + 1, A.Y(qOf(d)), bw - 2, A.Y(0) - A.Y(qOf(d))); }
+    S.hist.forEach((x, i) => { c.fillStyle = WK.alpha(WK.col("env"), 0.85); c.fillRect(box.l + i * bw + 1, A.Y(x.got), bw - 2, A.Y(0) - A.Y(x.got)); });
+    if (S.day <= DAYS) { c.strokeStyle = WK.col("accent"); c.lineWidth = 2; c.strokeRect(box.l + (S.day - 1) * bw + 0.5, box.t, bw - 1, box.b - box.t); }
+    WK.text(c, "회색 = 질문 · 초록 = 답한 질문", box.l, 10, { size: 10.5, color: WK.col("text-faint") });
+  }
+  function upd() {
+    if (!S) return;
+    WK.set("gm-o1", S.day > DAYS ? "끝" : `${S.day}일 · ${S.left}번`);
+    WK.set("gm-o2", `${WK.pct(S.C)} · ${S.pages}개`);
+    WK.set("gm-o3", `${WK.pct(health(S))} (${Math.round(S.X)})`, health(S) > 0.8 ? "good" : health(S) < 0.5 ? "bad" : "warn");
+    WK.set("gm-o4", `${S.score.toFixed(1)} / ${S.asked}`);
+    WK.$$("#gm-acts button").forEach((b) => { const a = b.dataset.a; b.disabled = S.day > DAYS || (a === "search" && (S.search || S.left < 2)) || (a === "schema" && S.schema >= 3); });
+  }
+  WK.$$("#gm-acts button").forEach((b) => b.addEventListener("click", () => { if (act(b.dataset.a)) draw0(); }));
+  WK.el("gm-reset").addEventListener("click", reset);
+  WK.el("gm-bench").addEventListener("click", () => logL("ok", `참고: ‘수집만’ 전략은 30일에 ${benchmark().toFixed(1)}문항, 균형 잡힌 예시 전략은 ${WK.growGame.smart().toFixed(1)}문항을 답합니다.`));
+  reset();
+})();
+
+/* ---------------- 2. 설계 플레이그라운드 ---------------- */
+(function () {
+  /* 축: acc 정확도, cost 비용 효율, fresh 신선도, scale 확장성, safe 안전, human 사람 여유 */
+  const AX = [["acc", "정확도"], ["cost", "비용 효율"], ["fresh", "신선도"], ["scale", "확장성"], ["safe", "안전"], ["human", "사람 여유"]];
+  const OPT = [
+    ["수집", [["one", "하나씩 · 사람과", { acc: 0.15, human: -0.15, fresh: -0.05 }], ["batch", "일괄 · 밤새", { acc: -0.08, human: 0.12, fresh: 0.08, safe: -0.05 }]], "one"],
+    ["페이지", [["atom", "원자적", { acc: 0.05, scale: 0.05 }], ["mid", "중간", {}], ["big", "큰 페이지", { cost: -0.05, acc: -0.05, scale: -0.08 }]], "atom"],
+    ["검색", [["index", "색인만", { cost: 0.05, scale: -0.2 }], ["bm25", "grep · BM25", { scale: 0.05 }], ["hyb", "하이브리드", { scale: 0.15, acc: 0.05, cost: -0.05 }]], "hyb"],
+    ["린트", [["none", "안 함", { acc: -0.2, fresh: -0.2, cost: 0.1, human: 0.05 }], ["week", "매주 전체", { acc: 0.1, fresh: 0.1, cost: -0.15 }], ["incr", "증분 + 월간 전체", { acc: 0.08, fresh: 0.08, cost: -0.03 }]], "incr"],
+    ["환류", [["no", "안 함", { cost: -0.08, acc: -0.02 }], ["sel", "선별", { cost: 0.08, acc: 0.03 }], ["all", "모두", { cost: 0.02, acc: -0.12, human: -0.08 }]], "sel"],
+    ["출처", [["none", "없음", { acc: -0.2, safe: -0.15, cost: 0.08 }], ["link", "요약 링크", { acc: 0.05 }], ["loc", "원문 위치까지", { acc: 0.12, safe: 0.08, cost: -0.06 }]], "loc"],
+    ["권한", [["all", "모두 허용", { safe: -0.3, human: 0.05 }], ["min", "최소 권한", { safe: 0.1 }], ["min-q", "최소 + 격리", { safe: 0.2, fresh: -0.05, human: -0.05 }]], "min-q"],
+  ];
+  const BASE = { acc: 0.55, cost: 0.55, fresh: 0.55, scale: 0.5, safe: 0.5, human: 0.55 };
+  const rec = {}; OPT.forEach(([n, , d]) => (rec[n] = d));
+  const cur = { 수집: "batch", 페이지: "big", 검색: "index", 린트: "none", 환류: "all", 출처: "none", 권한: "all" };
+  WK.el("py-ctl").innerHTML = OPT.map(([n, ch]) => `<div class="row"><span>${n}</span><div class="seg" data-n="${n}">${ch.map(([v, l]) => `<button data-v="${v}"${cur[n] === v ? ' class="on"' : ""}>${l}</button>`).join("")}</div></div>`).join("") + `<div class="btns"><button class="btn" id="py-rec">권장 설정으로</button></div>`;
+  const score = (sel) => {
+    const v = Object.assign({}, BASE);
+    OPT.forEach(([n, ch]) => { const o = ch.find((x) => x[0] === sel[n]); Object.entries(o[2]).forEach(([k, x]) => (v[k] += x)); });
+    if (sel.페이지 === "atom" && sel.검색 === "index") v.scale -= 0.15, v.cost -= 0.05;
+    if (sel.페이지 === "atom" && sel.검색 === "hyb") v.scale += 0.08;
+    if (sel.환류 === "all" && sel.린트 === "none") v.acc -= 0.1;
+    if (sel.수집 === "batch" && sel.권한 === "all") v.safe -= 0.1;
+    Object.keys(v).forEach((k) => (v[k] = WK.clamp(v[k], 0.05, 1)));
+    return v;
+  };
+  const TIP = { acc: "출처를 원문 위치까지 남기고 린트를 켜 보세요.", cost: "환류를 선별로, 린트를 증분으로 바꿔 보세요.", fresh: "린트 주기와 일괄 수집을 검토하세요.", scale: "원자적 페이지에는 검색 도구가 짝입니다.", safe: "최소 권한과 격리 구역을 켜 보세요.", human: "일괄 수집과 증분 린트로 사람의 손을 덜 수 있습니다." };
+  const cv = WK.canvas("py-cv", { aspect: 0.9, draw });
+  function draw(c, w, h) {
+    const v = score(cur), t = score(rec);
+    WK.radar(c, w / 2, h / 2 + 4, Math.min(w, h) * 0.32, AX.map(([k, l]) => ({ label: l, v: v[k], target: t[k] })), { color: WK.col("accent") });
+    const avg = AX.reduce((a, [k]) => a + v[k], 0) / AX.length, weak = AX.reduce((a, b) => (v[b[0]] < v[a[0]] ? b : a));
+    WK.set("py-o1", Math.round(avg * 100) + "점", avg > 0.68 ? "good" : avg < 0.45 ? "bad" : "warn");
+    WK.set("py-o2", `${weak[1]} (${Math.round(v[weak[0]] * 100)})`);
+    WK.set("py-o3", TIP[weak[0]]);
+  }
+  WK.$$("#py-ctl .seg").forEach((sg) => WK.$$("button", sg).forEach((b) => b.addEventListener("click", () => { WK.$$("button", sg).forEach((x) => x.classList.toggle("on", x === b)); cur[sg.dataset.n] = b.dataset.v; cv.redraw(); })));
+  WK.el("py-rec").addEventListener("click", () => { Object.assign(cur, rec); WK.$$("#py-ctl .seg").forEach((sg) => WK.$$("button", sg).forEach((x) => x.classList.toggle("on", x.dataset.v === cur[sg.dataset.n]))); cv.redraw(); });
+  WK.playScore = (sel) => score(Object.assign({}, cur, sel || {}));
+  cv.redraw();
+})();
+
+/* ---------------- 3. 용어집 ---------------- */
+(function () {
+  const list = WK.el("gl-list"), q = WK.el("gl-q");
+  const ch = (slug) => WK.CHAPTERS.find((c) => c.slug === slug);
+  function render() {
+    const v = q.value.trim().toLowerCase();
+    const items = WK.GLOSSARY.filter((g) => !v || g.join(" ").toLowerCase().includes(v));
+    list.innerHTML = items.map(([t, en, d, s]) => `<div><b>${WK.esc(t)}</b><i>${WK.esc(en)}</i><a href="${s}.html">CH.${ch(s).num} ↗</a><p>${WK.esc(d)}</p></div>`).join("") || `<div><p>“${WK.esc(q.value)}”에 맞는 용어가 없습니다.</p></div>`;
+    WK.set("gl-o1", `${items.length} / ${WK.GLOSSARY.length}`);
+  }
+  q.addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>

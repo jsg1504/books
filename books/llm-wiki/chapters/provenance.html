@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>출처와 신뢰: 오류는 복리로 번진다 · WikiBook</title>
+<meta name="description" content="위키의 주장을 원천까지 거슬러 올라가게 하는 출처 추적, 틀린 페이지에 기대는 페이지로 번지는 오류, 분야별 지식의 반감기를 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="provenance">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 09</div>
+    <h1>출처와 신뢰: 오류는 복리로 번진다</h1>
+    <p class="lead">RAG가 틀리면 그 답 하나가 틀린다. 위키가 틀리면 다르다. 틀린 문장이 페이지에 남고, 다음 수집이 그 페이지를 고치며 틀린 문장을 옮기고, 질의의 답이 그 페이지를 근거로 쓰고, 그 답이 다시 분석 페이지로 환류된다. <b>지식이 쌓이는 구조는 오류도 쌓는다.</b> 이 장에서는 그 번짐을 시뮬레이션하고, 모든 주장을 원천까지 거슬러 올라갈 수 있게 하는 출처 추적이 왜 위키의 면역계인지 본다.</p>
+    <ul class="objectives">
+      <li>위키에서 오류가 의존 관계를 타고 번지는 방식과 그 확률을 설명할 수 있다.</li>
+      <li>주장마다 출처와 원문 위치를 남기는 출처 추적의 형식과 쓰임을 말할 수 있다.</li>
+      <li>분야마다 다른 지식의 반감기로 재확인 주기를 정할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="spread">
+    <h2>틀린 페이지에 기대는 페이지</h2>
+    <p>위키의 페이지는 서로 기댄다. 분석 페이지는 개념 페이지를 근거로, 개념 페이지는 요약 페이지를 근거로 쓰인다. 어떤 페이지가 <var>d</var>개의 페이지에 기대고, 각 근거 페이지가 틀렸을 확률이 <var>p</var>라면, 그 페이지는 스스로 실수하지 않아도 근거의 오류를 물려받을 수 있다. 근거를 원문과 대조하는 확인이 있으면 일부를 걸러 낸다. 이것이 <span class="term">오류 전파</span><span class="en">error propagation</span>다. 허브 페이지가 틀리면 피해가 특히 크다. 많은 페이지가 그 허브에 기대기 때문이다.</p>
+    <div class="formula"><div class="eq"><var>P</var>(틀림) = 1 − (1 − <var>e</var>) · (1 − <var>h</var>(1 − <var>c</var>) · <var>p̄</var>)<sup><var>d</var></sup></div>
+      <div class="where"><var>e</var>: 페이지를 쓸 때 스스로 저지르는 오류율, <var>d</var>: 기대는 근거 페이지 수, <var>p̄</var>: 근거 페이지가 틀렸을 평균 확률, <var>h</var>: 틀린 근거를 그대로 물려받을 확률, <var>c</var>: 근거를 원천과 대조해 걸러 내는 비율. 근거가 깊어질수록 <var>p̄</var> 자체가 커지므로 오류는 층을 따라 불어난다.</div></div>
+    <div class="sim" id="sim-spread">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>오류 전파 — 200페이지 위키에서 오류가 번지는 모습</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sp-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>스스로 내는 오류율 e <output id="sp-e-out"></output></span><input type="range" id="sp-e" min="0" max="0.1" step="0.005" value="0.02"></label>
+          <label class="ctrl"><span>근거 페이지 수 d <output id="sp-d-out"></output></span><input type="range" id="sp-d" min="1" max="8" step="1" value="3"></label>
+          <label class="ctrl"><span>틀린 근거를 물려받을 확률 h <output id="sp-h-out"></output></span><input type="range" id="sp-h" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="ctrl"><span>근거 대조로 걸러 내는 비율 c <output id="sp-c-out"></output></span><input type="range" id="sp-c" min="0" max="1" step="0.05" value="0"></label>
+          <label class="check"><input type="checkbox" id="sp-hub"> 허브 페이지 하나가 처음부터 틀렸다</label>
+          <div class="legend"><span><i style="background:var(--env)"></i>맞음</span><span><i style="background:var(--guard)"></i>스스로 틀림</span><span><i style="background:var(--accent-2)"></i>물려받아 틀림</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">틀린 페이지 (40회 평균)</span><span class="v" id="sp-o1">—</span></div>
+        <div class="stat"><span class="k">그중 물려받은 오류 (평균)</span><span class="v" id="sp-o2">—</span></div>
+        <div class="stat"><span class="k">마지막 50페이지 오류율 (평균)</span><span class="v" id="sp-o3">—</span></div>
+        <div class="stat"><span class="k">전파 없을 때 기대값</span><span class="v" id="sp-o4">—</span></div>
+      </div>
+      <div class="sim-note">그림은 같은 설정으로 40번 돌린 것 가운데 평균에 가장 가까운 한 번이고, 숫자는 40번의 평균이다. 페이지는 쓰인 순서대로 왼쪽 위에서 오른쪽 아래로 놓인다. 뒤의 페이지일수록 근거로 삼을 페이지가 많고, 이미 오염된 페이지에 기댈 확률도 높다. ① 대조 비율 c = 0에서 스스로 내는 오류는 2%인데 틀린 페이지는 열두 배 넘게 많고, 마지막 50페이지의 오류율은 14% 가까이 된다. 위키가 자랄수록 새 페이지가 더 많이 틀린다. ② c를 0.8로 올리면 주황(물려받은 오류)이 거의 사라진다. 출처 추적이 있어야 대조가 가능하다. ③ 허브 오류를 켜 보자. 인기 페이지 하나가 틀리면 그 페이지에 기댄 수십 페이지로 번진다. 허브는 더 자주, 더 꼼꼼히 확인해야 한다. ④ d를 늘리면 근거가 많아져 좋아 보이지만, 대조가 없으면 오히려 물려받을 길이 많아진다.</div>
+    </div>
+    <div class="callout warn"><b class="h">환각의 세탁</b>가장 위험한 경로는 이것이다. 에이전트가 질의에 답하며 근거 없이 지어낸 문장 하나가 그 답과 함께 분석 페이지로 환류된다. 다음 질의는 그 분석 페이지를 “위키에 있는 사실”로 인용한다. 원래는 아무 근거가 없던 문장이 위키 페이지라는 옷을 입고 권위를 얻는다. 막는 방법은 단순하다. <b>환류되는 답의 모든 사실 문장은 원천까지 이어지는 출처를 가져야 한다.</b> 출처가 위키 페이지뿐이면, 그 페이지의 출처를 따라 원천까지 내려가 확인한다.</div>
+  </section>
+
+  <section id="trace">
+    <h2>주장에서 원문까지</h2>
+    <p><span class="term">출처 추적</span><span class="en">provenance</span>은 위키의 모든 사실 문장이 어느 원천의 어디에서 왔는지 따라갈 수 있게 하는 것이다. 형식은 단순할수록 좋다. 문장 끝에 요약 페이지 링크를 달고, 요약 페이지는 원천 파일 경로와 원문 위치(쪽, 절, 문단)를 가진다. 답은 위키 페이지를 인용하고, 위키 페이지는 요약을, 요약은 원천을 가리킨다. 네 칸 사다리다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 150" role="img" aria-label="출처의 사다리: 답 → 위키 페이지 → 요약 페이지 → 원천 파일과 원문 위치">
+        <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--env)"/></marker></defs>
+        <g transform="translate(10,30)"><rect width="170" height="80" rx="10" class="soft-ctx"/><text x="85" y="24" text-anchor="middle" class="t-b">답</text><text x="85" y="46" text-anchor="middle" class="t-mono" style="font-size:9.5px">“k1은 보통 1.2~2.0”</text><text x="85" y="62" text-anchor="middle" class="t-mono" style="font-size:9.5px">→ [[bm25]]</text></g>
+        <g transform="translate(206,30)"><rect width="170" height="80" rx="10" class="soft-state"/><text x="85" y="24" text-anchor="middle" class="t-b">개념 페이지</text><text x="85" y="46" text-anchor="middle" class="t-mono" style="font-size:9.5px">concepts/bm25.md</text><text x="85" y="62" text-anchor="middle" class="t-mono" style="font-size:9.5px">→ [[robertson-2009]]</text></g>
+        <g transform="translate(402,30)"><rect width="170" height="80" rx="10" class="soft-state"/><text x="85" y="24" text-anchor="middle" class="t-b">요약 페이지</text><text x="85" y="46" text-anchor="middle" class="t-mono" style="font-size:9.5px">sources/robertson-2009.md</text><text x="85" y="62" text-anchor="middle" class="t-mono" style="font-size:9.5px">주장 3 · ¶44</text></g>
+        <g transform="translate(598,30)"><rect width="172" height="80" rx="10" class="soft-tool"/><text x="86" y="24" text-anchor="middle" class="t-b">원천</text><text x="86" y="46" text-anchor="middle" class="t-mono" style="font-size:9.5px">raw/robertson-2009.pdf</text><text x="86" y="62" text-anchor="middle" class="t-mono" style="font-size:9.5px">원문 문장 그대로</text></g>
+        <g stroke="var(--env)" stroke-width="2"><path d="M182 70h20" marker-end="url(#m1)"/><path d="M378 70h20" marker-end="url(#m1)"/><path d="M574 70h20" marker-end="url(#m1)"/></g>
+        <text x="390" y="138" text-anchor="middle" class="t-dim">사다리의 어느 칸에서든 한 단계 아래로 내려가 대조할 수 있어야 한다</text>
+      </svg>
+      <figcaption><b>그림 9-1.</b> 출처의 사다리. 답 → 위키 페이지 → 요약 페이지 → 원천. 대조는 아래로 한 칸씩 내려가며 한다. 맨 아래 원천만은 절대 바뀌지 않는다는 2장의 규칙이 여기서 쓸모를 드러낸다.</figcaption>
+    </figure>
+    <p>출처가 있어도 그 출처가 주장을 정말 뒷받침하는지는 별개다. 요약이 원문을 과장하거나, 조건을 빠뜨리거나, 반대로 읽는 일이 생긴다. 아래에서 위키의 주장과 원천의 문장을 대조해 보자.</p>
+    <div class="sim" id="sim-cite">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>근거 대조 — 주장과 원문 나란히 읽기</h3></div>
+      <div class="sim-body">
+        <div class="claim" id="ct-pair"></div>
+        <div class="bins" id="ct-bins">
+          <button data-v="ok" style="--k:var(--env)">뒷받침됨</button>
+          <button data-v="over" style="--k:var(--tool)">과장·조건 누락</button>
+          <button data-v="none" style="--k:var(--text-faint)">원문에 없음</button>
+          <button data-v="contra" style="--k:var(--guard)">반대로 말함</button>
+        </div>
+        <div class="verdict" id="ct-fb">두 칸을 읽고 판정을 고르세요.</div>
+        <div class="budget"><i id="ct-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="ct-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="ct-o2">0</span></div>
+      </div>
+      <div class="sim-note">사람이든 에이전트든 대조할 때 가장 놓치기 쉬운 것은 <b>조건</b>이다. “어떤 조건에서”, “일부 데이터셋에서”, “초기 실험에서”가 요약에서 빠지면 주장은 원문보다 강해진다.</div>
+    </div>
+  </section>
+
+  <section id="half">
+    <h2>지식의 반감기</h2>
+    <p>오류만 문제가 아니다. 맞던 문장도 시간이 지나면 틀려진다. “가장 큰 오픈 모델은 X다”는 몇 달이면 낡고, “회사 Y의 대표는 Z다”는 몇 년이면 낡고, “BM25는 단어 빈도를 쓴다”는 수십 년이 지나도 맞다. 분야마다 주장이 절반쯤 낡는 데 걸리는 시간, <span class="term">지식 반감기</span><span class="en">knowledge half-life</span>가 다르다. 위키의 재확인 주기는 이 반감기에 맞춰야 한다. 모든 페이지를 같은 주기로 확인하면, 빠르게 낡는 페이지는 너무 늦게, 느리게 낡는 페이지는 쓸데없이 자주 본다.</p>
+    <div class="formula"><div class="eq">신선도(<var>t</var>) = 2<sup>−<var>t</var> / <var>T</var><sub>½</sub></sup> &nbsp;·&nbsp; 재확인 간격 = <var>T</var><sub>½</sub> · log<sub>2</sub>(1 / 문턱)<br>월간 재확인 부담 = Σ<sub>분야</sub> 페이지 수 / 재확인 간격</div>
+      <div class="where"><var>T</var><sub>½</sub>: 분야의 반감기(아래 값은 설명을 위한 가정), 문턱: 신선도가 이 값 아래로 내려가면 다시 확인한다.</div></div>
+    <div class="sim" id="sim-half">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>반감기와 재확인 — 분야별 주기 맞추기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="hl-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="hl-pol"><button data-v="uni">모두 같은 주기</button><button data-v="half" class="on">반감기에 맞춘 주기</button></div>
+          <label class="ctrl"><span>신선도 문턱 <output id="hl-f-out"></output></span><input type="range" id="hl-f" min="0.5" max="0.95" step="0.05" value="0.8"></label>
+          <label class="ctrl"><span>같은 주기일 때 간격 (개월) <output id="hl-u-out"></output></span><input type="range" id="hl-u" min="1" max="24" step="1" value="6"></label>
+          <label class="ctrl"><span>보는 시점 (개월) <output id="hl-t-out"></output></span><input type="range" id="hl-t" min="0" max="36" step="1" value="12"></label>
+          <div class="legend"><span><i style="background:var(--accent)"></i>AI 모델·제품 사양 (6개월)</span><span><i style="background:var(--accent-2)"></i>회사·인물 직책 (2년)</span><span><i style="background:var(--ctx)"></i>실험 결과 (5년)</span><span><i style="background:var(--state)"></i>기초 개념·정의 (20년)</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">월간 재확인 페이지</span><span class="v" id="hl-o1">—</span></div>
+        <div class="stat"><span class="k">평균 신선도</span><span class="v" id="hl-o2">—</span></div>
+        <div class="stat"><span class="k">가장 낡은 분야</span><span class="v" id="hl-o3">—</span></div>
+      </div>
+      <div class="sim-note">가정: AI 모델·제품 사양 페이지 120개(반감기 6개월), 회사·인물 직책 80개(2년), 실험 결과 200개(5년), 기초 개념·정의 300개(20년). 각 선은 재확인으로 신선도가 1로 돌아가는 톱니다. ① 같은 주기 6개월이면 AI 사양 페이지는 확인 직전마다 신선도가 50%까지 떨어지고, 기초 개념은 거의 낡지 않았는데도 6개월마다 300개를 다시 본다. ② 반감기에 맞추면 AI 사양은 두 달 남짓마다, 기초 개념은 6년 남짓마다 본다. 월간 부담은 비슷하거나 적은데 평균 신선도는 오른다. ③ 문턱을 0.95로 올리면 부담이 가파르게 는다. 완벽한 신선도는 비싸다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>위키에서는 오류도 쌓인다. 틀린 근거에 기댄 페이지가 오류를 물려받고, 허브가 틀리면 넓게 번진다.</li>
+      <li>환류되는 답의 사실 문장은 원천까지 이어지는 출처를 가져야 한다. 그렇지 않으면 환각이 위키의 권위를 얻는다.</li>
+      <li>출처의 사다리는 <b>답 → 위키 페이지 → 요약 → 원천</b>이다. 대조는 한 칸씩 아래로, 특히 조건이 빠지지 않았는지 본다.</li>
+      <li>분야마다 지식의 반감기가 다르다. 재확인 주기를 반감기에 맞추면 같은 부담으로 더 신선한 위키가 된다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 위키가 자랄수록 새로 쓰는 페이지의 오류율이 오르는 이유는?</p><div class="opts">
+        <button class="opt">에이전트가 지쳐서</button>
+        <button class="opt" data-correct>새 페이지가 기대는 근거 가운데 이미 오염된 페이지가 늘기 때문에</button>
+        <button class="opt">페이지가 길어져서</button>
+      </div><div class="quiz-exp">오류는 의존 관계를 타고 내려온다. 근거를 원천과 대조하지 않으면 뒤에 쓰인 페이지일수록 물려받을 길이 많다.</div></div>
+      <div class="quiz-q"><p>2. “환각의 세탁”을 막는 가장 직접적인 규칙은?</p><div class="opts">
+        <button class="opt">답을 환류하지 않는다</button>
+        <button class="opt" data-correct>환류되는 답의 사실 문장마다 원천까지 이어지는 출처를 요구한다</button>
+        <button class="opt">답을 짧게 쓴다</button>
+      </div><div class="quiz-exp">환류 자체는 좋은 일이다(6장). 문제는 근거 없는 문장이 위키 페이지가 되는 것이다.</div></div>
+      <div class="quiz-q"><p>3. 요약 “방법 X는 정확도를 크게 올린다”와 원문 “방법 X는 작은 모델에서만 정확도를 2% 올렸다”의 관계는?</p><div class="opts">
+        <button class="opt">뒷받침됨</button>
+        <button class="opt" data-correct>과장·조건 누락</button>
+        <button class="opt">반대로 말함</button>
+      </div><div class="quiz-exp">방향은 같지만 조건(작은 모델에서만)과 크기(2%)가 빠져 주장이 원문보다 강해졌다.</div></div>
+      <div class="quiz-q"><p>4. 반감기 6개월 분야의 페이지를 신선도 80% 문턱으로 관리하면 재확인 간격은 대략?</p><div class="opts">
+        <button class="opt" data-correct>2개월 남짓</button>
+        <button class="opt">6개월</button>
+        <button class="opt">1년</button>
+      </div><div class="quiz-exp">6 × log₂(1/0.8) ≈ 6 × 0.32 ≈ 1.9개월.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 오류 전파 ---------------- */
+(function () {
+  const N = 200;
+  function sim(e, d, h, c, hub, seed = 13) {
+    const r = WK.rng(seed), st = [], deps = [], indeg = new Array(N).fill(0);
+    for (let i = 0; i < N; i++) {
+      const D = [];
+      if (i > 0) {
+        const k = Math.min(d, i);
+        let guard = 0;
+        while (D.length < k && guard++ < 200) {
+          // 인기 페이지에 조금 더 기댄다
+          const tot = indeg.slice(0, i).reduce((a, x) => a + x + 1, 0);
+          let u = r() * tot, j = 0; while (j < i - 1 && u > indeg[j] + 1) { u -= indeg[j] + 1; j++; }
+          if (!D.includes(j)) D.push(j);
+        }
+      }
+      D.forEach((j) => indeg[j]++);
+      deps.push(D);
+      let s = r() < e ? 1 : 0;
+      if (hub && i === 2) s = 1;
+      if (!s) for (const j of D) if (st[j] && r() < h * (1 - c)) { s = 2; break; }
+      st.push(s);
+    }
+    return { st, deps, indeg };
+  }
+  WK.spreadSim = (e, d, h, c, hub) => { const S = sim(e, d, h, c, hub); const bad = S.st.filter((x) => x).length; return { bad, inh: S.st.filter((x) => x === 2).length, last: S.st.slice(-50).filter((x) => x).length / 50 }; };
+  const cv = WK.canvas("sp-cv", { aspect: 0.78, draw });
+  function draw(c, w, h) {
+    const e = WK.val("sp-e"), d = WK.val("sp-d"), hh = WK.val("sp-h"), cc = WK.val("sp-c"), hub = WK.el("sp-hub").checked;
+    /* 40번 돌려 평균을 내고, 평균에 가장 가까운 한 번을 그린다 */
+    const runs = Array.from({ length: 40 }, (_, k) => sim(e, d, hh, cc, hub, k + 1));
+    const badOf = (S) => S.st.filter((x) => x).length;
+    const mean = (f) => runs.reduce((a, S) => a + f(S), 0) / runs.length;
+    const mBad = mean(badOf), mInh = mean((S) => S.st.filter((x) => x === 2).length), mLast = mean((S) => S.st.slice(-50).filter((x) => x).length / 50);
+    const S = runs.reduce((a, b) => (Math.abs(badOf(b) - mBad) < Math.abs(badOf(a) - mBad) ? b : a));
+    const cols = 20, rows = N / cols, gx = (w - 20) / cols, gy = (h - 30) / rows;
+    const X = (i) => 10 + (i % cols) * gx + gx / 2, Y = (i) => 10 + Math.floor(i / cols) * gy + gy / 2;
+    // 오류가 전해진 간선만 그린다
+    S.deps.forEach((D, i) => { if (S.st[i] !== 2) return; D.forEach((j) => { if (S.st[j]) { c.strokeStyle = WK.alpha(WK.col("accent-2"), 0.28); c.lineWidth = 1; c.beginPath(); c.moveTo(X(j), Y(j)); c.lineTo(X(i), Y(i)); c.stroke(); } }); });
+    S.st.forEach((s, i) => {
+      const rr = Math.min(gx, gy) * 0.3 + Math.min(4, Math.sqrt(S.indeg[i]) * 0.9);
+      c.fillStyle = s === 1 ? WK.col("guard") : s === 2 ? WK.col("accent-2") : WK.alpha(WK.col("env"), 0.55);
+      c.beginPath(); c.arc(X(i), Y(i), rr, 0, 7); c.fill();
+      if (hub && i === 2) { c.strokeStyle = WK.col("guard"); c.lineWidth = 2; c.beginPath(); c.arc(X(i), Y(i), rr + 4, 0, 7); c.stroke(); }
+    });
+    WK.text(c, "← 먼저 쓴 페이지 · 나중에 쓴 페이지 → (크기 = 기대는 페이지 수)", 10, h - 9, { size: 10.5, color: WK.col("text-faint") });
+    WK.set("sp-o1", `${mBad.toFixed(1)}개 (${WK.pct(mBad / N, 1)})`, mBad / N > 0.15 ? "bad" : mBad / N > 0.06 ? "warn" : "good");
+    WK.set("sp-o2", `${mInh.toFixed(1)}개`);
+    WK.set("sp-o3", WK.pct(mLast, 1), mLast > 2 * e + 0.02 ? "bad" : "");
+    WK.set("sp-o4", `${Math.round(N * e)}개 (${WK.pct(e, 1)})`);
+  }
+  WK.wire(["sp-e", "sp-d", "sp-h", "sp-c"], () => cv.redraw(), { "sp-e": (v) => WK.pct(v, 1), "sp-h": (v) => WK.pct(v), "sp-c": (v) => WK.pct(v) });
+  WK.el("sp-hub").addEventListener("change", () => cv.redraw());
+})();
+
+/* ---------------- 2. 근거 대조 ---------------- */
+(function () {
+  const C = [
+    ["긴 입력의 가운데에 있는 정보는 처음과 끝보다 덜 쓰인다. [[liu-2023]]", "정답 문서가 입력의 처음이나 끝에 있을 때 성능이 가장 높았고, 가운데에 있을 때 크게 떨어졌다.", "ok", "방향, 대상, 조건이 모두 일치한다."],
+    ["방법 X는 검색 정확도를 크게 올린다. [[paper-x]]", "방법 X는 매개변수 1억 개 이하의 작은 모델에서 검색 정확도를 2%p 올렸다. 큰 모델에서는 차이가 없었다.", "over", "‘작은 모델에서만’이라는 조건과 ‘2%p’라는 크기가 빠졌다."],
+    ["옵시디언은 2020년에 출시됐다. [[src-wiki]]", "위키는 git 저장소이고, 옵시디언으로 보며, 규모가 커지면 로컬 검색 엔진을 붙인다.", "none", "출처로 단 원천에는 출시 연도가 없다. 다른 원천을 찾거나 ‘출처 필요’로 둔다."],
+    ["재순위화는 하이브리드 검색의 성능을 떨어뜨린다. [[blog-rerank]]", "하이브리드 결과 상위 50개를 LLM으로 다시 매기자 모든 데이터셋에서 성능이 올랐다.", "contra", "원문은 오른다고 했는데 요약은 떨어진다고 적었다. 반대로 읽은 경우다."],
+    ["역순위 융합의 k는 보통 60을 쓴다. [[cormack-2009]]", "실험에서 k = 60이 안정적으로 좋은 결과를 냈고, 이후 기본값으로 쓰였다.", "ok", "원문과 일치한다. ‘보통’이라는 표현도 원문의 ‘기본값’과 맞는다."],
+    ["모든 사용자가 새 검색 기능을 선호했다. [[survey-2026]]", "설문 응답자 40명 중 31명(78%)이 새 검색 기능을 더 낫다고 답했다.", "over", "78%가 ‘모든’이 되었다. 표본 크기도 빠졌다."],
+    ["로버트슨은 BM25F를 처음 제안했다. [[robertson-2009]]", "BM25F는 제목, 본문 같은 필드마다 다른 가중치를 주는 BM25의 확장이다.", "none", "원문은 BM25F가 무엇인지만 말한다. 누가 처음 제안했는지는 이 문단에 없다."],
+    ["컨텍스트 창이 커지면 검색이 필요 없어진다. [[liu-2023]]", "더 긴 컨텍스트를 받는 모델도 입력의 가운데 정보를 잘 쓰지 못했다. 긴 창이 검색을 대신한다고 보기 어렵다.", "contra", "원문은 오히려 긴 창이 검색을 대신하기 어렵다고 말한다."],
+  ];
+  const NAMES = { ok: "뒷받침됨", over: "과장·조건 누락", none: "원문에 없음", contra: "반대로 말함" };
+  let i = 0, score = 0, lock = false;
+  function show() {
+    if (i >= C.length) { WK.el("ct-pair").innerHTML = `<div style="--k:var(--env)"><small>완료</small><b>${score} / ${C.length}</b> 맞혔습니다. 아무 버튼이나 누르면 다시 시작합니다.</div>`; return; }
+    const [cl, src] = C[i];
+    WK.el("ct-pair").innerHTML = `<div style="--k:var(--state)"><small>위키의 주장 · ${i + 1} / ${C.length}</small>${WK.esc(cl)}</div><div style="--k:var(--tool)"><small>원천의 해당 문단</small>${WK.esc(src)}</div>`;
+  }
+  WK.$$("#ct-bins button").forEach((b) => b.addEventListener("click", () => {
+    if (i >= C.length) { i = 0; score = 0; WK.set("ct-o1", `0 / ${C.length}`); WK.set("ct-o2", "0"); WK.el("ct-bar").style.width = "0"; WK.el("ct-fb").textContent = "다시 시작합니다."; WK.el("ct-fb").style.removeProperty("--k"); show(); return; }
+    if (lock) return;
+    const ok = b.dataset.v === C[i][2]; if (ok) score++;
+    const fb = WK.el("ct-fb");
+    fb.style.setProperty("--k", ok ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = `<b>${ok ? "맞았습니다" : "정답: " + NAMES[C[i][2]]}</b> — ${WK.esc(C[i][3])}`;
+    lock = true; i++;
+    WK.set("ct-o1", `${i} / ${C.length}`); WK.set("ct-o2", String(score), score === i ? "good" : "");
+    WK.el("ct-bar").style.width = (i / C.length) * 100 + "%";
+    setTimeout(() => { lock = false; show(); }, 1400);
+  }));
+  show();
+})();
+
+/* ---------------- 3. 반감기와 재확인 ---------------- */
+(function () {
+  const D = [["AI 모델·제품 사양", 6, 120, "accent"], ["회사·인물 직책", 24, 80, "accent-2"], ["실험 결과", 60, 200, "ctx"], ["기초 개념·정의", 240, 300, "state"]];
+  const pol = WK.seg("hl-pol", () => cv.redraw());
+  const interval = (T, f) => T * Math.log2(1 / f);
+  const fresh = (t, T, I) => Math.pow(2, -(t % I) / T);
+  WK.halfModel = (p, f, U) => D.map(([n, T, P]) => { const I = p === "uni" ? U : interval(T, f); return { n, I: +I.toFixed(1), per: +(P / I).toFixed(1), minFresh: +Math.pow(2, -I / T).toFixed(2) }; });
+  const cv = WK.canvas("hl-cv", { aspect: 0.64, draw });
+  function draw(c, w, h) {
+    const p = pol(), f = WK.val("hl-f"), U = WK.val("hl-u"), tNow = WK.val("hl-t");
+    const box = { l: 46, t: 14, r: w - 14, b: h - 42 };
+    const A = WK.axes(c, { box, x: [0, 36], y: [0.4, 1], xt: [0, 6, 12, 18, 24, 30, 36], yt: [0.4, 0.6, 0.8, 1], yf: (v) => Math.round(v * 100) + "%", xl: "개월", yl: "신선도" });
+    c.save(); c.strokeStyle = WK.col("guard"); c.setLineDash([4, 4]); c.beginPath(); c.moveTo(box.l, A.Y(f)); c.lineTo(box.r, A.Y(f)); c.stroke(); c.restore();
+    let load = 0, wsum = 0, fsum = 0, worst = null;
+    D.forEach(([n, T, P, k]) => {
+      const I = p === "uni" ? U : interval(T, f);
+      load += P / I;
+      const pts = Array.from({ length: 361 }, (_, i) => { const t = i / 10; return [A.X(t), A.Y(fresh(t, T, I))]; });
+      WK.line(c, pts, WK.col(k), 2.2);
+      const fn = fresh(tNow, T, I); fsum += fn * P; wsum += P;
+      if (!worst || fn < worst[1]) worst = [n, fn];
+    });
+    const x = A.X(tNow); c.strokeStyle = WK.col("text-dim"); c.lineWidth = 1.4; c.beginPath(); c.moveTo(x, box.t); c.lineTo(x, box.b); c.stroke();
+    WK.set("hl-o1", Math.round(load) + "페이지/월");
+    WK.set("hl-o2", WK.pct(fsum / wsum), fsum / wsum > 0.85 ? "good" : fsum / wsum < 0.7 ? "bad" : "warn");
+    WK.set("hl-o3", `${worst[0]} (${WK.pct(worst[1])})`);
+  }
+  WK.wire(["hl-f", "hl-u", "hl-t"], () => cv.redraw(), { "hl-f": (v) => WK.pct(v), "hl-u": (v) => v + "개월", "hl-t": (v) => v + "개월" });
+})();
+</script>
+</body>
+</html>

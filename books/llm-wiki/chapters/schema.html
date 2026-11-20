@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스키마와 에이전트 지식 · WikiBook</title>
+<meta name="description" content="CLAUDE.md·AGENTS.md 스키마, 스킬과 점진적 공개, 선언적·절차적·규범적 지식의 구분을 토큰 계산기와 스키마 규칙 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="schema">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 10</div>
+    <h1>스키마와 에이전트 지식</h1>
+    <p class="lead">같은 모델, 같은 원천으로도 위키는 전혀 다르게 자랄 수 있다. 어떤 위키는 페이지마다 형식이 다르고 출처가 들쭉날쭉하고, 어떤 위키는 백 번째 페이지도 첫 페이지처럼 단정하다. 차이를 만드는 것은 <b>스키마</b>, 에이전트가 세션마다 처음 읽는 규칙 파일이다. 이 장에서는 스키마를 넘어 에이전트가 가진 지식 전체를 본다. 위키는 <b>무엇</b>을 아는지, 스킬은 <b>어떻게</b> 하는지, 스키마는 <b>무엇을 지켜야</b> 하는지를 담는다. 그리고 그 모두를 한꺼번에 컨텍스트에 넣지 않는 기술, 점진적 공개를 다룬다.</p>
+    <ul class="objectives">
+      <li>에이전트 지식을 선언적(위키), 절차적(스킬), 규범적(스키마) 지식으로 나눠 말할 수 있다.</li>
+      <li>점진적 공개가 컨텍스트 비용을 어떻게 줄이는지 계산할 수 있다.</li>
+      <li>스키마 규칙 하나가 위키 전체의 일관성에 주는 영향을 설명하고, 지시를 알맞은 자리에 둘 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="kinds">
+    <h2>에이전트가 가진 세 종류의 지식</h2>
+    <div class="cards3">
+      <div style="--k:var(--state)"><b>선언적 지식 · 위키</b>세상에 대한 사실과 연결. “BM25는 무엇인가”, “이 회사의 대표는 누구인가”. 페이지로 쌓이고 질의로 꺼낸다. 이 책의 1~9장이 다룬 것이다.</div>
+      <div style="--k:var(--accent)"><b>절차적 지식 · 스킬</b>일을 하는 방법. “PDF에서 표를 뽑는 법”, “이 회사 양식으로 보고서 쓰는 법”. 지침과 스크립트로 묶어 두고, 필요할 때만 꺼내 읽는다.</div>
+      <div style="--k:var(--accent-2)"><b>규범적 지식 · 스키마</b>지켜야 할 규칙과 관례. “원천은 고치지 않는다”, “모든 주장에 출처”. 세션마다 처음에 읽고 항상 적용한다. 짧아야 한다.</div>
+    </div>
+    <p style="margin-top:18px">셋은 사는 곳이 다르다. 스키마는 <code>CLAUDE.md</code>나 <code>AGENTS.md</code>처럼 에이전트가 시작할 때 자동으로 읽는 파일에, 스킬은 <code>skills/이름/SKILL.md</code> 같은 폴더에, 위키는 <code>wiki/</code>에 산다. 셋을 섞으면 문제가 생긴다. 스키마에 사실을 적으면 낡고, 위키 페이지에 절차를 적으면 필요할 때 못 찾고, 스킬에 규칙을 숨기면 그 스킬을 안 쓰는 세션은 규칙을 모른다. <span class="term">컨텍스트 엔지니어링</span><span class="en">context engineering</span>의 상당 부분이 이 배치의 문제다.</p>
+  </section>
+
+  <section id="disclose">
+    <h2>점진적 공개</h2>
+    <p>스킬이 2백 개라면 그 지침을 모두 컨텍스트에 넣을 수 없다. 그래서 <span class="term">스킬</span><span class="en">agent skill</span>은 세 겹으로 공개된다. 맨 처음에는 <b>이름과 한 줄 설명</b>만 시스템 프롬프트에 들어간다. 스킬 하나에 수십 토큰이다. 에이전트가 지금 일에 그 스킬이 필요하다고 판단하면 <b>본문(SKILL.md)</b>을 읽는다. 본문이 다른 파일(양식, 예시, 스크립트)을 가리키면 그것은 정말 필요할 때만 연다. 이것이 <span class="term">점진적 공개</span><span class="en">progressive disclosure</span>다. 위키의 색인 → 페이지 → 원천과 같은 구조다. 짧은 요약이 먼저, 본문은 나중.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 170" role="img" aria-label="점진적 공개의 세 겹: 항상 읽는 이름과 설명, 필요할 때 읽는 SKILL.md 본문, 정말 필요할 때만 여는 부속 파일">
+        <g transform="translate(10,20)"><rect width="240" height="130" rx="12" class="soft-state"/><text x="120" y="26" text-anchor="middle" class="t-b">① 항상 · 이름 + 설명</text>
+          <g class="t-mono" style="font-size:9.5px"><text x="16" y="52">pdf — PDF 읽기·표 추출·병합</text><text x="16" y="70">report — 회사 양식 보고서</text><text x="16" y="88">wiki-ingest — 위키 수집 절차</text><text x="16" y="106">… 스킬마다 수십 토큰</text></g></g>
+        <g transform="translate(270,20)"><rect width="240" height="130" rx="12" class="f-acc-soft"/><text x="120" y="26" text-anchor="middle" class="t-b">② 필요할 때 · SKILL.md 본문</text>
+          <g class="t-mono" style="font-size:9.5px"><text x="16" y="52">## 수집 절차</text><text x="16" y="70">1. 원천 읽기 → 주장 추출</text><text x="16" y="88">2. 요약 페이지 → 관련 페이지 …</text><text x="16" y="106">스킬 하나에 수천 토큰</text></g></g>
+        <g transform="translate(530,20)"><rect width="240" height="130" rx="12" class="soft-tool"/><text x="120" y="26" text-anchor="middle" class="t-b">③ 정말 필요할 때 · 부속 파일</text>
+          <g class="t-mono" style="font-size:9.5px"><text x="16" y="52">templates/concept.md</text><text x="16" y="70">scripts/find_orphans.py</text><text x="16" y="88">examples/good-summary.md</text><text x="16" y="106">스크립트는 읽지 않고 실행만</text></g></g>
+        <path d="M252 85h16M512 85h16" stroke="var(--accent)" stroke-width="2"/>
+      </svg>
+      <figcaption><b>그림 10-1.</b> 스킬의 점진적 공개. 이름과 설명은 항상, 본문은 필요할 때, 부속 파일은 정말 필요할 때. 스크립트는 컨텍스트에 읽어 들이지 않고 실행 결과만 받을 수도 있다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-disc">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>점진적 공개 계산기 — 스킬 수와 컨텍스트 비용</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="ds-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>설치된 스킬 수 N <output id="ds-n-out"></output></span><input type="range" id="ds-n" min="1" max="300" step="1" value="60"></label>
+          <label class="ctrl"><span>설명 길이 (토큰) <output id="ds-m-out"></output></span><input type="range" id="ds-m" min="20" max="300" step="10" value="60"></label>
+          <label class="ctrl"><span>본문 길이 (토큰) <output id="ds-b-out"></output></span><input type="range" id="ds-b" min="500" max="10000" step="250" value="3000"></label>
+          <label class="ctrl"><span>이번 일에 쓰는 스킬 k <output id="ds-k-out"></output></span><input type="range" id="ds-k" min="0" max="6" step="1" value="2"></label>
+          <label class="ctrl"><span>컨텍스트 창 <output id="ds-w-out"></output></span><input type="range" id="ds-w" min="32000" max="1000000" step="8000" value="200000"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>모두 미리 넣기</span><span><i style="background:var(--accent)"></i>점진적 공개</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">모두 미리 넣기</span><span class="v" id="ds-o1">—</span></div>
+        <div class="stat"><span class="k">점진적 공개</span><span class="v" id="ds-o2">—</span></div>
+        <div class="stat"><span class="k">절약 배율</span><span class="v" id="ds-o3">—</span></div>
+        <div class="stat"><span class="k">창에 담을 수 있는 스킬 수</span><span class="v" id="ds-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 스킬 60개, 본문 3천 토큰이면 모두 미리 넣기는 18만 토큰으로 창 하나를 거의 다 쓴다. 점진적 공개는 설명 3,600토큰에 쓰는 본문 두 개(6,000토큰)를 더한 9,600토큰, 열아홉 배 적다. ② 설명을 300토큰으로 길게 쓰면 점진적 공개의 바닥이 올라간다. 스킬이 수백 개면 설명 자체가 부담이 된다. 설명은 “언제 쓰는가”를 한두 문장으로. ③ 이 계산은 위키에도 그대로 통한다. 설명 = 색인의 한 줄, 본문 = 페이지, 부속 파일 = 원천이다.</div>
+    </div>
+  </section>
+
+  <section id="rules">
+    <h2>규칙 하나가 위키 전체를 바꾼다</h2>
+    <p>스키마는 짧지만 영향은 크다. “새 페이지를 만들기 전에 색인을 검색하라” 한 줄이 중복 페이지를 막고, “새 페이지를 만들면 관련 페이지 세 곳에서 링크하라” 한 줄이 고아를 막는다. 규칙은 수집이 백 번 일어나는 동안 백 번 적용되기 때문이다. 카파시는 스키마를 처음부터 완성하지 말고, 사람과 에이전트가 함께 쓰면서 <b>반복되는 실수가 보일 때마다 한 줄씩 보태라</b>고 권한다. 아래에서 규칙을 켜고 끄며 50번의 수집을 돌려 보자. 오른쪽에는 켠 규칙으로 만든 스키마 파일이 바로 생긴다.</p>
+    <div class="sim" id="sim-rules">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>스키마 규칙 실험 — 50번 수집 뒤의 위키</h3></div>
+      <div class="sim-body">
+        <div class="checks" id="ru-list"></div>
+        <div class="two">
+          <div class="sim-view"><canvas id="ru-cv"></canvas></div>
+          <div class="code"><div class="bar">wiki/CLAUDE.md</div><pre id="ru-md" style="max-height:300px;white-space:pre-wrap"></pre></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">켠 규칙 · 스키마 길이</span><span class="v" id="ru-o1">—</span></div>
+        <div class="stat"><span class="k">중복 페이지</span><span class="v" id="ru-o2">—</span></div>
+        <div class="stat"><span class="k">고아 페이지</span><span class="v" id="ru-o3">—</span></div>
+        <div class="stat"><span class="k">출처 없는 주장 비율</span><span class="v" id="ru-o4">—</span></div>
+      </div>
+      <div class="sim-note">모형: 수집 한 번에 새 페이지 4개, 주장 12개가 생긴다. 규칙이 없으면 각 실패(중복 페이지, 고아, 출처 누락, 형식 어긋남, 모순 덮어쓰기)가 일정 확률로 일어나고, 규칙을 켜면 그 확률이 크게 준다. 막대 길이는 규칙이 하나도 없을 때를 100%로 본 비율이고, 오른쪽 숫자는 50번 수집 뒤의 실패 수다(짧을수록 좋다). ① 원천 보호 규칙만 켠 처음 상태에서도 중복 스무 개 가까이, 고아 서른 개 넘게, 출처 없는 주장 180개 남짓이 쌓인다. ② “색인 먼저 검색” 하나로 중복 막대가 거의 사라진다. ③ 규칙을 다 켜도 스키마는 몇백 토큰이다. 매 세션 읽어도 싸다. 다만 규칙이 길고 서로 부딪히면 모델이 일부를 놓친다. 스키마는 짧고 단정하게.</div>
+    </div>
+  </section>
+
+  <section id="place">
+    <h2>이 지시는 어디에 둘까</h2>
+    <p>지식의 자리를 고르는 감각을 길러 보자. 아래 지시나 정보를 스키마, 스킬, 위키 페이지 중 어디에 두는 것이 좋을까? 어디에도 둘 필요가 없는 것도 있다.</p>
+    <div class="sim" id="sim-place">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>지식 배치 — 여덟 가지 조각의 자리 찾기</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="pl-card"></div>
+        <div class="bins">
+          <button data-v="schema" style="--k:var(--accent-2)">스키마 CLAUDE.md</button>
+          <button data-v="skill" style="--k:var(--accent)">스킬 SKILL.md</button>
+          <button data-v="wiki" style="--k:var(--state)">위키 페이지</button>
+          <button data-v="drop" style="--k:var(--text-faint)">두지 않는다</button>
+        </div>
+        <div class="verdict" id="pl-fb">첫 조각을 읽고 버튼을 눌러 보세요.</div>
+        <div class="budget"><i id="pl-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="pl-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="pl-o2">0</span></div>
+      </div>
+      <div class="sim-note">기준: 매 세션 항상 지켜야 하는 짧은 규칙은 <b>스키마</b>. 특정 일을 할 때만 필요한 긴 절차·양식·스크립트는 <b>스킬</b>. 세상에 대한 사실과 그 출처는 <b>위키</b>. 한 번 쓰고 버릴 대화 맥락이나 모델이 이미 아는 일반 상식은 <b>두지 않는다</b>.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>에이전트 지식은 <b>위키(무엇) · 스킬(어떻게) · 스키마(지킬 것)</b>로 나뉜다. 섞으면 낡거나, 못 찾거나, 놓친다.</li>
+      <li>점진적 공개는 짧은 설명을 항상, 본문은 필요할 때, 부속 파일은 정말 필요할 때 읽게 한다. 위키의 색인 → 페이지 → 원천과 같은 구조다.</li>
+      <li>스키마 규칙은 수집마다 반복 적용되어 위키 전체의 일관성을 만든다. 반복되는 실수가 보일 때마다 한 줄씩 보탠다.</li>
+      <li>스키마는 짧고 단정해야 한다. 매 세션 읽히고, 길고 부딪히는 규칙은 일부가 무시된다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. “분기 보고서는 회사 양식(표지, 요약, 지표 표 순서)으로 쓴다. 양식 파일은 templates/에 있다”는 어디에?</p><div class="opts">
+        <button class="opt">스키마</button>
+        <button class="opt" data-correct>스킬</button>
+        <button class="opt">위키 페이지</button>
+      </div><div class="quiz-exp">특정 일을 할 때만 필요한 절차와 양식이다. 스킬로 묶어 두면 보고서를 쓸 때만 본문을 읽는다.</div></div>
+      <div class="quiz-q"><p>2. 점진적 공개에서 항상 컨텍스트에 들어가는 것은?</p><div class="opts">
+        <button class="opt" data-correct>각 스킬의 이름과 짧은 설명</button>
+        <button class="opt">모든 스킬의 본문</button>
+        <button class="opt">모든 부속 스크립트</button>
+      </div><div class="quiz-exp">설명은 에이전트가 “이 스킬이 필요한가”를 판단할 만큼만. 본문과 부속 파일은 필요할 때 읽는다.</div></div>
+      <div class="quiz-q"><p>3. 수집을 할 때마다 비슷한 개념 페이지가 중복으로 생긴다. 스키마에 넣을 가장 효과적인 한 줄은?</p><div class="opts">
+        <button class="opt">“페이지를 잘 써라”</button>
+        <button class="opt" data-correct>“새 페이지를 만들기 전에 색인과 검색으로 같은 개념의 페이지가 있는지 확인하라”</button>
+        <button class="opt">“페이지를 짧게 써라”</button>
+      </div><div class="quiz-exp">구체적이고 확인 가능한 행동을 지시해야 한다. 막연한 당부는 모든 수집에서 일관되게 적용되지 않는다.</div></div>
+      <div class="quiz-q"><p>4. 스키마에 “현재 회사 대표는 이 대표다”라는 사실을 적으면 생기는 문제는?</p><div class="opts">
+        <button class="opt">스키마가 너무 짧아진다</button>
+        <button class="opt" data-correct>사실은 바뀌는데 스키마는 위키처럼 수집·린트로 갱신되지 않아 낡는다</button>
+        <button class="opt">에이전트가 읽지 못한다</button>
+      </div><div class="quiz-exp">사실은 출처와 함께 위키의 엔티티 페이지에 둔다. 스키마는 규칙만 담는다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 점진적 공개 계산기 ---------------- */
+(function () {
+  const cv = WK.canvas("ds-cv", { aspect: 0.64, draw });
+  function draw(c, w, h) {
+    const N = WK.val("ds-n"), m = WK.val("ds-m"), B = WK.val("ds-b"), k = Math.min(WK.val("ds-k"), N), Wn = WK.val("ds-w");
+    const all = (n) => n * (m + B), prog = (n) => n * m + Math.min(k, n) * B;
+    const yMax = Math.max(all(300), Wn) * 1.05;
+    const box = { l: 56, t: 14, r: w - 14, b: h - 42 };
+    const A = WK.axes(c, { box, x: [0, 300], y: [0, yMax], xt: [0, 100, 200, 300], yt: [0, yMax / 2, yMax], yf: (v) => WK.si(v), xl: "설치된 스킬 수", yl: "항상 차지하는 토큰" });
+    c.save(); c.strokeStyle = WK.col("ctx"); c.setLineDash([5, 4]); c.beginPath(); c.moveTo(box.l, A.Y(Wn)); c.lineTo(box.r, A.Y(Wn)); c.stroke(); c.restore();
+    WK.text(c, "컨텍스트 창 " + WK.si(Wn), box.l + 6, A.Y(Wn) - 9, { size: 10.5, color: WK.col("ctx") });
+    const xs = Array.from({ length: 301 }, (_, i) => i);
+    c.save(); c.beginPath(); c.rect(box.l, box.t, box.r - box.l, box.b - box.t); c.clip();
+    WK.line(c, xs.map((n) => [A.X(n), A.Y(all(n))]), WK.col("guard"), 2.4);
+    WK.line(c, xs.map((n) => [A.X(n), A.Y(prog(n))]), WK.col("accent"), 2.8);
+    c.restore();
+    const x = A.X(N); c.strokeStyle = WK.col("text-dim"); c.lineWidth = 1.4; c.beginPath(); c.moveTo(x, box.t); c.lineTo(x, box.b); c.stroke();
+    WK.set("ds-o1", WK.si(all(N)), all(N) > Wn ? "bad" : all(N) > Wn * 0.5 ? "warn" : "");
+    WK.set("ds-o2", WK.si(prog(N)), prog(N) > Wn * 0.5 ? "warn" : "good");
+    WK.set("ds-o3", "× " + (all(N) / prog(N)).toFixed(1));
+    WK.set("ds-o4", `미리 넣기 ${Math.floor(Wn / (m + B))} · 공개 ${Math.max(0, Math.floor((Wn - k * B) / m))}`);
+  }
+  WK.wire(["ds-n", "ds-m", "ds-b", "ds-k", "ds-w"], () => cv.redraw(), { "ds-w": (v) => WK.si(v) });
+})();
+
+/* ---------------- 2. 스키마 규칙 실험 ---------------- */
+(function () {
+  /* 실패 종류와 규칙 없을 때 확률(페이지 또는 주장 하나당), 규칙이 남기는 비율 */
+  const R = [
+    { id: "idx", t: "새 페이지 전에 색인·검색 먼저", k: "ctx", fail: "dup", keep: 0.05, md: "- 새 페이지를 만들기 전에 index.md와 검색으로 같은 개념의 페이지가 있는지 확인한다. 있으면 그 페이지를 고친다." },
+    { id: "back", t: "새 페이지는 관련 페이지 3곳에서 링크", k: "state", fail: "orph", keep: 0.12, md: "- 새 페이지를 만들면 관련된 기존 페이지 세 곳 이상에 그 페이지로 가는 링크를 넣는다." },
+    { id: "cite", t: "모든 사실 문장에 출처 링크", k: "env", fail: "nocite", keep: 0.15, md: "- 모든 사실 문장 끝에 ([[원천-요약]]) 꼬리표를 단다. 출처가 없으면 ‘출처 필요’로 표시한다." },
+    { id: "tmpl", t: "페이지 유형별 템플릿", k: "accent", fail: "fmt", keep: 0.1, md: "- 페이지는 templates/의 유형별 형식(머리말 → 한 문장 정의 → 본문 → 함께 보기)을 따른다." },
+    { id: "conf", t: "충돌은 지우지 말고 ⚠ 표시", k: "guard", fail: "over", keep: 0.08, md: "- 새 원천이 기존 주장과 충돌하면 지우지 말고 ⚠ 표시와 함께 두 출처를 나란히 적는다." },
+    { id: "raw", t: "raw/는 읽기 전용", k: "tool", fail: "rawedit", keep: 0.02, md: "- raw/의 파일은 절대 수정하지 않는다." },
+    { id: "log", t: "log.md 머리말 형식 고정", k: "user", fail: "log", keep: 0.05, md: "- 작업이 끝나면 log.md 끝에 `## [YYYY-MM-DD] ingest|query|lint | 제목` 형식으로 한 항목을 덧붙인다." },
+  ];
+  const BASE = { dup: 0.12, orph: 0.22, nocite: 0.3, fmt: 0.25, over: 0.08, rawedit: 0.03, log: 0.3 };
+  const LABEL = { dup: "중복 페이지", orph: "고아 페이지", nocite: "출처 없는 주장", fmt: "형식 어긋남", over: "덮어쓴 모순", rawedit: "원천 수정", log: "기록 누락" };
+  const on = new Set(["raw"]);
+  WK.el("ru-list").innerHTML = R.map((r) => `<label style="--k:var(--${r.k})"><input type="checkbox" data-r="${r.id}"${on.has(r.id) ? " checked" : ""}><span>${r.t}</span></label>`).join("");
+  function sim(rules = on) {
+    const rnd = WK.rng(77), cnt = { dup: 0, orph: 0, nocite: 0, fmt: 0, over: 0, rawedit: 0, log: 0 };
+    const p = {}; Object.keys(BASE).forEach((k) => (p[k] = BASE[k]));
+    R.forEach((r) => { if (rules.has(r.id)) p[r.fail] *= r.keep; });
+    let claims = 0;
+    for (let t = 0; t < 50; t++) {
+      for (let i = 0; i < 4; i++) { ["dup", "orph", "fmt"].forEach((k) => { if (rnd() < p[k]) cnt[k]++; }); }
+      for (let i = 0; i < 12; i++) { claims++; if (rnd() < p.nocite) cnt.nocite++; }
+      if (rnd() < p.over * 3) cnt.over++;
+      if (rnd() < p.rawedit) cnt.rawedit++;
+      if (rnd() < p.log) cnt.log++;
+    }
+    return { cnt, claims };
+  }
+  WK.rulesSim = (ids) => { if (ids) { on.clear(); ids.forEach((x) => on.add(x)); } return sim(); };
+  const cv = WK.canvas("ru-cv", { aspect: 0.86, draw });
+  function draw(c, w, h) {
+    const { cnt, claims } = sim(), base = sim(new Set()).cnt;
+    const keys = Object.keys(LABEL);
+    const l = 108, top = 12, rh = (h - 24) / keys.length;
+    keys.forEach((k, i) => {
+      const y = top + i * rh, v = cnt[k], r = R.find((x) => x.fail === k);
+      WK.text(c, LABEL[k], l - 8, y + rh / 2, { size: 12, align: "right", color: WK.col("text-dim") });
+      WK.hbar(c, l, y + rh * 0.28, w - l - 50, rh * 0.44, base[k] ? v / base[k] : 0, on.has(r.id) ? WK.col("env") : WK.col("guard"), { label: String(v) });
+    });
+    const md = ["# 위키 스키마", "", "## 구조", "- raw/: 원천 · wiki/: 페이지 · index.md: 색인 · log.md: 기록", "", "## 규칙"].concat(R.filter((r) => on.has(r.id)).map((r) => r.md));
+    if (!R.some((r) => on.has(r.id))) md.push("(아직 규칙 없음)");
+    WK.el("ru-md").textContent = md.join("\n");
+    const len = Math.round(md.join("\n").length * 0.9);
+    WK.set("ru-o1", `${on.size}개 · ${len}토큰`);
+    WK.set("ru-o2", `${cnt.dup}개`, cnt.dup > 5 ? "bad" : "good");
+    WK.set("ru-o3", `${cnt.orph}개`, cnt.orph > 10 ? "bad" : "good");
+    WK.set("ru-o4", WK.pct(cnt.nocite / claims), cnt.nocite / claims > 0.1 ? "bad" : "good");
+  }
+  WK.$$("#ru-list input").forEach((i) => i.addEventListener("change", () => { i.checked ? on.add(i.dataset.r) : on.delete(i.dataset.r); cv.redraw(); }));
+  cv.redraw();
+})();
+
+/* ---------------- 3. 지식 배치 ---------------- */
+WK.sortGame({
+  root: "sim-place", prefix: "pl",
+  names: { schema: "스키마 CLAUDE.md", skill: "스킬 SKILL.md", wiki: "위키 페이지", drop: "두지 않는다" },
+  cards: [
+    ["“raw/ 폴더의 파일은 절대 수정하지 않는다.”", "schema", "모든 세션에서 항상 지켜야 하는 짧은 규칙이다."],
+    ["옵시디언 Dataview로 ‘최근 30일 갱신 페이지’ 표를 만드는 쿼리 문법과 예시 20개", "skill", "그 표를 만들 때만 필요한 긴 절차다. 스킬로 두면 평소에는 이름과 설명만 컨텍스트를 차지한다."],
+    ["“OpenAI의 2026년 플래그십 모델은 …” (공식 발표 기사 출처)", "wiki", "세상에 대한 사실이다. 출처와 함께 엔티티 페이지에 두고 수집·린트로 갱신한다."],
+    ["“오늘은 회의 때문에 오후 3시 전에 끝내 줘.”", "drop", "이번 대화에만 필요한 맥락이다. 스키마에 넣으면 내일의 세션도 3시를 신경 쓴다."],
+    ["고아 페이지를 찾아 목록을 출력하는 파이썬 스크립트", "skill", "린트 스킬의 부속 파일로 둔다. 읽을 필요 없이 실행만 하면 된다."],
+    ["“모든 페이지 첫 줄은 한 문장 정의로 시작한다.”", "schema", "모든 페이지 쓰기에 적용되는 짧은 형식 규칙이다."],
+    ["“마크다운에서 # 하나는 제목이다.”", "drop", "모델이 이미 아는 일반 상식이다. 적어 봐야 토큰만 쓴다."],
+    ["팀이 2026년 3월에 Postgres 대신 SQLite를 고른 이유와 회의록 출처", "wiki", "결정과 근거는 사실의 기록이다. 프로젝트 페이지에 두고 회의록 원천을 링크한다."],
+  ],
+});
+</script>
+</body>
+</html>

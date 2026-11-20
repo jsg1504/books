@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>위키의 해부: 원천, 위키, 스키마 · WikiBook</title>
+<meta name="description" content="LLM 위키의 세 층인 원천, 위키, 스키마와 두 특별한 파일 index.md, log.md를 해부도와 미니 위키 탐색기로 살펴본다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<script src="../js/wiki.js"></script>
+</head>
+<body data-root="../" data-chapter="anatomy">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 02</div>
+    <h1>위키의 해부: 원천, 위키, 스키마</h1>
+    <p class="lead">LLM 위키는 특별한 소프트웨어가 아니다. 폴더 세 개와 파일 몇 개다. 그런데 그 폴더들 사이에 엄격한 규칙이 있다. <b>원천은 아무도 고치지 않는다. 위키는 에이전트만 쓴다. 스키마는 사람과 에이전트가 함께 다듬는다.</b> 이 장에서는 그 세 층과, 위키를 움직이는 두 파일 <code>index.md</code>와 <code>log.md</code>를 해부한다. 그리고 실제로 돌아다닐 수 있는 작은 위키를 하나 열어 본다.</p>
+    <ul class="objectives">
+      <li>원천, 위키, 스키마가 각각 무엇을 담고 누가 읽고 쓰는지 말할 수 있다.</li>
+      <li>색인 페이지와 기록 페이지가 질의와 감사에서 어떤 역할을 하는지 설명할 수 있다.</li>
+      <li>위키링크, 백링크, 빨간 링크를 읽고 작은 위키를 탐색할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="layers">
+    <h2>세 개의 층</h2>
+    <p>카파시의 메모는 LLM 위키를 세 층으로 나눈다. 맨 아래 <span class="term">원천 자료</span><span class="en">raw sources</span>는 논문 PDF, 웹 기사, 회의록, 이미지처럼 사람이 고른 원문이다. 에이전트는 이것을 <b>읽기만 하고 절대 고치지 않는다</b>. 진실의 기준점이기 때문이다. 가운데 <b>위키</b>는 에이전트가 쓴 마크다운 페이지 묶음이다. 요약, 인물·개념 페이지, 비교표, 종합이 여기에 산다. 에이전트가 이 층을 통째로 소유한다. 맨 위 <span class="term">스키마</span><span class="en">schema</span>는 위키가 어떻게 생겨야 하고 수집·질의·린트를 어떻게 하는지 적은 지침 파일이다. 클로드 코드라면 <code>CLAUDE.md</code>, 코덱스라면 <code>AGENTS.md</code>가 그 자리에 놓인다.</p>
+    <div class="sim" id="sim-layers">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>위키 해부도 — 층을 눌러 역할 보기</h3></div>
+      <div class="sim-body">
+        <div class="anat">
+          <svg viewBox="0 0 400 360" role="img" aria-label="세 층의 해부도. 위에 스키마, 가운데 위키와 그 안의 index.md, log.md, 아래에 원천 자료. 사람과 에이전트가 각 층을 읽고 쓰는 방향이 화살표로 표시된다.">
+            <defs><marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-faint)"/></marker></defs>
+            <g class="layer" data-k="schema"><rect x="90" y="14" width="220" height="54" rx="10" class="f-acc-soft" stroke="var(--accent)" stroke-width="2"/><text x="200" y="38" text-anchor="middle" class="t-b">스키마</text><text x="200" y="56" text-anchor="middle" class="t-mono" style="font-size:10px">CLAUDE.md · AGENTS.md</text></g>
+            <g class="layer" data-k="wiki"><rect x="40" y="96" width="320" height="150" rx="14" class="soft-state" stroke-width="2"/><text x="60" y="120" class="t-b" style="fill:var(--state)">위키 wiki/</text>
+              <g transform="translate(180,108)" stroke="var(--state)" stroke-width="1.5" fill="none"><path d="M20 30 L70 14 L130 34 L80 70 Z M70 14 L80 70 M130 34 L160 80 M80 70 L160 80"/></g>
+              <g transform="translate(180,108)"><circle cx="20" cy="30" r="7" class="c-state"/><circle cx="70" cy="14" r="8" class="c-state"/><circle cx="130" cy="34" r="7" class="c-state"/><circle cx="80" cy="70" r="7" class="c-state"/><circle cx="160" cy="80" r="6" class="c-env"/></g>
+            </g>
+            <g class="layer" data-k="index"><rect x="58" y="134" width="110" height="30" rx="7" class="f-elev" stroke="var(--state)" stroke-width="1.6"/><text x="113" y="154" text-anchor="middle" class="t-mono" style="font-size:11px">index.md</text></g>
+            <g class="layer" data-k="log"><rect x="58" y="174" width="110" height="30" rx="7" class="f-elev" stroke="var(--state)" stroke-width="1.6"/><text x="113" y="194" text-anchor="middle" class="t-mono" style="font-size:11px">log.md</text></g>
+            <g class="layer" data-k="raw"><rect x="70" y="276" width="260" height="66" rx="12" class="soft-tool" stroke-width="2"/><text x="200" y="300" text-anchor="middle" class="t-b">원천 자료 raw/</text><text x="200" y="320" text-anchor="middle" class="t-mono" style="font-size:10px">PDF · 기사 · 회의록 · 이미지 — 읽기 전용</text></g>
+            <path d="M200 272 V250" stroke="var(--tool)" stroke-width="2" marker-end="url(#ma)"/><text x="208" y="266" class="t-mono" style="font-size:9.5px;fill:var(--tool)">읽기만</text>
+            <path d="M200 72 V92" stroke="var(--accent)" stroke-width="2" marker-end="url(#ma)"/><text x="208" y="88" class="t-mono" style="font-size:9.5px;fill:var(--accent)">규칙</text>
+            <circle cx="372" cy="170" r="14" class="f-acc-soft" stroke="var(--accent)" stroke-width="2"/><text x="372" y="198" text-anchor="middle" class="t-mono" style="font-size:9.5px">에이전트</text>
+            <path d="M358 166 L 344 160" stroke="var(--accent)" stroke-width="2" marker-end="url(#ma)"/>
+            <circle cx="28" cy="306" r="14" class="f-acc2-soft" stroke="var(--accent-2)" stroke-width="2"/><text x="28" y="334" text-anchor="middle" class="t-mono" style="font-size:9.5px">사람</text>
+            <path d="M42 306 L 66 306" stroke="var(--accent-2)" stroke-width="2" marker-end="url(#ma)"/>
+          </svg>
+          <div class="info" id="ly-info"></div>
+        </div>
+      </div>
+      <div class="sim-note">층마다 “누가 쓰는가”가 다르다는 점에 주목하자. 이 구분이 무너지면 위키가 망가진다. 원천을 에이전트가 고치면 근거가 사라지고, 사람이 위키 페이지를 손으로 고치면 에이전트의 다음 수집이 그 수정을 덮어쓰거나 형식이 어긋난다. 사람의 의견은 위키가 아니라 스키마나 새 원천(메모)으로 들어가는 편이 안전하다.</div>
+    </div>
+  </section>
+
+  <section id="files">
+    <h2>두 특별한 파일: 색인과 기록</h2>
+    <p>위키에는 수백 개의 페이지가 있지만, 에이전트가 가장 자주 여는 파일은 둘이다. <span class="term">색인 페이지</span><span class="en">index.md</span>는 내용 중심의 목차다. 모든 페이지를 분류별로 나열하고 한 줄 요약을 붙인다. 질의가 오면 에이전트는 먼저 색인을 읽고 어떤 페이지를 열지 고른다(6장). 수집할 때마다 색인을 갱신한다. <span class="term">기록 페이지</span><span class="en">log.md</span>는 시간 중심의 일지다. 언제 무엇을 수집했고, 어떤 질문에 답했고, 린트에서 무엇을 고쳤는지 덧붙이기만 한다.</p>
+    <div class="two">
+      <div class="code"><div class="bar">wiki/index.md (일부)</div><pre><span class="k">## 개념</span>
+- [[rag|검색 증강 생성]] — 질문마다 조각을 찾아 답
+- [[llm-wiki|LLM 위키]] — 에이전트가 유지하는 지식
+<span class="k">## 원천 요약</span>
+- [[lewis-2020-rag]] — 검색 증강 생성 논문
+- [[liu-2023-lost-in-the-middle]] — 가운데 손실</pre></div>
+      <div class="code"><div class="bar">wiki/log.md (일부)</div><pre><span class="k">## [2026-11-09] ingest | 카파시 LLM Wiki</span>
+페이지 7개 수정: llm-wiki, karpathy, obsidian …
+<span class="k">## [2026-11-12] query | RAG와 위키의 차이</span>
+답을 analyses/rag-vs-wiki.md로 저장
+<span class="k">## [2026-11-18] lint | 주간 점검</span>
+고아 1개 연결, 빨간 링크 2개 기록</pre></div>
+    </div>
+    <p>기록의 머리말 형식을 <code>## [날짜] 작업 | 제목</code>으로 고정해 두면 평범한 유닉스 도구로 기록을 다룰 수 있다. 예를 들어 <code>grep "^## \[" log.md | tail -5</code>는 최근 작업 다섯 개를 보여 준다. 에이전트가 새 세션을 시작할 때 이 한 줄이면 “지난번에 어디까지 했지?”에 답할 수 있다. 사람에게는 위키가 어떻게 자라 왔는지 보여 주는 감사 기록이 된다. 그리고 위키 폴더 전체가 git 저장소라면, 기록은 “무엇을 왜 했나”를, git은 “정확히 무엇이 바뀌었나”를 맡는다.</p>
+  </section>
+
+  <section id="browse">
+    <h2>작은 위키 돌아다니기</h2>
+    <p>아래는 이 책의 여러 실험이 함께 쓰는 작은 연구 위키다. 주제는 “LLM과 검색”이다. 원천 다섯 편을 수집했고 질의 한 번의 답을 저장했다. 왼쪽 파일 트리에서 페이지를 고르거나, 본문의 보라색 <span class="term">위키링크</span><span class="en">wikilink</span>를 눌러 이동해 보자. 페이지 아래에는 이 페이지를 가리키는 <span class="term">백링크</span><span class="en">backlink</span>가 자동으로 나온다. 빨간 링크는 아직 쓰이지 않은 페이지다. 위키에서 빨간 링크는 오류가 아니라 <b>앞으로 쓸 페이지의 목록</b>이다.</p>
+    <div class="sim" id="sim-browse">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>미니 위키 탐색기 — 링크를 따라 걷기</h3></div>
+      <div class="sim-body">
+        <div class="wiki-ui">
+          <div class="ftree" id="br-tree"></div>
+          <div class="wpage" id="br-page"></div>
+        </div>
+        <div class="sim-controls row">
+          <div class="btns"><button class="btn" id="br-back">← 뒤로</button><button class="btn" id="br-grep">grep "^## \[" log.md | tail -3</button><button class="btn" id="br-red">빨간 링크 모두 보기</button></div>
+        </div>
+        <div class="trace" id="br-out" style="max-height:150px">버튼을 누르면 결과가 여기에 나옵니다.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">이 페이지의 링크</span><span class="v" id="br-o1">—</span></div>
+        <div class="stat"><span class="k">이 페이지의 백링크</span><span class="v" id="br-o2">—</span></div>
+        <div class="stat"><span class="k">방문한 페이지</span><span class="v" id="br-o3">—</span></div>
+        <div class="stat"><span class="k">전체 페이지 · 빨간 링크</span><span class="v" id="br-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① <code>index.md</code>에서 출발해 세 번 이내의 클릭으로 <code>버니바 부시</code>에 닿아 보자. 색인이 지름길이다. ② <code>제텔카스텐</code>의 백링크를 보자. 지난 린트 전까지는 아무도 이 페이지를 가리키지 않는 고아였다(기록 마지막 줄). ③ <code>비교 · RAG와 LLM 위키</code>는 원천이 아니라 질의에서 태어난 페이지다. 머리말의 <code>from:</code>을 확인하자. ④ 빨간 링크 두 개는 다음 수집이나 린트에서 채울 후보다.</div>
+    </div>
+  </section>
+
+  <section id="sort">
+    <h2>이것은 어느 층에 둘까</h2>
+    <p>층의 규칙을 몸에 익히는 가장 빠른 방법은 분류해 보는 것이다. 새로 생긴 무언가가 원천에 들어가야 하는지, 위키 페이지가 되어야 하는지, 스키마에 규칙으로 적혀야 하는지 골라 보자.</p>
+    <div class="sim" id="sim-sort">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>층 배치 — 여덟 가지 조각 분류하기</h3></div>
+      <div class="sim-body">
+        <div class="sort-card" id="so-card"></div>
+        <div class="bins">
+          <button data-v="raw" style="--k:var(--tool)">원천 raw/</button>
+          <button data-v="wiki" style="--k:var(--state)">위키 페이지</button>
+          <button data-v="schema" style="--k:var(--accent)">스키마</button>
+        </div>
+        <div class="verdict" id="so-fb">첫 조각을 읽고 버튼을 눌러 보세요.</div>
+        <div class="budget"><i id="so-bar" style="width:0"></i></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">진행</span><span class="v" id="so-o1">0 / 8</span></div>
+        <div class="stat"><span class="k">맞힌 수</span><span class="v" id="so-o2">0</span></div>
+      </div>
+      <div class="sim-note">기준: 사람이 가져온 원문이거나 사람이 직접 쓴 메모처럼 <b>근거가 되는 것</b>은 원천. 에이전트가 원천을 읽고 <b>정리·종합한 것</b>은 위키. 위키를 <b>어떻게 만들고 고칠지에 대한 규칙</b>은 스키마.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>LLM 위키는 <b>원천(읽기 전용) · 위키(에이전트 소유) · 스키마(규칙)</b>의 세 층이다. 누가 쓰는지가 층마다 다르다.</li>
+      <li><code>index.md</code>는 내용 중심의 목차로 질의의 출발점이고, <code>log.md</code>는 시간 중심의 덧붙이기 기록으로 감사와 재개의 출발점이다.</li>
+      <li>기록의 머리말을 고정 형식으로 두면 <code>grep</code> 같은 단순한 도구로 최근 활동을 뽑을 수 있다.</li>
+      <li>위키링크와 백링크가 페이지를 그물로 엮는다. 빨간 링크는 오류가 아니라 앞으로 쓸 페이지의 목록이다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 에이전트가 절대 고쳐서는 안 되는 층은?</p><div class="opts">
+        <button class="opt" data-correct>원천 자료</button>
+        <button class="opt">위키 페이지</button>
+        <button class="opt">색인 페이지</button>
+      </div><div class="quiz-exp">원천은 진실의 기준점이다. 위키의 주장이 맞는지 확인하려면 손대지 않은 원문이 있어야 한다.</div></div>
+      <div class="quiz-q"><p>2. 새 세션을 시작한 에이전트가 “지난번에 무엇을 했지?”를 가장 싸게 알아내는 방법은?</p><div class="opts">
+        <button class="opt">위키 페이지를 모두 읽는다</button>
+        <button class="opt" data-correct>고정 형식의 log.md에서 최근 머리말 몇 줄을 뽑아 읽는다</button>
+        <button class="opt">원천 폴더의 파일 날짜를 본다</button>
+      </div><div class="quiz-exp"><code>grep "^## \[" log.md | tail -5</code> 한 줄로 최근 작업이 나온다. 기록의 형식을 고정하는 이유다.</div></div>
+      <div class="quiz-q"><p>3. 사람이 위키 페이지를 손으로 고치는 대신 권장되는 방법은?</p><div class="opts">
+        <button class="opt">에이전트를 끄고 직접 고친다</button>
+        <button class="opt" data-correct>의견은 메모로 원천에 넣고, 반복되는 지적은 스키마의 규칙으로 적는다</button>
+        <button class="opt">색인에서 그 페이지를 지운다</button>
+      </div><div class="quiz-exp">위키는 에이전트가 소유한다. 사람의 손 수정은 다음 수집에 덮이거나 형식이 어긋날 수 있다. 근거는 원천으로, 규칙은 스키마로 넣는다.</div></div>
+      <div class="quiz-q"><p>4. 위키에서 빨간 링크가 뜻하는 것은?</p><div class="opts">
+        <button class="opt">고쳐야 할 오류</button>
+        <button class="opt">삭제된 원천</button>
+        <button class="opt" data-correct>아직 쓰이지 않았지만 언급된, 앞으로 쓸 페이지</button>
+      </div><div class="quiz-exp">빨간 링크는 위키가 스스로 만든 할 일 목록이다. 린트가 이 목록을 모아 다음 수집의 후보로 삼는다(8장).</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 해부도 ---------------- */
+(function () {
+  const INFO = {
+    schema: { k: "accent", t: "스키마 · CLAUDE.md / AGENTS.md", p: "위키의 구조, 페이지 형식, 수집·질의·린트 절차를 적은 지침. 에이전트를 범용 챗봇이 아니라 규율 있는 위키 관리자로 만드는 파일이다.", ul: ["읽는 이: 에이전트 (세션마다 처음에)", "쓰는 이: 사람과 에이전트가 함께 다듬는다", "예: “요약 페이지는 반드시 원천 경로를 머리말에”, “모순은 지우지 말고 표시”"] },
+    wiki: { k: "state", t: "위키 · wiki/", p: "에이전트가 쓴 마크다운 페이지 묶음. 요약, 엔티티, 개념, 비교, 종합이 링크로 엮여 있다. 에이전트가 만들고, 고치고, 일관성을 지킨다.", ul: ["읽는 이: 사람(옵시디언 등으로)과 에이전트", "쓰는 이: 에이전트만", "폴더 예: sources/ concepts/ entities/ analyses/"] },
+    index: { k: "state", t: "색인 · index.md", p: "모든 페이지를 분류별로 나열하고 한 줄 요약을 붙인 목차. 질의의 첫걸음이다. 중간 규모(원천 백여 개, 페이지 수백 개)까지는 이것만으로 임베딩 검색 없이 버틴다고 보고됐다.", ul: ["수집할 때마다 갱신", "페이지마다 링크 + 한 줄 요약 + 원천 수 같은 메타데이터", "커지면 분류별 하위 색인으로 쪼갠다 (7장)"] },
+    log: { k: "state", t: "기록 · log.md", p: "수집, 질의, 린트를 시간순으로 덧붙이기만 하는 일지. 고치거나 지우지 않는다.", ul: ["머리말 형식 고정: ## [날짜] 작업 | 제목", "grep과 tail로 최근 활동 확인", "새 세션의 재개 지점, 사람의 감사 기록"] },
+    raw: { k: "tool", t: "원천 자료 · raw/", p: "사람이 고른 원문. 논문, 기사, 회의록, 이미지, 데이터 파일. 에이전트는 읽기만 하고 고치지 않는다. 위키의 모든 주장은 결국 여기로 거슬러 올라가야 한다(9장).", ul: ["읽는 이: 에이전트 (수집과 출처 확인 때)", "쓰는 이: 사람 (가져오기, 메모 추가)", "이미지는 로컬로 내려받아 링크가 깨지지 않게"] },
+  };
+  const info = WK.el("ly-info"), gs = WK.$$("#sim-layers g.layer");
+  function show(k) {
+    const d = INFO[k];
+    gs.forEach((g) => g.classList.toggle("on", g.dataset.k === k));
+    info.style.setProperty("--k", `var(--${d.k})`);
+    info.innerHTML = `<h4>${d.t}</h4><p>${d.p}</p><ul>${d.ul.map((x) => `<li>${WK.esc(x)}</li>`).join("")}</ul>`;
+  }
+  gs.forEach((g) => g.addEventListener("click", () => show(g.dataset.k)));
+  show("wiki");
+})();
+
+/* ---------------- 2. 미니 위키 탐색기 ---------------- */
+(function () {
+  const W = WK.wiki, P = W.pages;
+  const tree = WK.el("br-tree"), page = WK.el("br-page"), out = WK.el("br-out");
+  let cur = "index", hist = [], visited = new Set();
+  const allRed = () => { const s = new Set(); W.order.forEach((id) => W.links(id).forEach((l) => { if (!P[l]) s.add(l); })); return [...s]; };
+  tree.innerHTML = W.folders.map(([d, ids]) => `<div class="d">${d || "wiki/"}</div>` + ids.map((id) => `<button data-p="${id}" style="--k:var(--${W.typeCol[P[id].type]})"><i>●</i>${P[id].path.split("/").pop()}</button>`).join("")).join("");
+  function go(id, push = true) {
+    if (!P[id]) { out.innerHTML = `<div style="--k:var(--guard)">[[${WK.esc(id)}]] — 아직 없는 페이지입니다. 다음 수집이나 린트에서 쓸 후보.</div>`; return; }
+    if (push && cur !== id) hist.push(cur);
+    cur = id; visited.add(id);
+    const pg = P[id], bl = W.backlinks(id);
+    page.innerHTML = `<div class="fm">---\n${WK.esc(pg.fm)}\n---</div>${W.render(id)}<div class="bl"><b>백링크 ${bl.length}</b> · ${bl.length ? bl.map((b) => `<span class="wl" data-p="${b}">${WK.esc(P[b].title)}</span>`).join(" ") : "아무 페이지도 이곳을 가리키지 않습니다"}</div>`;
+    page.scrollTop = 0;
+    WK.$$("button", tree).forEach((b) => b.classList.toggle("cur", b.dataset.p === id));
+    const ln = W.links(id);
+    WK.set("br-o1", `${ln.length}개` + (ln.some((l) => !P[l]) ? ` (빨강 ${ln.filter((l) => !P[l]).length})` : ""));
+    WK.set("br-o2", `${bl.length}개`, bl.length === 0 ? "warn" : "");
+    WK.set("br-o3", `${visited.size} / ${W.order.length}`, visited.size === W.order.length ? "good" : "");
+    WK.set("br-o4", `${W.order.length} · ${allRed().length}`);
+  }
+  tree.addEventListener("click", (e) => { const b = e.target.closest("button[data-p]"); if (b) go(b.dataset.p); });
+  page.addEventListener("click", (e) => { const s = e.target.closest(".wl"); if (s) go(s.dataset.p); });
+  WK.el("br-back").addEventListener("click", () => { if (hist.length) go(hist.pop(), false); });
+  WK.el("br-grep").addEventListener("click", () => {
+    const heads = P.log.body.split("\n").filter((l) => /^## \[/.test(l)).slice(-3);
+    out.innerHTML = `<div style="--k:var(--text-faint)">$ grep "^## \\[" log.md | tail -3</div>` + heads.map((h) => { const k = /ingest/.test(h) ? "accent" : /query/.test(h) ? "ctx" : "guard"; return `<div style="--k:var(--${k})">${WK.esc(h)}</div>`; }).join("");
+  });
+  WK.el("br-red").addEventListener("click", () => {
+    const red = allRed();
+    out.innerHTML = red.map((r) => { const from = W.order.filter((id) => W.links(id).includes(r)).map((id) => P[id].title); return `<div style="--k:var(--guard)">[[${WK.esc(r)}]] ← ${from.map(WK.esc).join(", ")}</div>`; }).join("");
+  });
+  go("index", false);
+})();
+
+/* ---------------- 3. 층 배치 ---------------- */
+WK.sortGame({
+  root: "sim-sort", prefix: "so",
+  names: { raw: "원천 raw/", wiki: "위키 페이지", schema: "스키마" },
+  cards: [
+    ["웹 클리퍼로 저장한 기사 원문 「오픈 가중치 모델의 1년」", "raw", "사람이 고른 원문이다. 에이전트는 읽고 요약하되, 이 파일 자체는 고치지 않는다."],
+    ["“개념 페이지는 첫 문단을 한 문장 정의로 시작한다”라는 규칙", "schema", "모든 페이지에 적용되는 형식 규칙이다. 스키마에 적어 두면 에이전트가 세션마다 따른다."],
+    ["세 논문의 실험 설정을 한 표로 비교한 페이지", "wiki", "원천 여러 개를 엮어 에이전트가 만든 종합이다. analyses/ 같은 위키 폴더에 산다."],
+    ["회의 중 사람이 휴대폰에 적은 메모 사진", "raw", "사람이 만든 근거 자료다. 에이전트가 읽어 위키에 반영하지만 메모 자체는 원천으로 남긴다."],
+    ["“OpenAI” 회사 페이지 — 원천 7개에서 모은 사실과 연표", "wiki", "이름 있는 대상 하나를 다루는 엔티티 페이지다. 원천이 들어올 때마다 에이전트가 갱신한다."],
+    ["“두 원천이 충돌하면 지우지 말고 ⚠ 표시와 함께 둘 다 적는다”", "schema", "모순을 다루는 절차다. 린트와 수집의 행동을 정하는 규칙이므로 스키마에 둔다."],
+    ["사람이 직접 쓴 생각: “이 분야는 2년 안에 평가 방법이 바뀔 것 같다”", "raw", "사람의 의견도 근거 자료다. 위키에 섞어 쓰면 누구의 주장인지 흐려진다. 메모 원천으로 넣고, 위키는 ‘사용자 메모에 따르면’으로 인용한다."],
+    ["log.md에 덧붙인 “## [2026-11-20] ingest | 평가 방법론 보고서”", "wiki", "기록 페이지는 위키 폴더 안에 있고 에이전트가 쓴다. 다만 덧붙이기만 하고 고치지 않는다는 특별한 규칙을 따른다."],
+  ],
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수집: 원천 하나가 열 페이지를 바꾼다 · WikiBook</title>
+<meta name="description" content="새 원천을 읽고 요약을 쓰고 관련 페이지를 고치고 색인과 기록을 남기는 수집의 한 바퀴를 단계별 애니메이션과 팬아웃 시뮬레이터로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="ingest">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 03</div>
+    <h1>수집: 원천 하나가 열 페이지를 바꾼다</h1>
+    <p class="lead">사람이 논문 한 편을 원천 폴더에 넣고 “이거 수집해 줘”라고 말한다. 에이전트는 논문을 읽고 요약 페이지를 하나 쓴다. 여기서 끝나면 그냥 요약기다. 위키를 위키로 만드는 것은 그다음이다. 논문이 언급한 개념 페이지 다섯 개를 열어 새 사실을 보태고, 저자 페이지를 만들고, 기존 주장과 어긋나는 곳에 표시를 남기고, 색인과 기록을 고친다. <b>원천 하나가 페이지 열 개 남짓을 바꾼다.</b> 이 장에서는 그 한 바퀴를 단계별로 뜯어본다.</p>
+    <ul class="objectives">
+      <li>수집의 단계(읽기, 추출, 요약, 갱신, 모순 표시, 색인, 기록)를 순서대로 말할 수 있다.</li>
+      <li>위키의 크기와 원천의 성격에 따라 수집 한 번이 건드리는 페이지 수가 어떻게 바뀌는지 설명할 수 있다.</li>
+      <li>한 번에 하나씩 수집할 때와 한꺼번에 수집할 때의 장단점을 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="loop">
+    <h2>수집의 한 바퀴</h2>
+    <p><span class="term">수집</span><span class="en">ingest</span>은 다음 일곱 걸음으로 이루어진다. 순서에는 이유가 있다. 먼저 원천을 읽고 <b>주장 단위</b>로 쪼갠다. 그래야 각 주장이 어느 페이지로 가야 하는지 정할 수 있다. 요약 페이지를 먼저 쓰는 이유는 다른 페이지들이 그 요약을 출처로 링크하기 때문이다. 모순 검사는 갱신과 함께 한다. 기존 페이지를 열어 새 주장을 넣으려는 바로 그 순간이 충돌을 발견하기 가장 좋은 때다. 색인과 기록은 맨 마지막이다. 무엇이 바뀌었는지 다 알아야 쓸 수 있다.</p>
+    <figure class="diagram wide">
+      <svg viewBox="0 0 780 170" role="img" aria-label="수집의 일곱 단계: 읽기, 주장 추출, 요약 페이지, 관련 페이지 갱신, 모순 표시, 색인 갱신, 기록 덧붙이기">
+        <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+        <g class="t-b" text-anchor="middle">
+          <g transform="translate(8,40)"><rect width="96" height="70" rx="10" class="soft-tool"/><text x="48" y="30">① 읽기</text><text x="48" y="50" class="t-mono" style="font-size:9.5px">원문 전체</text></g>
+          <g transform="translate(118,40)"><rect width="96" height="70" rx="10" class="f-acc-soft"/><text x="48" y="30">② 추출</text><text x="48" y="50" class="t-mono" style="font-size:9.5px">주장 · 개체</text></g>
+          <g transform="translate(228,40)"><rect width="96" height="70" rx="10" class="soft-state"/><text x="48" y="30">③ 요약</text><text x="48" y="50" class="t-mono" style="font-size:9.5px">sources/*.md</text></g>
+          <g transform="translate(338,40)"><rect width="96" height="70" rx="10" class="soft-state"/><text x="48" y="30">④ 갱신</text><text x="48" y="50" class="t-mono" style="font-size:9.5px">개념 · 엔티티</text></g>
+          <g transform="translate(448,40)"><rect width="96" height="70" rx="10" class="soft-guard"/><text x="48" y="30">⑤ 모순</text><text x="48" y="50" class="t-mono" style="font-size:9.5px">⚠ 표시</text></g>
+          <g transform="translate(558,40)"><rect width="96" height="70" rx="10" class="soft-env"/><text x="48" y="30">⑥ 색인</text><text x="48" y="50" class="t-mono" style="font-size:9.5px">index.md</text></g>
+          <g transform="translate(668,40)"><rect width="104" height="70" rx="10" class="soft-env"/><text x="52" y="30">⑦ 기록</text><text x="52" y="50" class="t-mono" style="font-size:9.5px">log.md + commit</text></g>
+        </g>
+        <g stroke="var(--accent)" stroke-width="2"><path d="M104 75h12" marker-end="url(#m1)"/><path d="M214 75h12" marker-end="url(#m1)"/><path d="M324 75h12" marker-end="url(#m1)"/><path d="M434 75h12" marker-end="url(#m1)"/><path d="M544 75h12" marker-end="url(#m1)"/><path d="M654 75h12" marker-end="url(#m1)"/></g>
+        <path d="M386 112 C 386 150, 496 150, 496 112" fill="none" stroke="var(--guard)" stroke-width="1.6" stroke-dasharray="4 4"/>
+        <text x="441" y="160" text-anchor="middle" class="t-mono" style="font-size:9.5px;fill:var(--guard)">갱신하며 동시에 검사</text>
+        <text x="8" y="24" class="t-dim">사람이 원천을 넣는다 → 에이전트가 일곱 걸음을 밟는다 → 사람은 바뀐 페이지를 옵시디언에서 훑어본다</text>
+      </svg>
+      <figcaption><b>그림 3-1.</b> 수집의 일곱 걸음. ④ 갱신과 ⑤ 모순 표시는 같은 순간에 일어난다. 기존 페이지를 열어 새 주장을 넣으려 할 때 충돌이 드러나기 때문이다.</figcaption>
+    </figure>
+    <div class="sim" id="sim-ingest">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>수집 한 바퀴 — BM25 원 논문을 넣으면 생기는 일</h3></div>
+      <div class="sim-body">
+        <div class="sim-view"><canvas id="ig-cv"></canvas></div>
+        <div class="sim-controls row">
+          <div class="btns"><button class="btn" id="ig-prev">◀ 이전</button><button class="btn primary" id="ig-play">▶ 재생</button><button class="btn" id="ig-next">다음 ▶</button></div>
+          <span class="mono" id="ig-step" style="font-size:13px;color:var(--text-dim)"></span>
+        </div>
+        <div class="verdict" id="ig-say">—</div>
+        <div class="code"><div class="bar" id="ig-file">—</div><pre id="ig-diff"></pre></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">단계</span><span class="v" id="ig-o1">—</span></div>
+        <div class="stat"><span class="k">수정한 페이지</span><span class="v" id="ig-o2">—</span></div>
+        <div class="stat"><span class="k">새로 만든 페이지</span><span class="v" id="ig-o3">—</span></div>
+        <div class="stat"><span class="k">누적 토큰 (읽기+쓰기)</span><span class="v" id="ig-o4">—</span></div>
+      </div>
+      <div class="sim-note">읽을 것: 노란 원천 하나에서 시작해 보라 페이지들이 차례로 밝아진다. 초록 테두리는 새로 만든 페이지, 빨강은 모순을 표시한 페이지다. ① 3단계까지는 원천 하나에 페이지 하나, 단순한 요약기와 같다. ② 4단계에서 기존 개념 페이지 다섯 개가 한꺼번에 바뀐다. 사람이라면 가장 미루고 싶은 일이다. ③ 5단계에서 BM25의 <code>k1</code> 권장 범위가 기존 페이지와 다르다는 것을 발견하고, 지우지 않고 두 출처를 나란히 적는다. ④ 끝나면 원천 하나에 페이지 열한 개가 바뀌었다. 토큰의 대부분은 원문 읽기가 아니라 기존 페이지를 열어 고쳐 쓰는 데 든다. (주장 옆의 ¶ 위치 표시와 블로그 출처는 설명을 위한 예시다.)</div>
+    </div>
+  </section>
+
+  <section id="fanout">
+    <h2>팬아웃: 수집 한 번은 몇 페이지를 건드리나</h2>
+    <p>수집 한 번이 건드리는 페이지의 수를 <span class="term">팬아웃</span><span class="en">fan-out</span>이라 하자. 팬아웃은 두 가지에 달려 있다. 원천이 몇 개의 개념과 개체를 언급하는가, 그리고 그 개념의 페이지가 이미 있는가. 위키 초기에는 거의 모든 개념이 처음 등장하므로 <b>새 페이지</b>가 많이 생긴다. 위키가 자라면 새 원천의 개념 대부분은 이미 페이지가 있어서 <b>갱신</b>이 늘어난다. 분야의 개념이 몇몇에 몰려 있을수록(인기 개념이 자주 등장할수록) 이 전환이 빨리 온다.</p>
+    <div class="formula"><div class="eq">팬아웃 = 3 + Σ<sub>개념 i ∈ 원천</sub> [ 페이지 있음 ? 갱신 : 생성 ] + 교차 링크 갱신<br><var>P</var>(개념 i가 이미 있음) = 1 − (1 − <var>π</var><sub>i</sub>)<sup><var>t</var> · <var>e</var></sup></div>
+      <div class="where">3: 요약 페이지, 색인, 기록. <var>e</var>: 원천 하나가 언급하는 개념 수, <var>π</var><sub>i</sub>: 개념 i가 언급될 확률(지프 분포), <var>t</var>: 지금까지의 수집 횟수. 교차 링크 갱신은 새로 만든 페이지를 가리키도록 고치는 기존 페이지. 단순화된 모형이다.</div></div>
+    <div class="sim" id="sim-fan">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>팬아웃 시뮬레이터 — 원천 100개를 차례로 수집하기</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="fn-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>분야의 개념 수 U <output id="fn-u-out"></output></span><input type="range" id="fn-u" min="50" max="2000" step="50" value="400"></label>
+          <label class="ctrl"><span>원천당 언급 개념 e <output id="fn-e-out"></output></span><input type="range" id="fn-e" min="2" max="20" step="1" value="8"></label>
+          <label class="ctrl"><span>개념 쏠림 (지프 지수) <output id="fn-z-out"></output></span><input type="range" id="fn-z" min="0" max="1.5" step="0.05" value="1"></label>
+          <label class="ctrl"><span>보고 있는 수집 회차 <output id="fn-t-out"></output></span><input type="range" id="fn-t" min="1" max="100" step="1" value="60"></label>
+          <div class="legend"><span><i style="background:var(--env)"></i>새 페이지</span><span><i style="background:var(--state)"></i>갱신</span><span><i style="background:var(--ctx)"></i>교차 링크</span><span><i style="background:var(--text-faint)"></i>요약·색인·기록</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">이 회차의 팬아웃</span><span class="v" id="fn-o1">—</span></div>
+        <div class="stat"><span class="k">그중 새 페이지</span><span class="v" id="fn-o2">—</span></div>
+        <div class="stat"><span class="k">누적 페이지 수</span><span class="v" id="fn-o3">—</span></div>
+        <div class="stat"><span class="k">100회 평균 팬아웃</span><span class="v" id="fn-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값(개념 400, 원천당 8, 쏠림 1)에서 팬아웃은 열한 페이지에서 출발해 열둘, 열셋 사이를 오간다. 카파시의 메모가 말한 “열에서 열다섯 페이지” 범위 안이다. 처음에는 초록(새 페이지)이 많고 점점 보라(갱신)가 대부분이 된다. ② 쏠림을 0으로 내리면 개념이 고르게 퍼져 새 페이지가 오래 계속 생긴다. 넓고 얕은 분야다. ③ 원천당 개념을 20으로 올리면 팬아웃이 스물을 넘는다. 이런 원천은 한 번에 다 반영하지 말고 나눠서 수집하는 편이 안전하다. ④ 점선(누적 페이지 수)의 기울기가 점점 완만해진다. 새 원천이 가져오는 처음 보는 개념이 줄기 때문이다. 위키가 분야를 덮어 가는 모습이다.</div>
+    </div>
+  </section>
+
+  <section id="order">
+    <h2>하나씩, 사람과 함께</h2>
+    <p>원천 백 개를 한꺼번에 넣고 밤새 수집시키면 편하다. 하지만 카파시는 <b>한 번에 하나씩, 사람이 곁에서</b> 수집하는 쪽을 권한다. 에이전트가 요약을 쓰면 사람이 읽고 “이 부분이 더 중요하다”, “이 저자는 다른 논문의 그 사람이다” 같은 판단을 보탠다. 그 대화가 스키마의 규칙을 다듬는다. 한꺼번에 수집은 사람의 판단이 빠진 대신 빠르다. 위키가 안정되고 스키마가 무르익은 뒤라면 일괄 수집도 괜찮다. 어느 쪽이든 순서는 같다. 아래 걸음들을 올바른 순서로 맞춰 보자.</p>
+    <div class="sim" id="sim-order">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>수집 순서 맞추기 — 여덟 걸음 정렬</h3></div>
+      <div class="sim-body">
+        <div class="order" id="od-list"></div>
+        <div class="btns"><button class="btn primary" id="od-check">순서 확인</button><button class="btn" id="od-shuf">다시 섞기</button></div>
+        <div class="verdict" id="od-fb">▲▼ 버튼으로 순서를 바꾼 뒤 확인을 누르세요.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">제자리에 있는 걸음</span><span class="v" id="od-o1">—</span></div>
+        <div class="stat"><span class="k">시도</span><span class="v" id="od-o2">0</span></div>
+      </div>
+      <div class="sim-note">힌트: 요약 페이지는 다른 페이지가 출처로 링크할 대상이므로 갱신보다 먼저 있어야 한다. 사람과의 대화는 무엇을 강조할지 정하므로 페이지를 쓰기 전이 좋다. 커밋은 모든 변경이 끝난 뒤 한 번.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>수집은 <b>읽기 → 추출 → 요약 → 갱신 → 모순 표시 → 색인 → 기록</b>의 일곱 걸음이다. 갱신과 모순 표시는 같은 순간에 일어난다.</li>
+      <li>위키를 위키로 만드는 것은 요약이 아니라 <b>기존 페이지의 갱신</b>이다. 원천 하나가 열 페이지 남짓을 바꾼다.</li>
+      <li>팬아웃은 원천이 언급하는 개념 수와 이미 있는 페이지의 비율에 달려 있다. 위키가 자랄수록 생성이 줄고 갱신이 는다.</li>
+      <li>처음에는 한 번에 하나씩, 사람과 함께 수집한다. 그 대화가 스키마를 다듬는다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 수집에서 모순을 발견하기 가장 좋은 때는?</p><div class="opts">
+        <button class="opt">원천을 읽기 전</button>
+        <button class="opt" data-correct>기존 페이지를 열어 새 주장을 넣으려 할 때</button>
+        <button class="opt">기록을 쓴 뒤</button>
+      </div><div class="quiz-exp">갱신하려고 기존 내용을 읽는 바로 그 순간, 새 주장과 옛 주장이 같은 컨텍스트에 나란히 놓인다.</div></div>
+      <div class="quiz-q"><p>2. 위키가 수백 페이지로 자란 뒤 새 원천을 수집하면 팬아웃의 구성은 대체로 어떻게 바뀌나?</p><div class="opts">
+        <button class="opt">새 페이지가 대부분이 된다</button>
+        <button class="opt" data-correct>기존 페이지의 갱신이 대부분이 된다</button>
+        <button class="opt">팬아웃이 0이 된다</button>
+      </div><div class="quiz-exp">원천이 언급하는 개념 대부분은 이미 페이지가 있다. 그래서 위키가 성숙할수록 수집은 쓰기보다 고치기가 된다.</div></div>
+      <div class="quiz-q"><p>3. 요약 페이지를 관련 페이지 갱신보다 먼저 쓰는 이유는?</p><div class="opts">
+        <button class="opt">요약이 가장 짧아서</button>
+        <button class="opt" data-correct>갱신되는 페이지들이 요약 페이지를 출처로 링크하기 때문에</button>
+        <button class="opt">색인에 먼저 올려야 해서</button>
+      </div><div class="quiz-exp">개념 페이지에 “[[lewis-2020-rag]]에 따르면…”이라고 쓰려면 그 링크 대상이 먼저 있어야 한다.</div></div>
+      <div class="quiz-q"><p>4. 원천 하나가 개념을 스무 개 넘게 언급한다면?</p><div class="opts">
+        <button class="opt">요약 페이지만 쓰고 끝낸다</button>
+        <button class="opt" data-correct>장이나 절 단위로 나눠 여러 번 수집한다</button>
+        <button class="opt">모든 개념을 한 페이지에 몰아 쓴다</button>
+      </div><div class="quiz-exp">팬아웃이 너무 크면 한 컨텍스트에서 고칠 페이지가 많아져 실수가 는다. 나눠서 수집하면 각 회차의 팬아웃이 관리할 만해진다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 수집 한 바퀴 ---------------- */
+(function () {
+  /* 페이지 배치 (0..1 좌표) */
+  const N = {
+    raw: { x: 0.08, y: 0.5, t: "raw/robertson-2009.pdf", k: "tool" },
+    sum: { x: 0.33, y: 0.2, t: "sources/robertson-2009", k: "state" },
+    bm25: { x: 0.55, y: 0.14, t: "concepts/bm25", k: "state" },
+    tfidf: { x: 0.78, y: 0.12, t: "concepts/tf-idf", k: "state" },
+    prob: { x: 0.62, y: 0.4, t: "concepts/확률적 관련성", k: "state" },
+    hyb: { x: 0.86, y: 0.36, t: "concepts/hybrid-search", k: "state" },
+    emb: { x: 0.85, y: 0.62, t: "concepts/embedding-search", k: "state" },
+    rob: { x: 0.36, y: 0.58, t: "entities/스티븐 로버트슨", k: "state" },
+    zar: { x: 0.36, y: 0.84, t: "entities/휴고 사라고사", k: "state" },
+    rag: { x: 0.62, y: 0.7, t: "concepts/rag", k: "state" },
+    idx: { x: 0.6, y: 0.93, t: "index.md", k: "env" },
+    log: { x: 0.85, y: 0.9, t: "log.md", k: "env" },
+  };
+  const E = [["sum", "bm25"], ["sum", "rob"], ["sum", "zar"], ["sum", "prob"], ["bm25", "tfidf"], ["bm25", "prob"], ["bm25", "hyb"], ["hyb", "emb"], ["rag", "bm25"], ["rob", "zar"], ["rag", "emb"]];
+  const S = [
+    { say: "① 원천 읽기 — 로버트슨·사라고사의 2009년 개관 논문 「확률적 관련성 틀: BM25와 그 너머」 전체를 읽는다.", on: ["raw"], tok: 14000, file: "raw/robertson-2009.pdf", diff: "<span class=\"c\">(원천은 읽기만 한다. 이 파일은 바뀌지 않는다)</span>" },
+    { say: "② 주장과 개체 추출 — 주장 9개, 개념 5개, 인물 2명을 뽑는다. 각 주장에 원문 위치(문단 번호)를 붙여 둔다.", on: ["raw"], tok: 1800, file: "작업 메모 (컨텍스트 안)", diff: "주장 1  BM25는 확률적 관련성 틀에서 나왔다          ¶3\n주장 2  k1은 단어 빈도의 포화 속도를 정한다         ¶41\n주장 3  k1은 보통 1.2~2.0 범위에서 고른다          ¶44\n주장 4  b는 문서 길이 정규화의 세기, 흔히 0.75      ¶44\n주장 5  BM25F는 제목·본문 같은 필드별 가중치를 준다  ¶88\n…\n개념: BM25, TF-IDF, 확률적 관련성, BM25F, 문서 길이 정규화\n인물: 스티븐 로버트슨, 휴고 사라고사" },
+    { say: "③ 요약 페이지 쓰기 — sources/robertson-2009.md를 새로 만든다. 다른 페이지들이 이것을 출처로 링크한다.", on: ["sum"], neu: ["sum"], edge: [], tok: 2400, file: "wiki/sources/robertson-2009.md (새 파일)", diff: "<span class=\"add\">+ ---\n+ type: source\n+ raw: raw/robertson-2009.pdf\n+ ---\n+ # Robertson · Zaragoza 2009 — 확률적 관련성 틀\n+ BM25의 이론적 뿌리와 매개변수 k1, b의 의미를 정리한 개관.\n+ ## 주장\n+ - k1은 보통 1.2~2.0 (¶44) …</span>" },
+    { say: "④ 관련 페이지 갱신 — BM25, TF-IDF, 하이브리드 검색, 임베딩 검색, RAG 개념 페이지 다섯 개를 열어 새 사실과 출처 링크를 보탠다. 없던 ‘확률적 관련성’ 개념과 두 저자 페이지는 새로 만든다.", on: ["bm25", "tfidf", "hyb", "emb", "rag", "prob", "rob", "zar"], neu: ["prob", "rob", "zar"], edge: ["sum-bm25", "sum-rob", "sum-zar", "sum-prob", "bm25-prob", "rob-zar"], tok: 8 * 2400, file: "wiki/concepts/bm25.md", diff: "  # BM25\n  질의의 단어가 문서에 몇 번 나오는지 …\n  ## 매개변수\n<span class=\"del\">- k1: 같은 단어가 반복될 때 점수가 포화되는 속도</span><span class=\"add\">+ k1: 같은 단어가 반복될 때 점수가 포화되는 속도. 보통 1.2~2.0 ([[robertson-2009]] ¶44)\n+ ## 뿌리\n+ [[확률적 관련성]] 틀에서 유도됐다 ([[robertson-2009]])</span>" },
+    { say: "⑤ 모순 표시 — 기존 하이브리드 검색 페이지는 ‘k1 = 0.9가 기본’이라고 적고 있다(블로그 출처). 새 원천은 1.2~2.0을 권한다. 지우지 않고 둘 다 적고 ⚠ 표시를 남긴다.", on: ["hyb"], bad: ["hyb"], tok: 1600, file: "wiki/concepts/hybrid-search.md", diff: "  ## BM25 설정\n<span class=\"add\">+ ⚠ 출처 충돌: k1 기본값\n+   - 0.9 — [[search-blog-2025]] (실무 블로그, 특정 라이브러리 기본값)\n+   - 1.2~2.0 — [[robertson-2009]] (개관 논문의 권장 범위)\n+   → 라이브러리 기본값과 이론적 권장 범위의 차이로 보임. 린트에서 재확인.</span>" },
+    { say: "⑥ 색인 갱신 — 새 페이지 네 개를 분류에 맞게 넣고, 바뀐 페이지의 한 줄 요약을 고친다.", on: ["idx"], tok: 1500, file: "wiki/index.md", diff: "  ## 개념\n  - [[bm25|BM25]] — 단어 빈도 기반 키워드 검색 점수\n<span class=\"add\">+ - [[확률적 관련성]] — BM25가 나온 이론적 틀</span>\n  ## 원천 요약\n<span class=\"add\">+ - [[robertson-2009]] — BM25 개관 (2009)</span>\n  ## 인물\n<span class=\"add\">+ - [[스티븐 로버트슨]] · [[휴고 사라고사]]</span>" },
+    { say: "⑦ 기록 덧붙이기와 커밋 — log.md 맨 끝에 한 항목을 덧붙이고 git commit. 사람은 옵시디언에서 바뀐 페이지를 훑어본다.", on: ["log"], tok: 400, file: "wiki/log.md", diff: "<span class=\"add\">+ ## [2026-11-21] ingest | Robertson·Zaragoza 2009 BM25 개관\n+ 새 페이지 4, 갱신 7: robertson-2009, 확률적 관련성, 로버트슨, 사라고사,\n+ bm25, tf-idf, hybrid-search(⚠ k1 충돌), embedding-search, rag, index, log</span>\n<span class=\"c\">$ git commit -am \"ingest: robertson-2009 (+4 ~7)\"</span>" },
+  ];
+  let k = 0, play = 0;
+  const cv = WK.canvas("ig-cv", { aspect: 0.5, draw });
+  const doneSet = (key) => { const s = new Set(); for (let i = 0; i <= k; i++) (S[i][key] || []).forEach((x) => s.add(x)); return s; };
+  function draw(c, w, h) {
+    c.font = "10.5px " + WK.monoFont();
+    const BW = {}; Object.keys(N).forEach((n) => (BW[n] = Math.ceil(c.measureText(N[n].t).width) + 18));
+    const X = (n) => 12 + N[n].x * (w - 24 - BW[n]), Y = (n) => 22 + N[n].y * (h - 48);
+    const neu = doneSet("neu"), bad = doneSet("bad"), edges = doneSet("edge");
+    const touched = new Set(); for (let i = 0; i <= k; i++) S[i].on.forEach((x) => touched.add(x));
+    const cur = new Set(S[k].on);
+    const NEW = ["sum", "prob", "rob", "zar"], vis = (n) => !NEW.includes(n) || neu.has(n);
+    E.forEach(([a, b]) => {
+      if (!vis(a) || !vis(b)) return;
+      const nw = edges.has(a + "-" + b);
+      WK.line(c, [[X(a) + BW[a] / 2, Y(a)], [X(b) + BW[b] / 2, Y(b)]], WK.alpha(WK.col(nw ? "accent" : "state"), nw ? 0.75 : 0.3), nw ? 2 : 1.2);
+    });
+    // 원천 → 현재 단계 대상 빔
+    if (k >= 2) S[k].on.forEach((n) => { if (n !== "raw") WK.arrow(c, X("raw") + BW.raw, Y("raw"), X(n) + 4, Y(n), WK.alpha(WK.col("accent"), 0.55), { dash: [4, 4], w: 1.4 }); });
+    Object.keys(N).forEach((n) => {
+      if (!vis(n)) return;
+      const x = X(n), y = Y(n), bw = BW[n], bh = 24, col = WK.col(N[n].k);
+      const on = cur.has(n), was = touched.has(n);
+      c.save();
+      if (on) { c.fillStyle = WK.alpha(WK.col("accent"), 0.16); WK.rrect(c, x - 5, y - bh / 2 - 5, bw + 10, bh + 10, 9); c.fill(); }
+      c.fillStyle = WK.col("bg-elev"); WK.rrect(c, x, y - bh / 2, bw, bh, 6); c.fill();
+      c.fillStyle = WK.alpha(col, was ? 0.28 : 0.1); c.fill();
+      c.lineWidth = bad.has(n) ? 2.4 : neu.has(n) ? 2.2 : 1.2;
+      c.strokeStyle = bad.has(n) ? WK.col("guard") : neu.has(n) ? WK.col("env") : WK.alpha(col, 0.8);
+      c.stroke();
+      c.restore();
+      WK.text(c, N[n].t, x + 8, y, { size: 10.5, mono: true, color: was ? WK.col("text") : WK.col("text-faint") });
+      if (bad.has(n)) WK.text(c, "⚠", x - 16, y, { size: 13, color: WK.col("guard") });
+    });
+    const edited = [...touched].filter((n) => n !== "raw");
+    WK.set("ig-o1", `${k + 1} / ${S.length}`);
+    WK.set("ig-o2", `${edited.length}개`, edited.length >= 10 ? "warn" : "");
+    WK.set("ig-o3", `${neu.size}개`);
+    WK.set("ig-o4", WK.si(S.slice(0, k + 1).reduce((a, s) => a + s.tok, 0)));
+  }
+  function show() {
+    const s = S[k];
+    WK.el("ig-say").innerHTML = WK.esc(s.say);
+    WK.el("ig-say").style.setProperty("--k", s.bad ? "var(--guard)" : k >= 5 ? "var(--env)" : "var(--accent)");
+    WK.el("ig-file").textContent = s.file;
+    WK.el("ig-diff").innerHTML = s.diff;
+    WK.set("ig-step", `단계 ${k + 1} / ${S.length}`);
+    cv.redraw();
+  }
+  WK.el("ig-prev").addEventListener("click", () => { k = Math.max(0, k - 1); show(); });
+  WK.el("ig-next").addEventListener("click", () => { k = Math.min(S.length - 1, k + 1); show(); });
+  WK.player("ig-play", WK.el("sim-ingest"), (dt) => {
+    play += dt;
+    if (play > 2.2) { play = 0; if (k >= S.length - 1) { k = 0; show(); return false; } k++; show(); }
+  });
+  show();
+})();
+
+/* ---------------- 2. 팬아웃 시뮬레이터 ---------------- */
+(function () {
+  const T = 100;
+  let R = [];
+  function sim() {
+    const U = WK.val("fn-u"), e = WK.val("fn-e"), z = WK.val("fn-z"), r = WK.rng(17);
+    const w = Array.from({ length: U }, (_, i) => 1 / Math.pow(i + 1, z)), Sw = w.reduce((a, b) => a + b, 0);
+    const cum = []; let acc = 0; w.forEach((v) => { acc += v / Sw; cum.push(acc); });
+    const draw1 = () => { const u = r(); let lo = 0, hi = U - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < u) lo = m + 1; else hi = m; } return lo; };
+    const have = new Set(); R = [];
+    for (let t = 0; t < T; t++) {
+      const picked = new Set(); let guard = 0;
+      while (picked.size < Math.min(e, U) && guard++ < e * 40) picked.add(draw1());
+      let neu = 0, upd = 0;
+      picked.forEach((c) => (have.has(c) ? upd++ : (neu++, have.add(c))));
+      // 새 페이지마다 그 페이지를 가리키도록 고칠 기존 페이지 (위키가 클수록 조금 더)
+      const cross = have.size > neu ? Math.round(neu * Math.min(1, 0.25 + have.size / 800)) : 0;
+      R.push({ neu, upd, cross, fixed: 3, total: 3 + neu + upd + cross, pages: have.size + (t + 1) + 2 });
+    }
+  }
+  const cv = WK.canvas("fn-cv", { aspect: 0.66, draw });
+  function draw(c, w, h) {
+    const t = WK.val("fn-t") - 1;
+    const yMax = Math.max(20, Math.ceil(Math.max(...R.map((x) => x.total)) / 5) * 5);
+    const box = { l: 40, t: 14, r: w - 12, b: h - 42 };
+    const A = WK.axes(c, { box, x: [0, T], y: [0, yMax], xt: [0, 25, 50, 75, 100], yt: [0, yMax / 2, yMax].map(Math.round), xl: "수집 회차", yl: "팬아웃 (페이지)" });
+    const bw = (box.r - box.l) / T;
+    R.forEach((x, i) => {
+      let y = 0;
+      [["fixed", "text-faint"], ["neu", "env"], ["upd", "state"], ["cross", "ctx"]].forEach(([key, col]) => {
+        const v = x[key]; if (!v) return;
+        c.fillStyle = WK.alpha(WK.col(col), i === t ? 1 : 0.62);
+        c.fillRect(box.l + i * bw + 0.5, A.Y(y + v), Math.max(1, bw - 1), A.Y(y) - A.Y(y + v));
+        y += v;
+      });
+    });
+    c.save(); c.strokeStyle = WK.col("accent"); c.lineWidth = 1.6; c.beginPath(); c.moveTo(box.l + (t + 0.5) * bw, box.t); c.lineTo(box.l + (t + 0.5) * bw, box.b); c.stroke(); c.restore();
+    // 누적 페이지 (오른쪽 축)
+    const pMax = Math.max(...R.map((x) => x.pages)) * 1.1;
+    WK.line(c, R.map((x, i) => [box.l + (i + 0.5) * bw, box.b - (x.pages / pMax) * (box.b - box.t)]), WK.col("accent"), 2, [5, 4]);
+    WK.text(c, "점선 = 누적 페이지 (최대 " + WK.si(pMax / 1.1) + ")", box.l + 6, box.t + 8, { size: 10.5, color: WK.col("accent") });
+    const x = R[t], avg = R.reduce((a, b) => a + b.total, 0) / T;
+    WK.set("fn-o1", `${x.total}페이지`, x.total > 20 ? "bad" : x.total >= 10 ? "" : "warn");
+    WK.set("fn-o2", `${x.neu}개`);
+    WK.set("fn-o3", `${x.pages}개`);
+    WK.set("fn-o4", avg.toFixed(1) + "페이지");
+  }
+  WK.fanSim = () => { sim(); return R; };
+  const up = () => { sim(); cv.redraw(); };
+  WK.wire(["fn-u", "fn-e", "fn-z"], up, { "fn-z": (v) => v.toFixed(2) });
+  WK.wire(["fn-t"], () => cv.redraw(), { "fn-t": (v) => v + "회" });
+})();
+
+/* ---------------- 3. 수집 순서 맞추기 ---------------- */
+(function () {
+  const STEPS = ["원천 파일 전체를 읽는다", "핵심 주장과 강조점을 사람과 이야기한다", "주장·개념·인물을 뽑아 원문 위치를 붙인다", "요약 페이지를 새로 쓴다", "관련 개념·엔티티 페이지를 열어 갱신한다", "기존 주장과 충돌하는 곳에 ⚠ 표시를 남긴다", "색인에 새 페이지를 넣고 요약을 고친다", "기록에 한 항목을 덧붙이고 커밋한다"];
+  const list = WK.el("od-list");
+  let cur = [], tries = 0;
+  const r = WK.rng(3);
+  function shuffle() { cur = STEPS.map((_, i) => i); do { for (let i = cur.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [cur[i], cur[j]] = [cur[j], cur[i]]; } } while (cur.every((v, i) => v === i)); render(); WK.el("od-fb").textContent = "▲▼ 버튼으로 순서를 바꾼 뒤 확인을 누르세요."; WK.el("od-fb").style.removeProperty("--k"); WK.set("od-o1", "—"); }
+  function render(mark) {
+    list.innerHTML = cur.map((s, i) => `<div class="it${mark ? (s === i ? " ok" : " no") : ""}"><span class="n">${i + 1}</span><span class="tx">${STEPS[s]}</span><button data-i="${i}" data-d="-1" aria-label="위로">▲</button><button data-i="${i}" data-d="1" aria-label="아래로">▼</button></div>`).join("");
+  }
+  list.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const i = +b.dataset.i, j = i + +b.dataset.d; if (j < 0 || j >= cur.length) return;
+    [cur[i], cur[j]] = [cur[j], cur[i]]; render();
+  });
+  WK.el("od-check").addEventListener("click", () => {
+    tries++; render(true);
+    const ok = cur.filter((s, i) => s === i).length;
+    WK.set("od-o1", `${ok} / ${STEPS.length}`, ok === STEPS.length ? "good" : "");
+    WK.set("od-o2", String(tries));
+    const fb = WK.el("od-fb");
+    fb.style.setProperty("--k", ok === STEPS.length ? "var(--env)" : "var(--guard)");
+    fb.innerHTML = ok === STEPS.length ? "<b>완벽합니다</b> — 읽고, 사람과 이야기하고, 쪼개고, 요약하고, 갱신하며 충돌을 표시하고, 색인과 기록으로 마무리." : `<b>${ok}개가 제자리</b> — 초록은 맞고 빨강은 자리를 옮겨야 합니다.`;
+  });
+  WK.el("od-shuf").addEventListener("click", shuffle);
+  shuffle();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WikiBook · LLM 위키와 에이전트 지식 교과서</title>
+<meta name="description" content="질문마다 원문을 다시 뒤지는 대신 에이전트가 위키를 쓰고 고치며 지식을 쌓는다면? 원천·위키·스키마, 수집·질의·린트, 페이지와 링크 그래프, 검색, 출처, 스킬, 함께 쓰는 위키를 애니메이션 도해와 36개 실험으로 배우는 교과서.">
+<meta name="theme-color" content="#0c111d">
+<meta property="og:type" content="website">
+<meta property="og:title" content="WikiBook · LLM 위키와 에이전트 지식 교과서">
+<meta property="og:description" content="매번 다시 찾지 말고, 한 번 정리해 쌓아 두자 — 슬라이더를 움직이며 배우는 LLM 위키 설계.">
+<meta property="og:image" content="cover.svg">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/common.js"></script>
+<style>
+  .chain svg { min-width: 900px; }
+  .chain a:hover rect, .chain a:hover circle { filter: brightness(1.06); stroke-width: 2.4; }
+  .chain a { cursor: pointer; }
+</style>
+</head>
+<body data-root="">
+
+<main>
+<section class="home-hero">
+  <div class="inner">
+    <div>
+      <div class="eyebrow">Interactive LLM Wiki &amp; Agent Knowledge Textbook</div>
+      <h1>매번 다시 찾지 말고<br><span class="grad">한 번 정리해 쌓아 두자</span></h1>
+      <p>논문 서른 편을 모아 두고 에이전트에게 질문한다고 해 보자. 흔한 방법은 질문이 올 때마다 원문 조각을 검색해 읽히는 것이다. 다음 질문이 오면 같은 조각을 또 찾고, 같은 종합을 또 한다. 아무것도 쌓이지 않는다. 이 책은 반대 방향을 다룬다. <b>에이전트가 자료를 읽을 때마다 서로 링크된 위키 페이지를 직접 쓰고 고쳐서, 지식이 질문과 함께 불어나게 하는 방법</b>이다. 수집·질의·린트의 한 바퀴부터 검색, 출처, 스킬, 함께 쓰는 위키까지 슬라이더로 확인한다.</p>
+      <div class="cta">
+        <a class="primary" href="chapters/why.html">1장부터 시작하기 →</a>
+        <a class="ghost" href="chapters/why.html#sim-cost">검색 vs 위키 비용 계산기 열기</a>
+      </div>
+      <div class="hero-badges">
+        <span>12개 챕터</span><span>36개 인터랙티브 실험</span><span>애니메이션 도해</span><span>개발자 · 연구자 · 지식 관리자</span>
+      </div>
+    </div>
+    <div class="hero-viz" id="hero" aria-label="가운데에 위키 페이지들이 링크로 이어진 3D 지식 그래프가 돌고 있다. 위에서 노란 원천 문서가 떨어지면 파란 에이전트가 읽고 관련 페이지 여러 개를 밝히며 새 링크를 잇는다. 사람의 질문이 들어오면 청록 빛이 색인에서 페이지를 따라가고, 좋은 답은 새 페이지가 된다. 가끔 린트가 빨간 모순 페이지를 찾아 고친다.">
+      <canvas></canvas>
+      <span class="hint">드래그해서 돌려 보세요 · 점 하나 = 위키 페이지 하나</span>
+      <div class="term-log" aria-live="off"></div>
+    </div>
+  </div>
+</section>
+
+<section class="home-section">
+  <h2>LLM 위키의 한 바퀴</h2>
+  <p class="sub">한 문장으로: <b>사람은 자료를 고르고 질문을 던진다. 에이전트는 원천을 읽어 위키 페이지를 쓰고 고치며(수집), 색인을 따라 페이지를 열어 답하고 좋은 답은 다시 페이지로 남기며(질의), 가끔 위키 전체를 점검해 모순과 낡은 내용을 고친다(린트). 이 모든 규칙은 스키마 파일 하나에 적혀 있다.</b> 블록을 누르면 해당 장으로 이동합니다.</p>
+  <figure class="diagram chain">
+    <svg viewBox="0 0 1120 496" role="img" aria-label="LLM 위키의 흐름: 사람이 원천 자료를 고르고, 에이전트가 수집해 위키를 쓰고, 질의로 답하고 답을 다시 위키에 남기며, 린트로 점검한다. 스키마가 전체 규칙을 정한다.">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="arrm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--state)"/></marker>
+        <marker id="arrt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--tool)"/></marker>
+        <marker id="arrc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--ctx)"/></marker>
+        <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--guard)"/></marker>
+        <marker id="arrh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent-2)"/></marker>
+      </defs>
+      <text x="560" y="488" text-anchor="middle" class="t-dim">노랑 = 원천 자료 · 파랑 = 에이전트의 작업 · 보라 = 위키 페이지 · 청록 = 질문과 답 · 빨강 = 린트가 찾는 문제 · 주황 = 사람</text>
+      <!-- 사람 -->
+      <a href="chapters/why.html"><g transform="translate(14,54)">
+        <rect width="118" height="120" rx="12" class="f-acc2-soft"/>
+        <circle cx="59" cy="38" r="14" fill="none" stroke="var(--accent-2)" stroke-width="2.4"/><path d="M33 80 C 33 60, 85 60, 85 80" fill="none" stroke="var(--accent-2)" stroke-width="2.4"/>
+        <text x="59" y="102" text-anchor="middle" class="t-b">사람 큐레이터</text>
+        <text x="59" y="140" text-anchor="middle" class="t-mono">Ch.01</text>
+      </g></a>
+      <!-- 원천 -->
+      <a href="chapters/anatomy.html"><g transform="translate(14,214)">
+        <rect width="118" height="146" rx="12" class="soft-tool"/>
+        <text x="59" y="24" text-anchor="middle" class="t-b">원천 자료</text>
+        <g transform="translate(26,36)"><rect x="8" y="0" width="44" height="54" rx="4" class="f-elev" stroke="var(--tool)"/><rect x="4" y="4" width="44" height="54" rx="4" class="f-elev" stroke="var(--tool)"/><rect x="0" y="8" width="44" height="54" rx="4" class="f-elev" stroke="var(--tool)"/><path d="M8 22h28M8 30h22M8 38h28M8 46h16" stroke="var(--tool)" stroke-width="2"/></g>
+        <text x="59" y="118" text-anchor="middle" class="t-mono" style="font-size:9.5px">raw/ · 읽기 전용</text>
+        <text x="59" y="164" text-anchor="middle" class="t-mono">Ch.02</text>
+      </g></a>
+      <path d="M73 178 V208" stroke="var(--accent-2)" stroke-width="2" marker-end="url(#arrh)"/>
+      <text x="96" y="200" class="t-mono" style="font-size:9.5px;fill:var(--accent-2)">고른다</text>
+      <!-- 수집 -->
+      <a href="chapters/ingest.html"><g transform="translate(160,232)">
+        <rect width="140" height="112" rx="12" class="f-acc-soft"/>
+        <text x="70" y="24" text-anchor="middle" class="t-b">수집 ingest</text>
+        <circle cx="70" cy="56" r="18" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-dasharray="6 4" class="flow"/>
+        <circle cx="70" cy="56" r="6" fill="var(--accent)"/>
+        <text x="70" y="96" text-anchor="middle" class="t-mono" style="font-size:9.5px">읽고 · 쓰고 · 고치고</text>
+        <text x="70" y="132" text-anchor="middle" class="t-mono">Ch.03</text>
+      </g></a>
+      <path d="M134 288 H156" stroke="var(--tool)" stroke-width="2" marker-end="url(#arrt)"/>
+      <path d="M302 288 H332" stroke="var(--accent)" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- 스키마 띠 -->
+      <a href="chapters/schema.html"><g transform="translate(336,32)">
+        <rect width="430" height="30" rx="8" class="f-elev" stroke="var(--accent)"/>
+        <text x="215" y="20" text-anchor="middle" class="t" style="fill:var(--accent)">스키마 · CLAUDE.md / AGENTS.md — 구조·형식·절차의 규칙 (Ch.10)</text>
+      </g></a>
+      <!-- 위키 -->
+      <rect x="336" y="72" width="430" height="290" rx="18" class="soft-state"/>
+      <text x="356" y="96" class="t-b" style="fill:var(--state)">위키 wiki/ · 에이전트가 소유한다</text>
+      <a href="chapters/anatomy.html"><g transform="translate(356,112)">
+        <rect width="104" height="22" rx="5" class="f-elev"/><text x="10" y="15" class="t-mono" style="font-size:10px">index.md 색인</text>
+        <rect y="28" width="104" height="22" rx="5" class="f-elev"/><text x="10" y="43" class="t-mono" style="font-size:10px">log.md 기록</text>
+      </g></a>
+      <a href="chapters/pages.html"><g transform="translate(356,184)">
+        <rect width="104" height="80" rx="8" class="f-elev" stroke="var(--state)"/>
+        <text x="52" y="18" text-anchor="middle" class="t-mono" style="font-size:9.5px">entities/ · concepts/</text>
+        <text x="52" y="34" text-anchor="middle" class="t-mono" style="font-size:9.5px">sources/ · analyses/</text>
+        <path d="M14 48h76M14 58h56M14 68h68" stroke="var(--state)" stroke-width="2" opacity=".6"/>
+        <text x="52" y="100" text-anchor="middle" class="t-mono">Ch.04</text>
+      </g></a>
+      <a href="chapters/links.html"><g transform="translate(480,108)">
+        <path d="M60 40 L150 30 L200 100 L130 170 L40 140 Z M60 40 L130 100 L150 30 M130 100 L200 100 M130 100 L130 170 M130 100 L40 140 M200 100 L250 160 M250 160 L130 170" fill="none" stroke="var(--state)" stroke-width="1.8" opacity=".7"/>
+        <circle cx="130" cy="100" r="15" class="c-state" opacity=".85"/>
+        <circle cx="60" cy="40" r="9" class="c-state"/><circle cx="150" cy="30" r="9" class="c-state"/><circle cx="200" cy="100" r="9" class="c-env"/><circle cx="130" cy="170" r="9" class="c-state"/><circle cx="40" cy="140" r="9" class="c-state"/><circle cx="250" cy="160" r="8" class="c-env"/>
+        <circle cx="250" cy="40" r="7" fill="none" stroke="var(--guard)" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="250" y="24" text-anchor="middle" class="t-mono" style="font-size:9.5px;fill:var(--guard)">고아</text>
+        <text x="130" y="230" text-anchor="middle" class="t-mono">링크 그래프 · Ch.05</text>
+      </g></a>
+      <!-- 질의 -->
+      <a href="chapters/query.html"><g transform="translate(806,80)">
+        <rect width="136" height="122" rx="12" class="soft-ctx"/>
+        <text x="68" y="24" text-anchor="middle" class="t-b">질의 query</text>
+        <rect x="16" y="38" width="104" height="18" rx="9" class="f-elev" stroke="var(--ctx)"/><text x="68" y="51" text-anchor="middle" class="t-mono" style="font-size:9.5px">“A와 B의 차이?”</text>
+        <text x="68" y="76" text-anchor="middle" class="t-mono" style="font-size:9.5px">색인 → 페이지 → 링크</text>
+        <text x="68" y="92" text-anchor="middle" class="t-mono" style="font-size:9.5px">grep · BM25 · 벡터</text>
+        <text x="68" y="142" text-anchor="middle" class="t-mono">Ch.06 · Ch.07</text>
+      </g></a>
+      <path d="M770 150 H802" stroke="var(--ctx)" stroke-width="2" marker-end="url(#arrc)"/>
+      <path d="M132 90 C 250 6, 760 6, 870 76" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrh)"/>
+      <text x="150" y="40" class="t-mono" style="font-size:9.5px;fill:var(--accent-2)">질문한다</text>
+      <!-- 답 -->
+      <g transform="translate(976,92)">
+        <rect width="128" height="98" rx="12" class="f-elev" stroke="var(--ctx)"/>
+        <text x="64" y="26" text-anchor="middle" class="t-b">답 + 인용</text>
+        <path d="M18 44h92M18 56h70M18 68h84" stroke="var(--ctx)" stroke-width="2" opacity=".6"/>
+        <text x="64" y="88" text-anchor="middle" class="t-mono" style="font-size:9.5px">[[출처]] 링크</text>
+      </g>
+      <path d="M944 140 H972" stroke="var(--ctx)" stroke-width="2" marker-end="url(#arrc)"/>
+      <!-- 환류 -->
+      <path d="M1040 194 V230 Q1040 244 1026 244 H790 Q776 244 770 250" fill="none" stroke="var(--state)" stroke-width="2.2" class="flow" marker-end="url(#arrm)"/>
+      <rect x="860" y="232" width="150" height="24" rx="12" class="f-elev"/><rect x="860" y="232" width="150" height="24" rx="12" class="soft-state"/><text x="935" y="249" text-anchor="middle" class="t" style="fill:var(--state)">좋은 답 → 새 페이지</text>
+      <!-- 린트 -->
+      <a href="chapters/lint.html"><g transform="translate(806,270)">
+        <rect width="200" height="92" rx="12" class="soft-guard"/>
+        <text x="100" y="24" text-anchor="middle" class="t-b">린트 lint</text>
+        <text x="100" y="46" text-anchor="middle" class="t-mono" style="font-size:9.5px">모순 · 낡은 주장 · 고아</text>
+        <text x="100" y="62" text-anchor="middle" class="t-mono" style="font-size:9.5px">빠진 링크 · 근거 없는 주장</text>
+        <text x="100" y="82" text-anchor="middle" class="t-mono">Ch.08 · Ch.09</text>
+      </g></a>
+      <path d="M802 300 C 790 300, 784 310, 772 316" fill="none" stroke="var(--guard)" stroke-width="2" marker-end="url(#arrg)"/>
+      <path d="M772 336 C 786 344, 792 344, 802 342" fill="none" stroke="var(--guard)" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrg)"/>
+      <!-- 하단 띠 -->
+      <g transform="translate(40,384)">
+        <rect width="1040" height="76" rx="14" class="f-surface"/>
+        <text x="16" y="24" class="t-b">위키 전체를 받치는 장치</text>
+        <a href="chapters/search.html"><rect x="16" y="34" width="190" height="30" rx="8" class="soft-ctx"/><text x="111" y="54" text-anchor="middle" class="t">검색 도구 (Ch.07)</text></a>
+        <a href="chapters/provenance.html"><rect x="220" y="34" width="190" height="30" rx="8" class="soft-env"/><text x="315" y="54" text-anchor="middle" class="t">출처와 신뢰 (Ch.09)</text></a>
+        <a href="chapters/schema.html"><rect x="424" y="34" width="190" height="30" rx="8" class="f-acc-soft"/><text x="519" y="54" text-anchor="middle" class="t">스킬·점진적 공개 (Ch.10)</text></a>
+        <a href="chapters/team.html"><rect x="628" y="34" width="190" height="30" rx="8" class="soft-guard"/><text x="723" y="54" text-anchor="middle" class="t">공동 편집·격리 (Ch.11)</text></a>
+        <a href="chapters/ops.html"><rect x="832" y="34" width="192" height="30" rx="8" class="soft-state"/><text x="928" y="54" text-anchor="middle" class="t">운영·용어집 (Ch.12)</text></a>
+      </g>
+    </svg>
+    <figcaption><b>그림 0-1.</b> LLM 위키의 한 바퀴. 사람은 원천 자료를 고르고 질문을 던진다. 에이전트는 원천을 읽어 위키 페이지를 쓰고 고치고(수집), 색인과 링크를 따라 답하고 좋은 답은 새 페이지로 남기며(질의), 가끔 위키 전체를 점검한다(린트). 원천은 읽기 전용이고 위키는 에이전트가 소유한다. 어떻게 쓰고 고칠지는 스키마 파일이 정한다.</figcaption>
+  </figure>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>이 책의 색 언어</h2>
+  <p class="sub">모든 그림과 실험에서 같은 색은 같은 역할을 뜻합니다. 표지 3D 그림의 색도 같습니다.</p>
+  <div class="colorlang">
+    <div style="--k:var(--accent)"><b>LLM 에이전트</b>위키를 읽고 쓰고 고치는 에이전트, 그 작업의 흐름.</div>
+    <div style="--k:var(--accent-2)"><b>사람 · 큐레이터</b>자료를 고르고, 질문하고, 판단하는 사람.</div>
+    <div style="--k:var(--tool)"><b>원천 자료 · 비용</b>논문, 기사, 회의록 같은 원문. 그리고 토큰과 시간.</div>
+    <div style="--k:var(--state)"><b>위키 페이지 · 지식</b>정리된 페이지, 링크, 색인. 쌓이는 지식.</div>
+    <div style="--k:var(--ctx)"><b>질의 · 컨텍스트</b>질문, 검색, 컨텍스트 창에 들어간 내용, 답.</div>
+    <div style="--k:var(--env)"><b>검증 · 근거</b>출처가 확인된 주장, 건강한 페이지, 맞은 결과.</div>
+    <div style="--k:var(--guard)"><b>모순 · 오류 · 위험</b>틀린 주장, 낡은 내용, 고아 페이지, 주입 공격.</div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>숫자로 보는 LLM 위키</h2>
+  <p class="sub">이 교과서를 끝내면 아래 숫자가 왜 중요한지, 서로 어떻게 얽혀 있는지 설명할 수 있게 됩니다.</p>
+  <div class="numbers">
+    <div><b>1 → 10~15</b><span>원천 하나를 수집하면 위키 페이지 열 개 남짓이 함께 갱신된다. 사람은 지치는 일, 에이전트는 지치지 않는다 (3장)</span></div>
+    <div><b>q·k ↔ s</b><span>검색 방식은 질문 q개마다 조각 k개를 다시 읽고, 위키는 원천 s개를 한 번씩 정리한다. 질문이 많을수록 차이가 벌어진다 (1장)</span></div>
+    <div><b>n(n−1)/2</b><span>페이지 n개 사이에 생길 수 있는 링크의 수. 사람이 손으로 잇기에는 너무 빨리 는다 (5장)</span></div>
+    <div><b>1/(60+r)</b><span>역순위 융합에서 순위 r인 문서가 받는 점수. 키워드와 임베딩 검색을 합치는 가장 단순한 방법 (7장)</span></div>
+    <div><b>≈ 100개 원천</b><span>색인 파일 하나와 에이전트의 탐색만으로 검색 엔진 없이 버틸 수 있다고 보고된 규모 (7장)</span></div>
+    <div><b>1−(1−e)<sup>d</sup></b><span>오류율 e인 페이지 d개에 기대어 쓴 페이지가 오류를 물려받을 확률. 위키에서는 오류도 복리로 쌓인다 (9장)</span></div>
+    <div><b>1945</b><span>버니바 부시가 문서 사이의 연상 경로를 저장하는 메멕스를 상상한 해. 유지보수 담당이 없었을 뿐이다 (1장)</span></div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>전체 챕터</h2>
+  <p class="sub">순서대로 읽어도 좋고, 관심 있는 장부터 골라 읽어도 됩니다. 각 장은 개념 → 그림 → 수식 → 실험 → 퀴즈 순서로 구성됩니다.</p>
+  <div class="ch-grid" id="chgrid"></div>
+</section>
+
+<section class="home-section" style="padding-top:0">
+  <h2>추천 학습 경로</h2>
+  <p class="sub">목적에 따라 이렇게 읽어 보세요.</p>
+  <div class="paths">
+    <div class="path"><h3>입문 · 내 자료로 위키를 시작할 때</h3><p>읽은 논문과 기사를 에이전트에게 정리시키고 싶다면. 세 층과 한 바퀴부터.</p><div class="steps"><a href="chapters/why.html">01</a><a href="chapters/anatomy.html">02</a><a href="chapters/ingest.html">03</a><a href="chapters/query.html">06</a></div></div>
+    <div class="path"><h3>위키 하네스를 만드는 개발자</h3><p>페이지 형식, 링크, 검색, 스키마를 직접 설계해야 한다면.</p><div class="steps"><a href="chapters/pages.html">04</a><a href="chapters/links.html">05</a><a href="chapters/search.html">07</a><a href="chapters/schema.html">10</a></div></div>
+    <div class="path"><h3>지식 관리 · 신뢰 담당</h3><p>위키가 커질수록 생기는 썩음, 오류, 오염을 책임진다면.</p><div class="steps"><a href="chapters/lint.html">08</a><a href="chapters/provenance.html">09</a><a href="chapters/team.html">11</a><a href="chapters/ops.html">12</a></div></div>
+    <div class="path"><h3>팀 · 플랫폼 담당</h3><p>여러 사람과 여러 에이전트가 하나의 지식 베이스를 함께 쓴다면.</p><div class="steps"><a href="chapters/team.html">11</a><a href="chapters/schema.html">10</a><a href="chapters/search.html">07</a><a href="chapters/ops.html">12</a></div></div>
+    <div class="path"><h3>함께 읽으면 좋은 책</h3><p>에이전트의 기억, 하네스, 오래 도는 실행을 더 깊게.</p><div class="steps"><a href="../agent-memory/">RecallBook ↗</a><a href="../agent-harness/">HarnessBook ↗</a><a href="../long-running/">MarathonBook ↗</a><a href="../coding-agents/">LoopBook ↗</a><a href="../multi-agent/">ChorusBook ↗</a></div></div>
+  </div>
+</section>
+
+<section class="home-section" style="padding-top:0;padding-bottom:20px">
+  <h2>이 사이트 사용법</h2>
+  <div class="flow">
+    <div><b>읽기</b>개념과 직관을 먼저. 영어 용어는 괄호로 병기합니다.</div>
+    <div><b>보기</b>SVG 도해와 애니메이션으로 원천에서 위키, 위키에서 답까지의 흐름을 그립니다.</div>
+    <div><b>만지기</b>실험의 슬라이더를 끝까지 움직여 보세요. 극단에서 배웁니다.</div>
+    <div><b>예측하기</b>버튼을 누르기 전에 결과를 먼저 짐작해 보세요.</div>
+    <div><b>확인하기</b>장마다 퀴즈, 마지막 장에서 종합 퀴즈로 마무리합니다.</div>
+  </div>
+</section>
+</main>
+
+<script src="js/hero.js"></script>
+<script>
+(function () {
+  const ICON = {
+    why: '<path d="M6 46h64M6 46V6" stroke="var(--axis)" stroke-width="1.6"/><path d="M8 40 L68 10" stroke="var(--ctx)" stroke-width="2.6"/><path d="M8 22 C 30 26, 50 28, 68 30" fill="none" stroke="var(--state)" stroke-width="2.8"/><circle cx="8" cy="22" r="3.5" fill="var(--state)"/>',
+    anatomy: '<rect x="4" y="16" width="18" height="24" rx="3" class="soft-tool"/><rect x="28" y="8" width="24" height="40" rx="4" class="soft-state"/><rect x="58" y="4" width="14" height="8" rx="2" fill="var(--accent)" opacity=".8"/><path d="M22 28h6M52 28h6" stroke="var(--text-faint)" stroke-width="1.6"/>',
+    ingest: '<rect x="4" y="18" width="14" height="18" rx="2" fill="var(--tool)" opacity=".85"/><path d="M18 27 L32 27" stroke="var(--accent)" stroke-width="2"/><circle cx="38" cy="27" r="5" fill="var(--accent)"/><path d="M42 24 L62 8M43 27 L66 27M42 30 L62 46" stroke="var(--state)" stroke-width="1.8"/><circle cx="64" cy="8" r="4" class="c-state"/><circle cx="68" cy="27" r="4" class="c-state"/><circle cx="64" cy="46" r="4" class="c-state"/>',
+    pages: '<rect x="8" y="4" width="26" height="46" rx="3" class="soft-state"/><path d="M13 12h16M13 20h12M13 28h16M13 36h10" stroke="var(--state)" stroke-width="2"/><rect x="40" y="4" width="12" height="13" rx="2" class="c-state" opacity=".7"/><rect x="56" y="4" width="12" height="13" rx="2" class="c-state" opacity=".7"/><rect x="40" y="21" width="12" height="13" rx="2" class="c-state" opacity=".7"/><rect x="56" y="21" width="12" height="13" rx="2" class="c-env" opacity=".7"/>',
+    links: '<path d="M12 40 L36 14 L62 36 L36 46 Z M36 14 L36 46" fill="none" stroke="var(--state)" stroke-width="1.8"/><circle cx="12" cy="40" r="5" class="c-state"/><circle cx="36" cy="14" r="6" class="c-state"/><circle cx="62" cy="36" r="5" class="c-state"/><circle cx="36" cy="46" r="4" class="c-state"/><circle cx="64" cy="8" r="4" fill="none" stroke="var(--guard)" stroke-width="1.8" stroke-dasharray="2 2"/>',
+    query: '<rect x="4" y="6" width="22" height="42" rx="3" class="soft-state"/><path d="M8 14h14M8 22h10M8 30h14M8 38h8" stroke="var(--state)" stroke-width="1.8"/><path d="M26 22 C 40 22, 44 14, 56 14" fill="none" stroke="var(--ctx)" stroke-width="2.4"/><circle cx="62" cy="14" r="6" fill="none" stroke="var(--ctx)" stroke-width="2.4"/><path d="M66 18l5 5" stroke="var(--ctx)" stroke-width="2.4"/>',
+    search: '<rect x="6" y="8" width="62" height="8" rx="2" class="c-ctx" opacity=".8"/><rect x="6" y="22" width="44" height="8" rx="2" class="c-ctx" opacity=".55"/><rect x="6" y="36" width="28" height="8" rx="2" class="c-ctx" opacity=".35"/><circle cx="60" cy="38" r="7" fill="none" stroke="var(--accent)" stroke-width="2.2"/>',
+    lint: '<rect x="8" y="6" width="58" height="10" rx="3" class="soft-env"/><rect x="8" y="20" width="58" height="10" rx="3" class="soft-guard"/><rect x="8" y="34" width="58" height="10" rx="3" class="soft-env"/><path d="M52 11l3 3 6-6M52 39l3 3 6-6" stroke="var(--env)" stroke-width="2" fill="none"/><path d="M54 21l6 7M60 21l-6 7" stroke="var(--guard)" stroke-width="2"/>',
+    provenance: '<rect x="4" y="30" width="16" height="18" rx="2" fill="var(--tool)" opacity=".8"/><path d="M20 38 L34 24" stroke="var(--env)" stroke-width="2"/><circle cx="38" cy="20" r="6" class="c-env"/><path d="M44 20 L58 12M44 22 L58 34" stroke="var(--guard)" stroke-width="2"/><circle cx="62" cy="10" r="5" fill="var(--guard)"/><circle cx="62" cy="36" r="5" fill="var(--guard)" opacity=".6"/>',
+    schema: '<rect x="8" y="4" width="58" height="12" rx="3" fill="var(--accent)" opacity=".85"/><path d="M14 10h30" stroke="var(--bg)" stroke-width="2"/><rect x="8" y="22" width="26" height="9" rx="2" class="c-state" opacity=".6"/><rect x="40" y="22" width="26" height="9" rx="2" class="c-state" opacity=".6"/><rect x="8" y="37" width="26" height="9" rx="2" class="c-state" opacity=".35"/><rect x="40" y="37" width="26" height="9" rx="2" class="c-state" opacity=".35"/>',
+    team: '<circle cx="14" cy="14" r="7" fill="var(--accent)" opacity=".8"/><circle cx="60" cy="14" r="7" fill="var(--accent)" opacity=".8"/><circle cx="37" cy="10" r="6" fill="var(--accent-2)" opacity=".85"/><rect x="24" y="30" width="26" height="20" rx="3" class="soft-state"/><path d="M18 20 L28 30M56 20 L46 30M37 16 L37 30" stroke="var(--state)" stroke-width="1.8"/>',
+    ops: '<rect x="6" y="6" width="40" height="7" rx="2" fill="var(--accent)" opacity=".8"/><rect x="14" y="17" width="22" height="7" rx="2" class="c-state"/><rect x="24" y="28" width="30" height="7" rx="2" class="c-ctx"/><rect x="40" y="39" width="28" height="7" rx="2" class="c-env"/>',
+  };
+  const tagName = { sim: "실험", anim: "애니메이션", viz: "시각화", game: "게임" };
+  document.getElementById("chgrid").innerHTML = WK.CHAPTERS.map((c) => `
+    <a class="ch-card" href="chapters/${c.slug}.html">
+      <svg class="ico" viewBox="0 0 74 54" aria-hidden="true">${ICON[c.slug] || ""}</svg>
+      <span class="num">CHAPTER ${c.num}</span>
+      <h3>${c.title}</h3>
+      <p>${c.desc}</p>
+      <span class="tags">${c.tags.map((t) => `<span>${tagName[t] || t}</span>`).join("")}</span>
+    </a>`).join("");
+})();
+</script>
+</body>
+</html>

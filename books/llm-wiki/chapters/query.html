@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>질의: 색인을 읽고 페이지를 연다 · WikiBook</title>
+<meta name="description" content="에이전트가 색인을 읽고 페이지를 열고 링크를 따라가며 답하는 방식, 토큰 예산 안에서 고르기, 좋은 답을 다시 위키에 저장하는 정책을 실험한다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<script src="../js/wiki.js"></script>
+</head>
+<body data-root="../" data-chapter="query">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 06</div>
+    <h1>질의: 색인을 읽고 페이지를 연다</h1>
+    <p class="lead">사람이 묻는다. “RAG의 약점 두 가지와 그 근거는?” RAG라면 질문을 벡터로 바꿔 비슷한 조각을 찾을 것이다. 위키의 에이전트는 다르게 움직인다. <b>색인을 읽고, 가장 그럴듯한 페이지를 열고, 거기 있는 링크를 따라 근거 페이지로 내려간다.</b> 사람이 도서관에서 목록을 보고 책장을 찾아가는 방식과 비슷하다. 이 장에서는 그 탐색을 한 걸음씩 지켜보고, 토큰 예산이 탐색을 어떻게 자르는지, 그리고 좋은 답을 언제 다시 위키에 넣어야 하는지 실험한다.</p>
+    <ul class="objectives">
+      <li>에이전트가 색인 → 페이지 → 링크 순으로 위키를 탐색하는 과정을 설명할 수 있다.</li>
+      <li>토큰 예산이 답의 근거 범위를 어떻게 제한하는지 말할 수 있다.</li>
+      <li>답변 환류의 정책(안 함, 선별, 모두)이 1년 뒤 위키에 남기는 차이를 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="nav">
+    <h2>에이전트는 위키를 걷는다</h2>
+    <p><span class="term">에이전트 탐색</span><span class="en">agentic search</span>은 검색을 한 번의 함수 호출이 아니라 <b>여러 번의 결정</b>으로 본다. 에이전트는 파일을 읽는 도구(<code>read</code>), 문자열을 찾는 도구(<code>grep</code>), 디렉터리를 보는 도구(<code>ls</code>)만 가지고도 위키를 돌아다닐 수 있다. 첫걸음은 색인이다. 색인의 한 줄 요약을 보고 열 페이지를 고른다. 페이지를 열면 본문에 링크가 있다. 근거가 필요하면 링크를 따라 원천 요약으로, 더 필요하면 원천 원문으로 내려간다. 답을 쓸 때는 읽은 페이지를 인용한다.</p>
+    <div class="sim" id="sim-nav">
+      <div class="sim-head"><span class="sim-tag">ANIMATION</span><h3>질의 한 번 지켜보기 — 색인에서 근거까지</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="nv-q"><button data-v="0" class="on">RAG의 약점과 근거는?</button><button data-v="1">순위는 어떻게 합치나?</button><button data-v="2">LLM 위키의 뿌리는?</button></div>
+        <div class="two">
+          <div class="sim-view"><canvas id="nv-cv"></canvas></div>
+          <div class="trace" id="nv-tr" style="max-height:330px"></div>
+        </div>
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:220px"><span>토큰 예산 <output id="nv-b-out"></output></span><input type="range" id="nv-b" min="1000" max="4000" step="100" value="3000"></label>
+          <div class="btns"><button class="btn primary" id="nv-play">▶ 재생</button><button class="btn" id="nv-step">한 걸음</button></div>
+        </div>
+        <div class="verdict" id="nv-ans">재생을 누르면 에이전트가 색인부터 읽기 시작합니다.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">읽은 페이지</span><span class="v" id="nv-o1">—</span></div>
+        <div class="stat"><span class="k">쓴 토큰</span><span class="v" id="nv-o2">—</span></div>
+        <div class="stat"><span class="k">필요한 근거 확보</span><span class="v" id="nv-o3">—</span></div>
+        <div class="stat"><span class="k">인용</span><span class="v" id="nv-o4">—</span></div>
+      </div>
+      <div class="sim-note">읽을 것: 왼쪽 막대는 컨텍스트에 쌓인 토큰이다. 색인(보라)이 먼저 들어가고 페이지가 하나씩 더해진다. 오른쪽은 도구 호출 기록이다. ① 첫 질문은 색인 → RAG 개념 → 두 원천 요약으로 끝난다. 원천 원문까지는 내려가지 않는다. 요약 페이지가 이미 근거를 정리해 두었기 때문이다. ② 세 번째 질문은 링크를 네 번 따라가야 한다. 예산을 1,500토큰으로 줄이면 두 번째 페이지 뒤에 멈추고, 답은 “근거 부족”을 밝힌다. 예산이 모자라면 지어내지 말고 모자란 범위를 말하는 것이 규칙이다. ③ 색인 자체가 이 질의 토큰의 40% 남짓을 먹는다. 위키가 커지면 색인을 쪼개거나 검색 도구를 붙이는 이유다(7장).</div>
+    </div>
+  </section>
+
+  <section id="budget">
+    <h2>예산 안에서 고르기</h2>
+    <p>탐색의 본질은 선택이다. 컨텍스트 창은 넓어졌지만 무한하지 않고, 넣을수록 비싸고, 많이 넣을수록 가운데 것을 놓친다. 그래서 좋은 에이전트는 <b>필요한 페이지만, 필요한 만큼</b> 연다. 색인의 한 줄 요약이 그 선택을 돕는다. 직접 해 보자. 아래 질문에 답하려면 어떤 페이지를 열어야 할까? 예산은 900토큰이다. 이 작은 위키의 페이지는 수백 토큰짜리라 숫자도 작다.</p>
+    <div class="sim" id="sim-pick">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>페이지 고르기 — “BM25와 임베딩은 각각 언제 강하고, 둘을 어떻게 합치나?”</h3></div>
+      <div class="sim-body">
+        <div class="tiles" id="pk-tiles"></div>
+        <div class="budget" id="pk-bud"><i id="pk-bar" style="width:0"></i></div>
+        <div class="btns"><button class="btn primary" id="pk-check">이 페이지들로 답하기</button><button class="btn" id="pk-reset">다시</button></div>
+        <div class="verdict" id="pk-fb">타일을 눌러 열 페이지를 고르세요. 오른쪽 위 숫자는 페이지의 토큰 수입니다.</div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">쓴 예산</span><span class="v" id="pk-o1">0 / 900</span></div>
+        <div class="stat"><span class="k">필요한 근거</span><span class="v" id="pk-o2">—</span></div>
+        <div class="stat"><span class="k">낭비한 토큰</span><span class="v" id="pk-o3">—</span></div>
+      </div>
+      <div class="sim-note">필요한 근거는 셋이다: BM25가 강한 경우, 임베딩 검색이 강한 경우, 결과를 합치는 방법. 페이지 하나가 둘 이상을 담고 있을 수도 있다. 색인 요약을 잘 읽으면 가장 싼 조합이 보인다.</div>
+    </div>
+  </section>
+
+  <section id="file">
+    <h2>좋은 답은 다시 위키로</h2>
+    <p>탐색 끝에 얻은 답은 그 자체로 새 지식이다. 여러 페이지를 엮어 만든 비교, 분석, 새로 찾은 연결은 대화 기록 속에 묻히게 두지 말고 <code>analyses/</code>에 새 페이지로 저장한다. 이것이 1장에서 본 <span class="term">답변 환류</span><span class="en">filing answers back</span>다. 그런데 모든 답을 저장하면 어떻게 될까? “BM25의 k1이 뭐야?” 같은 단순 조회의 답까지 페이지가 되면, 위키는 개념 페이지와 거의 같은 내용의 페이지로 붐빈다. 검색이 엉뚱한 중복 페이지를 집고, 그걸 못 찾은 에이전트가 같은 답을 또 저장한다. 1년을 돌려 보자.</p>
+    <div class="sim" id="sim-file">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>환류 정책 1년 — 안 함, 선별, 모두</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="fl-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="fl-pol"><button data-v="none">안 함</button><button data-v="sel" class="on">선별</button><button data-v="all">모두</button></div>
+          <label class="ctrl"><span>하루 질문 수 <output id="fl-q-out"></output></span><input type="range" id="fl-q" min="2" max="60" step="1" value="20"></label>
+          <label class="ctrl"><span>질문 주제 수 <output id="fl-t-out"></output></span><input type="range" id="fl-t" min="100" max="3000" step="100" value="800"></label>
+          <label class="ctrl"><span>종합이 필요한 질문 비율 <output id="fl-s-out"></output></span><input type="range" id="fl-s" min="0.1" max="0.9" step="0.05" value="0.4"></label>
+          <div class="legend"><span><i style="background:var(--tool)"></i>질문당 토큰 (30일 평균)</span><span><i style="background:var(--state)"></i>분석 페이지 수</span><span><i style="background:var(--guard)"></i>중복 페이지</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">1년 뒤 분석 페이지</span><span class="v" id="fl-o1">—</span></div>
+        <div class="stat"><span class="k">그중 중복</span><span class="v" id="fl-o2">—</span></div>
+        <div class="stat"><span class="k">마지막 달 질문당 토큰</span><span class="v" id="fl-o3">—</span></div>
+        <div class="stat"><span class="k">마지막 달 재사용률</span><span class="v" id="fl-o4">—</span></div>
+      </div>
+      <div class="sim-note">모형: 종합이 필요한 질문은 페이지 5개(6,000토큰), 단순 조회는 1개(1,200토큰)를 읽는다. 같은 주제의 분석 페이지가 있으면 그 페이지 하나로 끝난다. 다만 페이지가 많을수록 검색이 그 페이지를 놓칠 확률이 오른다(놓치면 처음부터 다시 하고, 정책에 따라 또 저장해 중복이 생긴다). “선별”은 종합 답만, 그리고 저장하기 직전에 같은 주제의 페이지를 한 번 더 찾아 있으면 새로 만들지 않고 그 페이지를 고친다. 해볼 것: ① “안 함”은 질문당 토큰이 1년 내내 그대로다. ② “선별”(종합 답만 저장)은 비용이 꾸준히 내려가고 중복이 적다. ③ “모두”는 재사용률 숫자는 높지만, 대부분 원래 싼 단순 조회의 재사용이라 아끼는 몫이 작다. 대신 위키가 커질수록 놓침이 늘어 중복이 쌓인다. 린트가 치워야 할 쓰레기다(8장).</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>위키의 질의는 <b>색인 → 페이지 → 링크 → 근거</b>로 걷는 에이전트 탐색이다. 파일 읽기와 grep만으로도 된다.</li>
+      <li>토큰 예산이 탐색 깊이를 자른다. 근거가 모자라면 지어내지 말고 모자란 범위를 밝힌다.</li>
+      <li>색인의 한 줄 요약이 좋을수록 에이전트는 적은 페이지로 필요한 근거를 모은다.</li>
+      <li>답변 환류는 <b>선별</b>이 좋다. 여러 페이지를 엮은 답만 저장하고, 단순 조회는 저장하지 않는다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 위키 에이전트가 질의에서 가장 먼저 읽는 파일은 보통?</p><div class="opts">
+        <button class="opt">가장 최근에 수정된 페이지</button>
+        <button class="opt" data-correct>index.md</button>
+        <button class="opt">원천 폴더의 첫 파일</button>
+      </div><div class="quiz-exp">색인의 한 줄 요약으로 열 페이지를 고른다. 색인이 지도라면 페이지는 동네, 링크는 길이다.</div></div>
+      <div class="quiz-q"><p>2. 예산이 바닥나 필요한 근거 페이지를 다 못 읽었다면?</p><div class="opts">
+        <button class="opt">읽은 내용으로 그럴듯하게 채운다</button>
+        <button class="opt" data-correct>확보한 근거로 답하고 어떤 부분이 근거 부족인지 밝힌다</button>
+        <button class="opt">답하지 않는다</button>
+      </div><div class="quiz-exp">모자란 범위를 밝히면 사람이 예산을 늘리거나 질문을 좁힐 수 있다. 지어낸 답은 나중에 위키로 환류되면 오류의 씨앗이 된다(9장).</div></div>
+      <div class="quiz-q"><p>3. 다음 중 analyses/에 저장할 가치가 가장 큰 답은?</p><div class="opts">
+        <button class="opt">“BM25의 b 기본값은?”에 대한 답</button>
+        <button class="opt" data-correct>원천 여섯 편의 평가 방법을 비교한 표</button>
+        <button class="opt">“안녕하세요”에 대한 인사</button>
+      </div><div class="quiz-exp">여러 페이지를 엮은 종합은 다시 만들기 비싸고 다시 쓰일 가능성이 높다. 단순 조회의 답은 개념 페이지에 이미 있다.</div></div>
+      <div class="quiz-q"><p>4. “모든 답을 저장” 정책이 위키를 망가뜨리는 주된 경로는?</p><div class="opts">
+        <button class="opt">페이지가 너무 짧아져서</button>
+        <button class="opt" data-correct>비슷한 페이지가 늘어 검색이 기존 답을 놓치고, 같은 답을 또 저장하는 중복이 쌓여서</button>
+        <button class="opt">색인이 사라져서</button>
+      </div><div class="quiz-exp">중복이 중복을 부른다. 위키가 클수록 놓칠 확률이 오르고, 놓친 만큼 또 저장한다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+const TOK = (id) => Math.round(WK.wiki.pages[id].body.length * 1.1 + 60);
+
+/* ---------------- 1. 질의 한 번 ---------------- */
+(function () {
+  const P = WK.wiki.pages;
+  const Q = [
+    { need: ["c-rag", "src-lim"], path: [["read", "index", "색인에서 ‘검색 증강 생성’ 줄을 찾음"], ["read", "c-rag", "약점 절: 종합 반복, 가운데 손실 → 근거 링크 둘"], ["follow", "src-lim", "U자 정확도 곡선 — 두 번째 약점의 근거"], ["follow", "src-rag", "원 논문 요약 — 여러 문서를 엮는 질문이 어렵다는 주의"]],
+      ans: "약점은 ① 종합을 질문마다 처음부터 한다, ② 조각을 많이 넣으면 가운데 것을 놓친다. 근거: [[c-rag]], [[src-lim]] (Liu 외 2023), [[src-rag]]의 주의 절." },
+    { need: ["c-hybrid", "src-rrf"], path: [["read", "index", "색인에서 ‘하이브리드 검색’ 줄을 찾음"], ["read", "c-hybrid", "결과를 합칠 때 역순위 융합을 쓴다 → 링크"], ["follow", "src-rrf", "1/(k + 순위)를 더한다, k = 60"]],
+      ans: "각 검색의 순위 r마다 1/(60 + r)을 더해 합친다(역순위 융합). 점수 보정 없이 순위만 쓴다. 근거: [[c-hybrid]], [[src-rrf]] (Cormack 외 2009)." },
+    { need: ["c-wiki", "src-memex", "e-bush", "c-zettel"], path: [["read", "index", "색인에서 ‘LLM 위키’ 줄을 찾음"], ["read", "c-wiki", "‘꿈 자체는 부시의 메멕스까지’ → 링크"], ["follow", "src-memex", "1945년 메멕스: 문서와 연상 경로"], ["follow", "e-bush", "부시는 누구인가"], ["follow", "c-zettel", "같은 꿈의 다른 갈래: 루만의 메모 상자"]],
+      ans: "LLM 위키는 카파시(2026)가 패턴으로 정리했지만 생각의 뿌리는 1945년 부시의 메멕스와, 카드 사이를 링크로 엮은 루만의 제텔카스텐까지 간다. 근거: [[c-wiki]], [[src-memex]], [[e-bush]], [[c-zettel]]." },
+  ];
+  const qSel = WK.seg("nv-q", () => reset());
+  let k = 0, acc = 0, read = [], stopped = false;
+  const cur = () => Q[+qSel()];
+  function reset() { k = 0; read = []; stopped = false; acc = 0; WK.el("nv-tr").innerHTML = ""; WK.el("nv-ans").textContent = "재생을 누르면 에이전트가 색인부터 읽기 시작합니다."; WK.el("nv-ans").style.removeProperty("--k"); draw0(); }
+  function stepOnce() {
+    const q = cur(), B = WK.val("nv-b");
+    if (stopped || k >= q.path.length) return false;
+    const [op, id, why] = q.path[k];
+    const used = read.reduce((a, x) => a + TOK(x), 0), t = TOK(id);
+    const tr = WK.el("nv-tr");
+    if (used + t > B) {
+      stopped = true;
+      tr.insertAdjacentHTML("beforeend", `<div style="--k:var(--guard)">✕ ${op} ${P[id].path} (${t}) — 예산 초과, 탐색 중단</div>`);
+      finish(); return false;
+    }
+    read.push(id); k++;
+    tr.insertAdjacentHTML("beforeend", `<div style="--k:var(--${id === "index" ? "state" : op === "follow" ? "ctx" : "accent"})">${op === "follow" ? "↳ follow" : "▸ read"} ${P[id].path} <span style="color:var(--text-faint)">(${t} tok)</span>\n  ${WK.esc(why)}</div>`);
+    tr.scrollTop = tr.scrollHeight;
+    if (k >= q.path.length) finish();
+    draw0();
+    return k < q.path.length && !stopped;
+  }
+  function finish() {
+    const q = cur(), got = q.need.filter((n) => read.includes(n));
+    const el = WK.el("nv-ans");
+    if (got.length === q.need.length) { el.style.setProperty("--k", "var(--env)"); el.innerHTML = `<b>답</b> — ${WK.esc(q.ans)}`; }
+    else { el.style.setProperty("--k", "var(--tool)"); el.innerHTML = `<b>부분 답 · 근거 부족</b> — 확보한 근거 ${got.length}/${q.need.length}. 읽은 페이지(${read.filter((x) => x !== "index").map((x) => P[x].title).join(", ") || "색인뿐"})로 답할 수 있는 범위만 말하고, 나머지는 “예산 안에서 확인하지 못함”으로 남긴다.`; }
+    draw0();
+  }
+  const cv = WK.canvas("nv-cv", { aspect: 0.9, draw });
+  function draw0() { cv.redraw(); }
+  function draw(c, w, h) {
+    const q = cur(), B = WK.val("nv-b");
+    const bx = 18, bw = 70, by = 24, bh = h - 60;
+    WK.text(c, "컨텍스트", bx + bw / 2, 12, { size: 11, weight: 700, align: "center", color: WK.col("text-dim") });
+    c.strokeStyle = WK.col("border"); c.lineWidth = 1.5; WK.rrect(c, bx, by, bw, bh, 8); c.stroke();
+    let y = by + bh;
+    read.forEach((id) => {
+      const hh = (TOK(id) / B) * bh, col = id === "index" ? "state" : q.need.includes(id) ? "env" : "ctx";
+      c.fillStyle = WK.alpha(WK.col(col), 0.55); c.fillRect(bx + 3, y - hh, bw - 6, hh - 2); y -= hh;
+      if (hh > 14) WK.text(c, P[id].title.slice(0, 7), bx + bw / 2, y + hh / 2, { size: 9.5, align: "center", color: WK.col("text") });
+    });
+    WK.text(c, "예산 " + WK.si(B), bx + bw / 2, by + bh + 14, { size: 10.5, mono: true, align: "center", color: WK.col("text-faint") });
+    // 오른쪽: 경로 노드
+    const nodes = q.path.map((p) => p[1]);
+    const x0 = bx + bw + 40, x1 = w - 30;
+    nodes.forEach((id, i) => {
+      const x = x0 + ((x1 - x0) * (i % 2 ? 0.7 : 0.25)), yy = 34 + i * ((h - 70) / Math.max(1, nodes.length - 1));
+      if (i) { const pid = nodes[i - 1], px = x0 + ((x1 - x0) * ((i - 1) % 2 ? 0.7 : 0.25)), py = 34 + (i - 1) * ((h - 70) / Math.max(1, nodes.length - 1)); WK.arrow(c, px, py, x, yy, read.includes(id) ? WK.col("ctx") : WK.alpha(WK.col("text-faint"), 0.4), { r1: 14, r2: 16, dash: read.includes(id) ? null : [3, 4], w: 1.8 }); }
+      const done = read.includes(id), role = id === "index" ? "mem" : q.need.includes(id) ? "ok" : "ctx";
+      WK.node(c, x, yy, 13, role, null, { dim: !done, glow: done && i === read.length - 1 ? 1 : 0 });
+      WK.text(c, P[id].title.replace(/ · .*/, ""), x, yy + 24, { size: 10.5, align: "center", weight: 600, color: done ? WK.col("text") : WK.col("text-faint") });
+    });
+    const used = read.reduce((a, x) => a + TOK(x), 0), got = q.need.filter((n) => read.includes(n)).length;
+    WK.set("nv-o1", `${read.length}개`);
+    WK.set("nv-o2", `${used.toLocaleString("ko-KR")} / ${B.toLocaleString("ko-KR")}`, used / B > 0.85 ? "warn" : "");
+    WK.set("nv-o3", `${got} / ${q.need.length}`, got === q.need.length ? "good" : stopped ? "bad" : "");
+    WK.set("nv-o4", (k >= q.path.length || stopped) ? `${got}개` : "—");
+  }
+  WK.wire(["nv-b"], () => reset(), { "nv-b": (v) => v.toLocaleString("ko-KR") });
+  WK.el("nv-step").addEventListener("click", () => { if (k >= cur().path.length || stopped) reset(); stepOnce(); });
+  WK.player("nv-play", WK.el("sim-nav"), (dt) => { acc += dt; if (acc > 1.1) { acc = 0; if (k >= cur().path.length || stopped) reset(); if (!stepOnce()) return false; } });
+  WK.navRun = (qi, B) => { WK.$$("#nv-q button")[qi].click(); WK.el("nv-b").value = B; WK.el("nv-b").dispatchEvent(new Event("input")); while (stepOnce()); return { read: read.slice(), stopped, used: read.reduce((a, x) => a + TOK(x), 0) }; };
+  reset();
+})();
+
+/* ---------------- 2. 페이지 고르기 ---------------- */
+(function () {
+  const P = WK.wiki.pages, BUD = 900;
+  /* [id, 색인 한 줄 요약, 담은 근거] — 근거: k=BM25 강점, e=임베딩 강점, f=합치는 법 */
+  const T = [["c-bm25", "단어 빈도 기반 키워드 검색 점수", "k"], ["c-emb", "의미가 가까운 문서를 벡터로 찾기", "ke"], ["c-hybrid", "키워드와 벡터 결과를 합치기", "f"], ["src-rrf", "역순위 융합 논문", "f"], ["c-rag", "질문마다 원문 조각을 찾아 답하는 방식", ""], ["src-rag", "검색 증강 생성 논문", ""], ["c-ctx", "모델이 한 번에 읽는 토큰의 한계", ""], ["a-ragwiki", "질의에서 나온 답을 저장한 비교 페이지", ""], ["e-obsidian", "로컬 마크다운 노트 앱", ""]];
+  const tiles = WK.el("pk-tiles");
+  let sel = new Set();
+  tiles.innerHTML = T.map(([id, d], i) => `<button class="tile" data-i="${i}"><span class="cost">${TOK(id)}</span><b>${WK.esc(P[id].title.replace(/ · .*/, ""))}</b><br><span style="color:var(--text-dim);font-size:13px">${WK.esc(d)}</span></button>`).join("");
+  const used = () => [...sel].reduce((a, i) => a + TOK(T[i][0]), 0);
+  function upd() {
+    const u = used();
+    WK.$$(".tile", tiles).forEach((b) => { b.classList.toggle("sel", sel.has(+b.dataset.i)); b.classList.remove("ok", "no"); });
+    WK.el("pk-bar").style.width = Math.min(100, (u / BUD) * 100) + "%";
+    WK.el("pk-bud").classList.toggle("over", u > BUD);
+    WK.set("pk-o1", `${u.toLocaleString("ko-KR")} / ${BUD.toLocaleString("ko-KR")}`, u > BUD ? "bad" : "");
+  }
+  tiles.addEventListener("click", (e) => { const b = e.target.closest(".tile"); if (!b) return; const i = +b.dataset.i; sel.has(i) ? sel.delete(i) : sel.add(i); upd(); });
+  WK.el("pk-check").addEventListener("click", () => {
+    const u = used(), cov = new Set(); [...sel].forEach((i) => T[i][2].split("").forEach((c) => cov.add(c)));
+    const waste = [...sel].filter((i) => !T[i][2]).reduce((a, i) => a + TOK(T[i][0]), 0);
+    WK.$$(".tile", tiles).forEach((b) => { const i = +b.dataset.i; if (sel.has(i)) b.classList.add(T[i][2] ? "ok" : "no"); });
+    WK.set("pk-o2", `${cov.size} / 3`, cov.size === 3 ? "good" : "bad");
+    WK.set("pk-o3", waste ? waste.toLocaleString("ko-KR") : "0", waste ? "warn" : "good");
+    const fb = WK.el("pk-fb");
+    const best = ["c-emb", "c-hybrid"].reduce((a, id) => a + TOK(id), 0);
+    if (u > BUD) { fb.style.setProperty("--k", "var(--guard)"); fb.innerHTML = "<b>예산 초과</b> — 컨텍스트에 다 들어가지 않습니다. 덜 필요한 페이지를 빼세요."; }
+    else if (cov.size === 3) { fb.style.setProperty("--k", "var(--env)"); fb.innerHTML = `<b>근거 확보</b> — ${u.toLocaleString("ko-KR")}토큰. 가장 싼 조합은 임베딩 검색(두 검색의 강점을 함께 설명) + 하이브리드 검색(합치는 법), ${best.toLocaleString("ko-KR")}토큰입니다.`; }
+    else { fb.style.setProperty("--k", "var(--tool)"); fb.innerHTML = `<b>근거 ${cov.size}/3</b> — ${["k", "e", "f"].filter((c) => !cov.has(c)).map((c) => ({ k: "BM25의 강점", e: "임베딩의 강점", f: "합치는 법" })[c]).join(", ")}이(가) 빠졌습니다.`; }
+  });
+  WK.el("pk-reset").addEventListener("click", () => { sel = new Set(); upd(); WK.set("pk-o2", "—"); WK.set("pk-o3", "—"); WK.el("pk-fb").style.removeProperty("--k"); WK.el("pk-fb").textContent = "타일을 눌러 열 페이지를 고르세요. 오른쪽 위 숫자는 페이지의 토큰 수입니다."; });
+  upd();
+})();
+
+/* ---------------- 3. 환류 정책 1년 ---------------- */
+(function () {
+  const pol = WK.seg("fl-pol", () => up());
+  let R = null;
+  function sim(policy) {
+    const qd = WK.val("fl-q"), T = WK.val("fl-t"), sf = WK.val("fl-s"), r = WK.rng(31);
+    const w = Array.from({ length: T }, (_, i) => 1 / Math.pow(i + 1, 0.9)), Sw = w.reduce((a, b) => a + b, 0);
+    const cum = []; let a = 0; w.forEach((v) => { a += v / Sw; cum.push(a); });
+    const pick = () => { const u = r(); let lo = 0, hi = T - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < u) lo = m + 1; else hi = m; } return lo; };
+    const synth = Array.from({ length: T }, () => r() < sf);
+    const pages = new Map(); let total = 0, dup = 0;
+    const days = [];
+    for (let d = 0; d < 365; d++) {
+      let tok = 0, reuse = 0;
+      for (let q = 0; q < qd; q++) {
+        const t = pick(), deep = synth[t], miss = 0.02 + (0.4 * total) / (total + 3000);
+        const has = (pages.get(t) || 0) > 0;
+        if (has && r() > miss) { tok += 1200; reuse++; continue; }
+        tok += deep ? 6000 : 1200;
+        const file = policy === "all" || (policy === "sel" && deep);
+        if (file) {
+          if (has && policy === "sel" && r() > miss) continue; // 선별: 저장 전에 한 번 더 찾아 있으면 그 페이지를 고친다
+          if (has) dup++; pages.set(t, (pages.get(t) || 0) + 1); total++;
+        }
+      }
+      days.push({ tok: tok / qd, reuse: reuse / qd, total, dup });
+    }
+    return days;
+  }
+  WK.fileSim = (p) => { const d = sim(p); const last = d.slice(-30); return { total: d[364].total, dup: d[364].dup, tok: Math.round(last.reduce((a, x) => a + x.tok, 0) / 30), reuse: +(last.reduce((a, x) => a + x.reuse, 0) / 30).toFixed(2) }; };
+  const cv = WK.canvas("fl-cv", { aspect: 0.66, draw });
+  function draw(c, w, h) {
+    if (!R) return;
+    const all = { none: sim("none"), sel: sim("sel"), all: sim("all") };
+    const yT = 4200, pMax = Math.max(50, ...Object.values(all).map((d) => d[364].total)) * 1.05;
+    const box = { l: 50, t: 14, r: w - 12, b: h - 42 };
+    const A = WK.axes(c, { box, x: [0, 365], y: [0, yT], xt: [0, 90, 180, 270, 365], yt: [0, 1400, 2800, 4200], yf: (v) => WK.si(v), xl: "일", yl: "질문당 토큰 (30일 평균)" });
+    const sm = (d) => d.map((_, i) => { const s = d.slice(Math.max(0, i - 29), i + 1); return s.reduce((a, x) => a + x.tok, 0) / s.length; });
+    const cur = pol();
+    Object.entries(all).forEach(([k, d]) => {
+      const on = k === cur;
+      WK.line(c, sm(d).map((v, i) => [A.X(i), A.Y(Math.min(yT, v))]), on ? WK.col("tool") : WK.alpha(WK.col("text-faint"), 0.5), on ? 2.6 : 1.2, on ? null : [4, 4]);
+      const last = sm(d)[364]; WK.text(c, { none: "안 함", sel: "선별", all: "모두" }[k], box.r - 2, A.Y(Math.min(yT, last)) - 8, { size: 10.5, align: "right", color: on ? WK.col("tool") : WK.col("text-faint") });
+    });
+    const d = all[cur], PY = (v) => box.b - (v / pMax) * (box.b - box.t);
+    WK.line(c, d.map((x, i) => [A.X(i), PY(x.total)]), WK.col("state"), 2.2);
+    WK.line(c, d.map((x, i) => [A.X(i), PY(x.dup)]), WK.col("guard"), 2.2);
+    WK.text(c, "보라 = 분석 페이지 · 빨강 = 중복 (위 끝 " + WK.si(pMax / 1.05) + "개)", box.l + 6, box.t + 8, { size: 10.5, color: WK.col("state") });
+    const last = d.slice(-30);
+    WK.set("fl-o1", `${d[364].total.toLocaleString("ko-KR")}개`);
+    WK.set("fl-o2", `${d[364].dup.toLocaleString("ko-KR")}개`, d[364].dup > d[364].total * 0.1 ? "bad" : d[364].dup ? "warn" : "good");
+    WK.set("fl-o3", WK.si(last.reduce((a, x) => a + x.tok, 0) / 30));
+    WK.set("fl-o4", WK.pct(last.reduce((a, x) => a + x.reuse, 0) / 30));
+  }
+  function up() { R = sim(pol()); cv.redraw(); }
+  WK.wire(["fl-q", "fl-t", "fl-s"], up, { "fl-s": (v) => WK.pct(v) });
+})();
+</script>
+</body>
+</html>

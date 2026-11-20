@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>린트: 위키의 건강 검진 · WikiBook</title>
+<meta name="description" content="모순, 낡은 주장, 근거 없는 주장, 고아 페이지, 깨진 링크를 찾는 린트를 건강 감쇠 시뮬레이터, 린트 게임, 모순 해결 정책 실험으로 배운다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+</head>
+<body data-root="../" data-chapter="lint">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 08</div>
+    <h1>린트: 위키의 건강 검진</h1>
+    <p class="lead">위키는 자라면서 썩는다. 새 원천이 옛 주장을 뒤집어도 옛 페이지는 그대로 남는다. 분석 페이지는 근거가 바뀐 줄 모른다. 수집 때 깜빡한 역링크 때문에 고아가 생긴다. 이 썩음은 조용하고 누적된다. 그래서 LLM 위키에는 수집과 질의 말고 세 번째 작업이 있다. 코드의 린터처럼 위키 전체를 훑어 문제를 찾고 고치는 <span class="term">린트</span><span class="en">lint</span>다. 이 장에서는 린트가 무엇을 찾는지, 얼마나 자주 해야 하는지, 찾은 모순을 어떻게 풀어야 하는지 실험한다.</p>
+    <ul class="objectives">
+      <li>린트가 찾는 다섯 가지 문제(모순, 낡은 주장, 근거 없는 주장, 고아·깨진 링크, 빈틈)를 구별할 수 있다.</li>
+      <li>린트 주기와 수집 속도에 따라 위키의 문제 밀도가 어떻게 변하는지 설명할 수 있다.</li>
+      <li>모순을 푸는 정책(최신 우선, 다수결, 신뢰도, 사람에게 넘김)의 장단점을 비교할 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="what">
+    <h2>린트가 찾는 것</h2>
+    <table class="tbl">
+      <thead><tr><th>문제</th><th>예</th><th>찾는 방법</th></tr></thead>
+      <tbody>
+        <tr><td><b style="color:var(--guard)">모순</b></td><td>두 페이지가 같은 사실을 다르게 말한다</td><td>같은 개체·속성의 주장을 모아 비교 (LLM 판단)</td></tr>
+        <tr><td><b style="color:var(--tool)">낡은 주장</b></td><td>더 새 원천이 뒤집은 옛 문장, 근거보다 오래된 분석</td><td>머리말의 갱신일과 근거의 갱신일 비교 (기계적)</td></tr>
+        <tr><td><b style="color:var(--accent)">근거 없는 주장</b></td><td>출처 링크가 없는 사실 문장</td><td>사실 문장마다 출처 꼬리표 확인 (반기계적)</td></tr>
+        <tr><td><b style="color:var(--state)">고아 · 깨진 링크</b></td><td>아무도 안 가리키는 페이지, 없는 페이지로 가는 링크</td><td>링크 그래프 계산 (기계적, 5장)</td></tr>
+        <tr><td><b style="color:var(--ctx)">빈틈</b></td><td>여러 번 언급되지만 페이지가 없는 개념, 채워야 할 데이터</td><td>빨간 링크 빈도, 질의 실패 기록 (반기계적)</td></tr>
+      </tbody>
+    </table>
+    <p>기계적인 검사는 스크립트로 싸게 돌리고, LLM은 판단이 필요한 모순과 근거 확인에 쓴다. 카파시는 린트가 문제를 찾는 데서 그치지 않고 <b>새로 조사할 질문과 찾아볼 원천</b>을 제안하게 하라고 권한다. 빈틈은 위키가 다음에 배울 것의 목록이다.</p>
+  </section>
+
+  <section id="decay">
+    <h2>얼마나 자주 점검할까</h2>
+    <p>문제는 수집과 함께 생긴다. 원천 하나를 수집할 때마다 일정 확률로 모순이 끼어들고, 기존 페이지 일부가 낡고, 역링크가 빠진다. 여기에 복리가 붙는다. 문제가 있는 페이지를 근거로 질의에 답하고 그 답을 환류하면 문제가 새 페이지로 번진다(9장). 린트는 주기마다 문제의 일정 비율을 고친다. 너무 드물면 문제가 쌓이고, 너무 잦으면 토큰이 아깝다.</p>
+    <div class="formula"><div class="eq"><var>X</var><sub><var>t</var>+1</sub> = <var>X</var><sub><var>t</var></sub> + <var>s</var> · <var>δ</var> + <var>γ</var> · <var>X</var><sub><var>t</var></sub>(1 − <var>X</var><sub><var>t</var></sub>/<var>P</var>) − [린트 주간] · <var>η</var> · <var>X</var><sub><var>t</var></sub> &nbsp;·&nbsp; 린트 비용 ∝ 페이지 수</div>
+      <div class="where"><var>X</var>: 남은 문제 수, <var>s</var>: 주당 수집 수, <var>δ</var> = 1.2: 수집 한 번이 남기는 문제 수, <var>γ</var>: 문제가 질의·환류로 번지는 주간 비율(페이지 수 <var>P</var>에 가까워지면 더 번질 곳이 줄어든다), <var>η</var>: 린트 한 번이 고치는 비율. 린트는 페이지마다 1,500토큰을 읽는다고 가정한다. 단순화된 모형이다.</div></div>
+    <div class="sim" id="sim-decay">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>위키 건강 1년 — 린트 주기와 문제 밀도</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="dc-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>주당 수집 수 s <output id="dc-s-out"></output></span><input type="range" id="dc-s" min="1" max="30" step="1" value="8"></label>
+          <label class="ctrl"><span>린트 주기 <output id="dc-l-out"></output></span><input type="range" id="dc-l" min="1" max="27" step="1" value="4"></label>
+          <label class="ctrl"><span>린트가 고치는 비율 η <output id="dc-e-out"></output></span><input type="range" id="dc-e" min="0.2" max="0.95" step="0.05" value="0.7"></label>
+          <label class="ctrl"><span>문제 전파율 γ (주간) <output id="dc-g-out"></output></span><input type="range" id="dc-g" min="0" max="0.15" step="0.01" value="0.05"></label>
+          <div class="legend"><span><i style="background:var(--guard)"></i>100페이지당 문제</span><span><i style="background:var(--text-faint)"></i>린트 없음</span><span><i style="background:var(--tool)"></i>누적 린트 토큰</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">연말 남은 문제</span><span class="v" id="dc-o1">—</span></div>
+        <div class="stat"><span class="k">100페이지당 문제</span><span class="v" id="dc-o2">—</span></div>
+        <div class="stat"><span class="k">1년 린트 토큰</span><span class="v" id="dc-o3">—</span></div>
+        <div class="stat"><span class="k">린트 없을 때 연말 문제</span><span class="v" id="dc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 린트 주기를 26주(반년에 한 번)로 밀면 문제가 톱니처럼 크게 쌓였다가 한꺼번에 줄어든다. 그사이에 나간 답은 그 문제들 위에서 나왔다. ② 주기를 1주로 당기면 밀도는 낮지만 린트 토큰이 몇 배로 는다. 위키 전체를 매주 다시 읽기 때문이다. 수집이 많은 주에만 돌리거나, 바뀐 페이지 주변만 검사하는 증분 린트가 현실적인 타협이다. ③ 전파율 γ를 0.15로 올리면 린트 없는 회색 선이 가파르게 휜다. 문제가 문제를 낳는 복리다. ④ 고치는 비율 η를 0.3으로 낮추면 같은 4주 주기에서 밀도가 여덟 배 가까이 높아진다. 매주 돌려야 겨우 비슷해지는데, 그러면 토큰이 네 배 가까이 든다. 린트의 질이 빈도만큼 중요하다.</div>
+    </div>
+  </section>
+
+  <section id="hunt">
+    <h2>린터가 되어 보기</h2>
+    <p>아래는 예제 위키 여러 페이지에서 뽑은 열두 줄이다. 에이전트 린터처럼 문제가 있는 줄을 골라 보자. 각 줄 앞의 회색 글씨가 그 줄이 있는 페이지다. 오늘은 2026년 11월 21일이고, <code>concepts/rag.md</code>는 11월 20일에 갱신됐다.</p>
+    <div class="sim" id="sim-hunt">
+      <div class="sim-head"><span class="sim-tag game">GAME</span><h3>린트 사냥 — 문제가 있는 줄 고르기</h3></div>
+      <div class="sim-body">
+        <div class="trace" id="ht-list" style="max-height:none;font-family:var(--font);font-size:14px;padding:6px 0"></div>
+        <div class="btns"><button class="btn primary" id="ht-check">린트 보고서 만들기</button><button class="btn" id="ht-reset">다시</button></div>
+        <div class="verdict" id="ht-fb">문제가 있다고 생각하는 줄을 누르세요. 여섯 줄에 문제가 있습니다.</div>
+        <div class="trace" id="ht-rep" hidden></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">고른 줄</span><span class="v" id="ht-o1">0</span></div>
+        <div class="stat"><span class="k">맞게 찾은 문제</span><span class="v" id="ht-o2">—</span></div>
+        <div class="stat"><span class="k">헛짚음</span><span class="v" id="ht-o3">—</span></div>
+      </div>
+      <div class="sim-note">문제의 종류는 다섯 가지다: 모순, 낡은 주장, 근거 없는 주장, 깨진 링크, 근거보다 오래된 분석. 같은 위키의 다른 줄과 비교해야 보이는 문제가 있다.</div>
+    </div>
+  </section>
+
+  <section id="resolve">
+    <h2>모순을 어떻게 풀까</h2>
+    <p>모순을 찾았다면 풀어야 한다. 가장 쉬운 규칙은 “최신 원천을 믿는다”, “출처가 많은 쪽을 믿는다”다. 둘 다 함정이 있다. 최신 블로그가 오래된 공식 통계를 잘못 옮길 수 있다. 블로그 네 개가 같은 논문 하나를 베꼈다면 출처는 넷이 아니라 하나다. 그리고 어떤 모순은 풀면 안 된다. 두 정의가 서로 다른 학파의 것이거나, 라이브러리 기본값과 이론적 권장 범위처럼 <b>문맥이 달라 둘 다 맞는</b> 경우다. 이때는 둘 다 적고 차이를 설명해야 한다. 여섯 가지 모순에 정책을 적용해 보자.</p>
+    <div class="sim" id="sim-resolve">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>모순 해결 정책 — 여섯 사례에 규칙 적용하기</h3></div>
+      <div class="sim-body">
+        <div class="seg" id="rs-p"><button data-v="latest">최신 우선</button><button data-v="major">다수결</button><button data-v="weight">신뢰도 가중</button><button data-v="flag">모두 사람에게</button><button data-v="hybrid" class="on">신뢰도 → 시간성 → 표시</button></div>
+        <div style="overflow-x:auto"><table class="tbl" id="rs-tbl" style="min-width:640px"></table></div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">맞게 해결</span><span class="v" id="rs-o1">—</span></div>
+        <div class="stat"><span class="k">틀리게 해결</span><span class="v" id="rs-o2">—</span></div>
+        <div class="stat"><span class="k">사람에게 넘김</span><span class="v" id="rs-o3">—</span></div>
+      </div>
+      <div class="sim-note">신뢰도 가중치: 공식 문서·통계 4, 재현 연구 4, 논문 3, 뉴스 2, 블로그 1. “신뢰도 → 시간성 → 표시”는 ① 출처의 수를 세지 않고 양쪽에서 <b>가장 강한 출처 하나</b>를 비교해 더 센 쪽을 고르고, ② 같으면 CEO·인구·모델 버전처럼 시간에 따라 바뀌는 사실일 때만 최신을 고르고, ③ 그것도 아니면 ⚠ 표시와 함께 사람에게 넘긴다. ① 최신 우선은 인구 통계 사례에서 틀린다. ② 다수결과 단순 가중은 블로그가 논문을 베낀 사례에서 틀린다. 출처의 수가 아니라 <b>독립적인</b> 출처의 수가 중요하다. ③ 모두 사람에게 넘기면 틀리지는 않지만 사람이 여섯 건을 다 봐야 한다. ④ 혼합 정책은 네 건을 맞히고, 문맥이 달라 둘 다 맞는 두 건만 넘긴다. 그래도 완벽하지 않다. 가장 강한 출처 자체가 틀리면(공식 문서의 오타) 이 규칙도 속는다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>린트는 <b>모순, 낡은 주장, 근거 없는 주장, 고아·깨진 링크, 빈틈</b>을 찾는다. 기계적인 검사는 스크립트로, 판단은 LLM으로.</li>
+      <li>문제는 수집과 함께 생기고 질의·환류로 번진다. 린트 주기와 린트의 질이 함께 문제 밀도를 정한다.</li>
+      <li>전체 린트는 비싸다. 바뀐 페이지 주변만 보는 증분 린트와 주기적인 전체 린트를 섞는다.</li>
+      <li>모순은 최신·다수결만으로 풀면 틀린다. 독립적인 출처의 신뢰도를 보고, 문맥이 다른 모순은 풀지 말고 둘 다 기록한다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 다음 중 LLM 없이 스크립트만으로 찾을 수 있는 문제는?</p><div class="opts">
+        <button class="opt">두 페이지의 주장이 서로 모순된다</button>
+        <button class="opt" data-correct>근거 페이지의 갱신일이 분석 페이지의 작성일보다 늦다</button>
+        <button class="opt">주장이 원천의 내용을 잘못 요약했다</button>
+      </div><div class="quiz-exp">머리말의 날짜만 비교하면 된다. 모순과 요약의 정확성은 내용을 읽고 판단해야 한다.</div></div>
+      <div class="quiz-q"><p>2. 블로그 네 곳이 모두 같은 논문 하나를 인용해 “효과 +8%”라고 쓰고, 최근 재현 연구가 “효과 없음”을 보고했다. 올바른 판단은?</p><div class="opts">
+        <button class="opt">출처가 다섯 대 하나이므로 +8%</button>
+        <button class="opt" data-correct>독립적인 근거는 논문 하나 대 재현 연구 하나다. 재현 연구를 중심으로 쓰고 원 논문을 함께 기록한다</button>
+        <button class="opt">둘 다 지운다</button>
+      </div><div class="quiz-exp">베낀 출처는 독립적인 증거가 아니다. 출처 추적(9장)이 있어야 이런 판단을 할 수 있다.</div></div>
+      <div class="quiz-q"><p>3. 린트를 매주 위키 전체에 돌리면 생기는 문제는?</p><div class="opts">
+        <button class="opt">문제가 더 늘어난다</button>
+        <button class="opt" data-correct>위키 크기에 비례하는 토큰을 매주 쓴다</button>
+        <button class="opt">고아가 생긴다</button>
+      </div><div class="quiz-exp">전체 린트는 모든 페이지를 읽는다. 바뀐 페이지와 그 이웃만 보는 증분 린트로 비용을 줄인다.</div></div>
+      <div class="quiz-q"><p>4. 두 학파가 같은 용어를 서로 다르게 정의한다면?</p><div class="opts">
+        <button class="opt">최신 정의만 남긴다</button>
+        <button class="opt">더 많이 인용된 정의만 남긴다</button>
+        <button class="opt" data-correct>두 정의를 모두 적고 어떤 문맥에서 쓰이는지 설명한다</button>
+      </div><div class="quiz-exp">문맥이 다른 모순은 오류가 아니라 지식의 일부다. 지우면 위키가 오히려 틀려진다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 위키 건강 1년 ---------------- */
+(function () {
+  const DELTA = 1.2, PAGE_TOK = 1500, WEEKS = 52;
+  function sim(s, L, eta, g, lintOn = true) {
+    let X = 0, pages = 30, tok = 0; const R = [];
+    for (let t = 0; t < WEEKS; t++) {
+      pages += s * 3;
+      X = Math.min(pages, X + s * DELTA + g * X * (1 - X / pages));
+      const lint = lintOn && L <= 26 && (t + 1) % L === 0;
+      if (lint) { X -= eta * X; tok += pages * PAGE_TOK; }
+      R.push({ t, X, pages, tok, lint, d: (X / pages) * 100 });
+    }
+    return R;
+  }
+  WK.decaySim = sim;
+  const cv = WK.canvas("dc-cv", { aspect: 0.64, draw });
+  function draw(c, w, h) {
+    const s = WK.val("dc-s"), L = WK.val("dc-l"), e = WK.val("dc-e"), g = WK.val("dc-g");
+    const R = sim(s, L, e, g), N = sim(s, L, e, g, false);
+    const yMax = Math.max(10, Math.ceil(Math.max(...R.map((x) => x.d), Math.min(60, Math.max(...N.map((x) => x.d)))) / 5) * 5);
+    const box = { l: 46, t: 14, r: w - 12, b: h - 42 };
+    const A = WK.axes(c, { box, x: [0, WEEKS], y: [0, yMax], xt: [0, 13, 26, 39, 52], yt: [0, yMax / 2, yMax], xl: "주", yl: "100페이지당 문제" });
+    c.save(); c.beginPath(); c.rect(box.l, box.t, box.r - box.l, box.b - box.t); c.clip();
+    R.forEach((x) => { if (x.lint) { c.fillStyle = WK.alpha(WK.col("env"), 0.1); c.fillRect(A.X(x.t + 0.5) - 2, box.t, 4, box.b - box.t); } });
+    WK.line(c, N.map((x) => [A.X(x.t + 1), A.Y(x.d)]), WK.col("text-faint"), 1.6, [4, 4]);
+    WK.line(c, R.map((x) => [A.X(x.t + 1), A.Y(x.d)]), WK.col("guard"), 2.6);
+    const tMax = Math.max(1, R[WEEKS - 1].tok, sim(s, 1, e, g)[WEEKS - 1].tok);
+    WK.line(c, R.map((x) => [A.X(x.t + 1), box.b - (x.tok / tMax) * (box.b - box.t)]), WK.col("tool"), 2);
+    c.restore();
+    WK.text(c, "노란 선 = 누적 린트 토큰 (위 끝 = 매주 린트 시 " + WK.si(tMax) + ")", box.l + 6, box.t + 8, { size: 10.5, color: WK.col("tool") });
+    const last = R[WEEKS - 1];
+    WK.set("dc-o1", Math.round(last.X) + "개");
+    WK.set("dc-o2", last.d.toFixed(1), last.d > 15 ? "bad" : last.d > 6 ? "warn" : "good");
+    WK.set("dc-o3", WK.si(last.tok));
+    WK.set("dc-o4", Math.round(N[WEEKS - 1].X) + "개");
+  }
+  WK.wire(["dc-s", "dc-l", "dc-e", "dc-g"], () => cv.redraw(), { "dc-l": (v) => (v > 26 ? "안 함" : v + "주마다"), "dc-e": (v) => WK.pct(v), "dc-g": (v) => WK.pct(v) });
+})();
+
+/* ---------------- 2. 린트 사냥 ---------------- */
+(function () {
+  const L = [
+    ["concepts/bm25", "k1은 보통 1.2~2.0 범위에서 고른다 ([[robertson-2009]])", ""],
+    ["concepts/hybrid-search", "BM25의 k1 기본값은 0.9다.", "모순 · 근거 없음 — bm25.md와 다르고 출처도 없다. ⚠ 표시와 두 출처(라이브러리 기본값 vs 권장 범위)로 고친다."],
+    ["entities/openai", "가장 최신 플래그십 모델은 GPT-4다 ([[news-2023-03]])", "낡은 주장 — 2023년 기사에 기댄 ‘최신’ 주장이다. 시간에 민감한 단어(최신, 현재)는 날짜를 붙이거나 새 원천으로 갱신한다."],
+    ["concepts/rag", "RAG는 2020년 Lewis 외가 제안했다 ([[src-rag]])", ""],
+    ["analyses/rag-vs-wiki", "updated: 2026-11-12 · 근거: [[c-rag]], [[c-wiki]]", "근거보다 오래된 분석 — rag.md가 11월 20일에 바뀌었다. 분석을 다시 검토할 후보다."],
+    ["concepts/context-window", "긴 입력의 가운데 정보는 덜 쓰인다 ([[src-lim]])", ""],
+    ["concepts/zettelkasten", "루만은 평생 메모 카드 9만 장을 남겼다.", "근거 없는 주장 — 사실일 수 있지만 출처가 없다. 원천을 찾아 링크하거나 ‘출처 필요’로 표시한다."],
+    ["entities/obsidian", "옵시디언은 로컬 마크다운 폴더를 노트로 보여 준다 ([[src-wiki]])", ""],
+    ["concepts/embedding-search", "임베딩 검색은 정확한 숫자와 오류 코드를 찾는 데 가장 강하다.", "모순 — 같은 페이지 다른 절과 bm25.md는 ‘숫자에는 약할 수 있다’고 쓴다. 근거도 없다."],
+    ["index.md", "- [[graphrag|GraphRAG]] — 그래프 기반 RAG", "깨진 링크 — 색인이 없는 페이지를 가리킨다. 색인에는 실제 페이지만 올리고, 빈틈 목록으로 옮긴다."],
+    ["log.md", "## [2026-11-18] lint | 주간 점검", ""],
+    ["concepts/llm-wiki", "에이전트가 원천을 읽어 페이지를 쓰고 고친다 ([[src-wiki]])", ""],
+  ];
+  const box = WK.el("ht-list");
+  let pick = new Set();
+  function render(mark) {
+    box.innerHTML = L.map(([pg, t, why], i) => `<div class="wiki-line${pick.has(i) ? " pick" : ""}${mark ? (why ? (pick.has(i) ? " hit" : " reveal") : pick.has(i) ? " miss" : "") : ""}" data-i="${i}"><span class="pg">${pg}</span><span>${WK.esc(t)}${mark && why ? `<br><small style="color:var(--text-dim)">${WK.esc(why)}</small>` : ""}</span></div>`).join("");
+  }
+  box.addEventListener("click", (e) => { const d = e.target.closest(".wiki-line"); if (!d) return; const i = +d.dataset.i; pick.has(i) ? pick.delete(i) : pick.add(i); render(); WK.set("ht-o1", String(pick.size)); });
+  WK.el("ht-check").addEventListener("click", () => {
+    render(true);
+    const need = L.filter((x) => x[2]).length, hit = [...pick].filter((i) => L[i][2]).length, fp = pick.size - hit;
+    WK.set("ht-o2", `${hit} / ${need}`, hit === need ? "good" : "");
+    WK.set("ht-o3", String(fp), fp ? "bad" : "good");
+    const fb = WK.el("ht-fb");
+    fb.style.setProperty("--k", hit === need && !fp ? "var(--env)" : "var(--tool)");
+    fb.innerHTML = hit === need && !fp ? "<b>완벽한 린트</b> — 여섯 문제를 모두 찾고 헛짚음이 없습니다." : `<b>${hit}개 찾음 · 헛짚음 ${fp}</b> — 초록은 맞게 찾은 문제, 빨강은 문제가 없는 줄, 노란 테두리는 놓친 문제입니다.`;
+    const rep = WK.el("ht-rep");
+    rep.hidden = false;
+    rep.innerHTML = `<div style="--k:var(--text-faint)">## [2026-11-21] lint | 린트 보고서</div>` + L.map(([pg, t, why], i) => why ? `<div style="--k:var(--${pick.has(i) ? "env" : "tool"})">${pick.has(i) ? "✓" : "·"} ${pg}: ${WK.esc(why.split(" — ")[0])}</div>` : "").join("") + `<div style="--k:var(--ctx)">제안: [[GraphRAG]] 원천 찾기 · 루만 카드 수의 출처 찾기 · OpenAI 최신 원천 수집</div>`;
+  });
+  WK.el("ht-reset").addEventListener("click", () => { pick = new Set(); render(); WK.set("ht-o1", "0"); WK.set("ht-o2", "—"); WK.set("ht-o3", "—"); WK.el("ht-rep").hidden = true; WK.el("ht-fb").style.removeProperty("--k"); WK.el("ht-fb").textContent = "문제가 있다고 생각하는 줄을 누르세요. 여섯 줄에 문제가 있습니다."; });
+  render();
+})();
+
+/* ---------------- 3. 모순 해결 정책 ---------------- */
+(function () {
+  const W = { 공식: 4, 재현: 4, 논문: 3, 뉴스: 2, 블로그: 1 };
+  /* 각 사례: 주장 A·B와 그 출처 [유형, 연도], 정답 (A, B, both) */
+  const C = [
+    { t: "BM25 k1 기본값", A: ["0.9", [["블로그", 2025], ["공식", 2024]]], B: ["1.2~2.0", [["논문", 2009], ["공식", 2023]]], ts: false, truth: "both", why: "라이브러리 기본값(0.9)과 이론적 권장 범위(1.2~2.0)는 문맥이 다르다. 둘 다 적는다." },
+    { t: "회사 X의 CEO", A: ["김 대표", [["뉴스", 2024], ["뉴스", 2024], ["블로그", 2024]]], B: ["이 대표", [["뉴스", 2026]]], ts: true, truth: "B", why: "2026년에 대표가 바뀌었다. 시간에 따라 바뀌는 사실은 최신이 맞다." },
+    { t: "모델 Y의 컨텍스트 창", A: ["20만 토큰", [["블로그", 2025], ["블로그", 2025], ["블로그", 2025]]], B: ["100만 토큰", [["공식", 2026]]], ts: true, truth: "B", why: "최신 공식 문서가 맞다. 블로그 셋은 옛 버전을 다룬다." },
+    { t: "기법 Z의 효과", A: ["정확도 +8%", [["논문", 2023], ["블로그", 2024], ["블로그", 2024], ["블로그", 2024], ["블로그", 2024]]], B: ["효과 없음", [["재현", 2025]]], ts: false, truth: "B", why: "블로그 넷은 같은 2023년 논문을 옮겼을 뿐이다. 독립적인 근거는 논문 하나 대 재현 연구 하나." },
+    { t: "도시 W의 인구", A: ["51.2만", [["공식", 2020]]], B: ["60만", [["블로그", 2026]]], ts: true, truth: "A", why: "블로그가 반올림하고 주변 지역을 합쳐 잘못 옮겼다. 최신이라고 맞지 않다." },
+    { t: "용어 V의 정의", A: ["정의 1", [["논문", 2019], ["논문", 2020]]], B: ["정의 2", [["논문", 2024]]], ts: false, truth: "both", why: "두 학파의 정의다. 어느 하나가 틀린 것이 아니다." },
+  ];
+  const pol = WK.seg("rs-p", () => render());
+  const sumW = (side) => side[1].reduce((a, [k]) => a + W[k], 0);
+  const latest = (side) => Math.max(...side[1].map(([, y]) => y));
+  const decide = (c, p) => {
+    if (p === "flag") return "flag";
+    if (p === "latest") return latest(c.A) >= latest(c.B) ? "A" : "B";
+    if (p === "major") return c.A[1].length >= c.B[1].length ? "A" : "B";
+    const a = sumW(c.A), b = sumW(c.B), pick = a >= b ? "A" : "B";
+    if (p === "weight") return pick;
+    /* 혼합: ① 가장 강한 단일 출처가 더 센 쪽 ② 같으면 시간에 따라 바뀌는 사실일 때만 최신 ③ 아니면 표시 */
+    const top = (side) => Math.max(...side[1].map(([k]) => W[k]));
+    if (top(c.A) !== top(c.B)) return top(c.A) > top(c.B) ? "A" : "B";
+    if (c.ts) return latest(c.A) >= latest(c.B) ? "A" : "B";
+    return "flag";
+  };
+  WK.resolvePolicy = (p) => C.map((c) => decide(c, p));
+  function render() {
+    const p = pol();
+    let ok = 0, bad = 0, fl = 0;
+    const src = (side) => side[1].map(([k, y]) => `${k} ${y}`).join(", ");
+    WK.el("rs-tbl").innerHTML = `<thead><tr><th>사례</th><th>주장 A · 출처</th><th>주장 B · 출처</th><th>정책의 결정</th><th>판정</th></tr></thead><tbody>` + C.map((c) => {
+      const d = decide(c, p);
+      let v, k;
+      if (d === "flag") { fl++; v = "사람에게"; k = "accent-2"; }
+      else if (d === c.truth) { ok++; v = "맞음"; k = "env"; }
+      else { bad++; v = c.truth === "both" ? "틀림 (둘 다 맞음)" : "틀림"; k = "guard"; }
+      const shown = d === "flag" ? "⚠ 표시 후 넘김" : d === "A" ? c.A[0] : c.B[0];
+      return `<tr><td><b>${c.t}</b></td><td>${c.A[0]}<br><small class="mono" style="color:var(--text-faint)">${src(c.A)} · 가중 ${sumW(c.A)}</small></td><td>${c.B[0]}<br><small class="mono" style="color:var(--text-faint)">${src(c.B)} · 가중 ${sumW(c.B)}</small></td><td>${shown}</td><td><span class="badge" style="--k:var(--${k})">${v}</span><br><small style="color:var(--text-dim)">${c.why}</small></td></tr>`;
+    }).join("") + "</tbody>";
+    WK.set("rs-o1", `${ok} / ${C.length}`, ok >= 4 ? "good" : "");
+    WK.set("rs-o2", String(bad), bad ? "bad" : "good");
+    WK.set("rs-o3", String(fl), fl > 3 ? "warn" : "");
+  }
+  render();
+})();
+</script>
+</body>
+</html>

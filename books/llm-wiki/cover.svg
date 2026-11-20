@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="470" viewBox="0 0 400 470">
+<defs><radialGradient id="glow" cx="55%" cy="64%" r="58%"><stop offset="0" stop-color="#1c64d4" stop-opacity=".45"/><stop offset="1" stop-color="#0c111d" stop-opacity="0"/></radialGradient>
+<pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#6ea8fe" stroke-opacity=".07"/></pattern></defs>
+<rect width="400" height="470" fill="#0c111d"/><rect width="400" height="470" fill="url(#grid)"/><rect width="400" height="470" fill="url(#glow)"/><path d="M13 0v470" stroke="#6ea8fe" opacity=".4"/>
+<g fill="#eef3ff" font-family="Georgia,serif" font-size="58"><text x="34" y="86">Wiki</text><text x="34" y="144">Book</text></g>
+<text x="36" y="174" fill="#a9c8ff" font-family="Menlo,monospace" font-size="12" opacity=".85">LLM wiki · agent knowledge · compile once</text>
+<g transform="translate(205 322)" fill="none" stroke-linecap="round">
+<g stroke="#b197fc" stroke-opacity=".55" stroke-width="2">
+<path d="M-110 -40 L-30 -90 L60 -70 L120 -10 L70 60 L-20 80 L-100 40 Z"/>
+<path d="M-30 -90 L0 0 L60 -70 M0 0 L120 -10 M0 0 L70 60 M0 0 L-20 80 M0 0 L-100 40 M0 0 L-110 -40"/>
+</g>
+<circle cx="0" cy="0" r="16" fill="#b197fc" fill-opacity=".35" stroke="#b197fc" stroke-width="2"/>
+<g fill="#b197fc"><circle cx="-110" cy="-40" r="8"/><circle cx="-30" cy="-90" r="9"/><circle cx="60" cy="-70" r="8"/><circle cx="-100" cy="40" r="7"/></g>
+<g fill="#51cf66"><circle cx="120" cy="-10" r="9"/><circle cx="70" cy="60" r="8"/></g>
+<circle cx="-20" cy="80" r="8" fill="#ff6b6b"/>
+<rect x="-160" y="92" width="34" height="42" rx="4" fill="#fcc419" fill-opacity=".85"/><path d="M-152 104h18M-152 112h14M-152 120h18" stroke="#0c111d" stroke-width="2.4"/>
+<path d="M-126 108 C -90 100, -60 92, -24 84" stroke="#fcc419" stroke-width="2" stroke-dasharray="4 4"/>
+<circle cx="40" cy="-10" r="9" fill="#6ea8fe"/><path d="M40 -10 L60 -70" stroke="#6ea8fe" stroke-width="2.4"/>
+</g>
+</svg>

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검색 도구: grep에서 하이브리드까지 · WikiBook</title>
+<meta name="description" content="BM25와 임베딩 검색을 예제 위키에서 직접 돌려 보고, 역순위 융합을 계산하고, 색인 파일 하나로 버티는 위키의 규모를 잰다.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/common.js"></script>
+<script src="../js/wiki.js"></script>
+</head>
+<body data-root="../" data-chapter="search">
+<div class="ca-layout">
+<main class="chapter">
+  <header class="chapter-hero">
+    <div class="eyebrow">Chapter 07</div>
+    <h1>검색 도구: grep에서 하이브리드까지</h1>
+    <p class="lead">페이지가 스무 개면 색인 한 장으로 충분하다. 이백 개도 대개 괜찮다. 이천 개가 되면 색인만으로 컨텍스트가 버거워진다. 그때 필요한 것이 검색 도구다. 그런데 어떤 검색일까? 정확한 단어를 찾는 키워드 검색, 뜻이 비슷한 문서를 찾는 임베딩 검색, 그 둘을 합친 하이브리드. 이 장에서는 예제 위키에 세 가지를 <b>실제로 돌려 보고</b>, 각각이 이기는 질문과 지는 질문을 찾고, 색인 하나로 버틸 수 있는 규모를 계산한다.</p>
+    <ul class="objectives">
+      <li>BM25 점수를 구성하는 단어 빈도, 역문서 빈도, 길이 정규화를 설명할 수 있다.</li>
+      <li>키워드 검색과 임베딩 검색이 각각 강한 질문의 종류를 구별할 수 있다.</li>
+      <li>역순위 융합으로 두 결과를 합치고, 위키 규모에 맞는 검색 방식을 고를 수 있다.</li>
+    </ul>
+  </header>
+
+  <section id="ladder">
+    <h2>검색의 사다리</h2>
+    <p>위키의 검색은 사다리처럼 한 칸씩 올라간다. 맨 아래는 <b>색인 읽기</b>다. 에이전트가 <code>index.md</code>를 읽고 고른다. 다음은 <b>grep</b>이다. 코딩 에이전트들이 임베딩 색인 없이 <code>grep</code>과 파일 목록만으로 큰 코드베이스를 잘 탐색하는 것처럼, 정확한 용어가 있으면 grep은 놀랄 만큼 강하다. 그다음이 <span class="term">BM25</span><span class="en">BM25</span>, 단어가 드물수록, 자주 나올수록 점수를 주되 긴 문서는 깎는 고전적인 키워드 점수다. 그 위가 <span class="term">임베딩 검색</span><span class="en">embedding search</span>, 단어가 달라도 뜻이 가까우면 찾는다. 맨 위가 둘을 합치는 <span class="term">하이브리드 검색</span><span class="en">hybrid search</span>과 결과를 LLM이 다시 매기는 재순위화다. 카파시의 메모도 위키가 커지면 마크다운 폴더에 하이브리드 검색과 재순위화를 붙이는 로컬 검색 엔진(예: qmd)을 권한다.</p>
+    <div class="formula"><div class="eq">BM25(<var>D</var>, <var>Q</var>) = Σ<sub><var>q</var>∈<var>Q</var></sub> IDF(<var>q</var>) · <span class="frac"><span><var>f</var>(<var>q</var>,<var>D</var>) · (<var>k</var><sub>1</sub> + 1)</span><span><var>f</var>(<var>q</var>,<var>D</var>) + <var>k</var><sub>1</sub> · (1 − <var>b</var> + <var>b</var> · |<var>D</var>| / avgdl)</span></span><br>IDF(<var>q</var>) = ln(1 + (<var>N</var> − <var>n</var><sub><var>q</var></sub> + 0.5) / (<var>n</var><sub><var>q</var></sub> + 0.5))</div>
+      <div class="where"><var>f</var>(<var>q</var>,<var>D</var>): 문서 <var>D</var>에 단어 <var>q</var>가 나온 횟수, |<var>D</var>|: 문서 길이, avgdl: 평균 문서 길이, <var>N</var>: 문서 수, <var>n</var><sub><var>q</var></sub>: <var>q</var>가 나온 문서 수. <var>k</var><sub>1</sub>은 반복 출현의 포화 속도(보통 1.2~2.0), <var>b</var>는 길이 정규화 세기(보통 0.75). 한국어는 조사가 붙으므로 아래 실험은 한글을 두 글자씩 겹쳐 자른 바이그램으로 센다.</div></div>
+  </section>
+
+  <section id="live">
+    <h2>세 가지 검색을 직접 돌려 보기</h2>
+    <p>아래 검색창은 예제 위키 18페이지 위에서 실제로 동작한다. 왼쪽은 BM25, 가운데는 <b>장난감 임베딩</b>, 오른쪽은 둘의 역순위 융합이다. 진짜 임베딩 모델을 브라우저에 넣을 수는 없으니, 장난감 임베딩은 손으로 만든 8차원 주제 벡터(검색, 지식 베이스, 컨텍스트, 순위, 역사, 도구, 인물, 메모)를 쓴다. 질의의 단어를 작은 동의어 사전으로 주제에 대응시키고 코사인 유사도로 순위를 매긴다. 원리는 같다. <b>단어가 아니라 뜻의 방향</b>을 비교한다.</p>
+    <div class="sim" id="sim-live">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>검색 실험실 — BM25 · 장난감 임베딩 · 역순위 융합</h3></div>
+      <div class="sim-body">
+        <div class="sim-controls row" style="align-items:center">
+          <input type="text" id="sr-q" value="U자 정확도 곡선" aria-label="검색어" style="flex:1;min-width:220px">
+          <div class="btns" id="sr-pre"><button class="btn" data-q="U자 정확도 곡선">U자 정확도 곡선</button><button class="btn" data-q="아주 오래전 역사 속 지식 기계">아주 오래전 역사 속 지식 기계</button><button class="btn" data-q="k = 60">k = 60</button><button class="btn" data-q="두 검색 결과의 순위를 합치는 방법">순위를 합치는 방법</button></div>
+        </div>
+        <div class="cols3">
+          <div><h5>BM25 (바이그램)</h5><div class="hits" id="sr-b"></div></div>
+          <div><h5>장난감 임베딩 (코사인)</h5><div class="hits" id="sr-e"></div></div>
+          <div><h5>역순위 융합 (k = <span id="sr-kk">60</span>)</h5><div class="hits" id="sr-f"></div></div>
+        </div>
+        <div class="sim-controls row">
+          <label class="ctrl" style="flex:1;min-width:150px"><span>k1 <output id="sr-k1-out"></output></span><input type="range" id="sr-k1" min="0.2" max="3" step="0.1" value="1.2"></label>
+          <label class="ctrl" style="flex:1;min-width:150px"><span>b <output id="sr-b2-out"></output></span><input type="range" id="sr-b2" min="0" max="1" step="0.05" value="0.75"></label>
+          <label class="ctrl" style="flex:1;min-width:150px"><span>융합 k <output id="sr-rk-out"></output></span><input type="range" id="sr-rk" min="1" max="100" step="1" value="60"></label>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">BM25 1위</span><span class="v" id="sr-o1">—</span></div>
+        <div class="stat"><span class="k">임베딩 1위</span><span class="v" id="sr-o2">—</span></div>
+        <div class="stat"><span class="k">융합 1위</span><span class="v" id="sr-o3">—</span></div>
+        <div class="stat"><span class="k">질의의 주제 벡터</span><span class="v" id="sr-o4" style="font-size:13px">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① “U자 정확도 곡선”은 원천 요약에 그대로 나오는 표현이라 BM25가 정확히 Liu 외 2023을 1위로 올린다. 임베딩은 ‘컨텍스트’ 주제만 보고 비슷한 페이지 여럿을 섞는다. ② “아주 오래전 역사 속 지식 기계”의 단어는 ‘지식’ 말고는 어느 페이지에도 없다. BM25는 ‘지식’, ‘속’ 같은 흔한 조각이 걸린 엉뚱한 페이지(Liu 외 2023의 “입력 속”)를 1위로 올리며 헤매고, 임베딩은 ‘역사·지식’ 방향으로 메멕스를 찾는다. ③ “k = 60”은 숫자와 기호라 임베딩이 거의 아무 정보도 얻지 못한다. ④ 융합은 대개 두 목록 모두에서 상위인 문서를 1위로 올린다(첫째, 셋째, 넷째 질의). 그런데 둘째 질의에서는 메멕스가 아니라 양쪽 목록 중간에 고루 걸친 ‘LLM 위키’가 1위가 된다. 한쪽이 완전히 헤매면 융합은 그 소음까지 섞는다. 그래서 큰 검색 엔진은 융합 뒤에 LLM 재순위화를 붙인다. ⑤ 검색어를 ‘검색’ 한 단어로 두고 <code>b</code>를 0으로 내리면 가장 긴 두 페이지(색인, 기록)가 2, 3위로 올라온다. 길이 정규화가 막고 있던 일이다.</div>
+    </div>
+  </section>
+
+  <section id="rrf">
+    <h2>점수 대신 순위를 더하라</h2>
+    <p>두 검색 결과를 합칠 때 점수를 그냥 더하면 안 된다. BM25 점수는 0에서 20을 넘나들고 코사인 유사도는 0에서 1 사이다. 단순 합은 사실상 BM25 순위가 된다. 점수를 정규화하는 방법도 있지만 질의마다 분포가 달라 까다롭다. <span class="term">역순위 융합</span><span class="en">reciprocal rank fusion</span>은 점수를 버리고 순위만 쓴다. 각 목록에서 순위 <var>r</var>인 문서에 1/(<var>k</var> + <var>r</var>)을 주고 더한다. 2009년 코맥 등이 제안했고, <var>k</var> = 60이 지금도 기본값으로 널리 쓰인다.</p>
+    <div class="formula"><div class="eq">RRF(<var>d</var>) = Σ<sub>목록 <var>i</var></sub> 1 / (<var>k</var> + <var>r</var><sub><var>i</var></sub>(<var>d</var>)) &nbsp;·&nbsp; 1위의 몫 : 10위의 몫 = (<var>k</var> + 10) : (<var>k</var> + 1)</div>
+      <div class="where"><var>k</var>가 작으면 1위가 압도적으로 크고(한 목록의 1위가 이긴다), <var>k</var>가 크면 순위 차이가 평평해져 두 목록에 고르게 등장한 문서가 이긴다. <var>k</var> = 60이면 1위와 10위의 몫 차이는 1.15배에 불과하다.</div></div>
+    <div class="sim" id="sim-rrf">
+      <div class="sim-head"><span class="sim-tag">VISUALIZER</span><h3>순위 융합 계산기 — 점수 합 vs 정규화 합 vs RRF</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="rf-cv"></canvas></div>
+        <div class="sim-controls">
+          <div class="seg" id="rf-m"><button data-v="raw">점수 그대로 합</button><button data-v="norm">최소-최대 정규화 합</button><button data-v="rrf" class="on">RRF</button></div>
+          <label class="ctrl"><span>RRF k <output id="rf-k-out"></output></span><input type="range" id="rf-k" min="1" max="120" step="1" value="60"></label>
+          <label class="ctrl"><span>임베딩 쪽 가중치 <output id="rf-w-out"></output></span><input type="range" id="rf-w" min="0" max="2" step="0.1" value="1"></label>
+          <div class="legend"><span><i style="background:var(--tool)"></i>BM25 몫</span><span><i style="background:var(--ctx)"></i>임베딩 몫</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">융합 1위</span><span class="v" id="rf-o1">—</span></div>
+        <div class="stat"><span class="k">상위 3개 중 양쪽 모두에 있던 문서</span><span class="v" id="rf-o2">—</span></div>
+        <div class="stat"><span class="k">BM25 1위와 같은가</span><span class="v" id="rf-o3">—</span></div>
+      </div>
+      <div class="sim-note">예시 목록: 문서 A~H에 대해 BM25(0~18점)와 임베딩(0~1)이 서로 다른 순위를 냈다. 정답 후보는 두 목록에 모두 상위로 나온 D다. ① “점수 그대로 합”은 BM25 순위를 거의 그대로 따른다. 임베딩 점수가 너무 작아 보태는 것이 없다. ② “정규화 합”은 균형을 찾지만 점수 분포가 한쪽으로 쏠리면 흔들린다. ③ RRF에서 k를 1로 내리면 각 목록의 1위가 크게 뛰고, 60 근처에서는 양쪽에 고르게 나온 D가 1위가 된다.</div>
+    </div>
+  </section>
+
+  <section id="scale">
+    <h2>색인 하나로 어디까지 버티나</h2>
+    <p>카파시는 원천 백여 개, 페이지 수백 개 규모에서는 색인 파일 하나와 에이전트의 탐색만으로 임베딩 기반 검색 없이도 잘 돌아간다고 썼다. 그 경계를 계산해 보자. 색인은 페이지마다 한 줄(약 25토큰)이다. 질의마다 색인 전체를 읽는다면 색인이 컨텍스트에서 차지하는 몫이 문제다. 경계를 넘으면 두 가지 길이 있다. 색인을 <b>분류별로 쪼개</b> 맨 위 색인은 분류만, 분류 색인은 그 분류의 페이지만 담게 하거나, <b>검색 도구</b>를 붙여 상위 결과만 읽는다.</p>
+    <div class="sim" id="sim-scale">
+      <div class="sim-head"><span class="sim-tag">SIMULATOR</span><h3>색인 규모 계산기 — 평평한 색인, 분류 색인, 검색 도구</h3></div>
+      <div class="sim-body side">
+        <div class="sim-view"><canvas id="sc-cv"></canvas></div>
+        <div class="sim-controls">
+          <label class="ctrl"><span>페이지 수 n <output id="sc-n-out"></output></span><input type="range" id="sc-n" min="1" max="5" step="0.01" value="2.6"></label>
+          <label class="ctrl"><span>컨텍스트 창 <output id="sc-w-out"></output></span><input type="range" id="sc-w" min="32000" max="1000000" step="8000" value="200000"></label>
+          <label class="ctrl"><span>색인에 허용할 몫 <output id="sc-f-out"></output></span><input type="range" id="sc-f" min="0.02" max="0.4" step="0.01" value="0.1"></label>
+          <label class="ctrl"><span>분류 수 <output id="sc-c-out"></output></span><input type="range" id="sc-c" min="5" max="80" step="1" value="20"></label>
+          <div class="legend"><span><i style="background:var(--state)"></i>평평한 색인</span><span><i style="background:var(--accent)"></i>분류 색인 (위 + 분류 하나)</span><span><i style="background:var(--ctx)"></i>검색 상위 10개</span></div>
+        </div>
+      </div>
+      <div class="sim-readout">
+        <div class="stat"><span class="k">평평한 색인 토큰</span><span class="v" id="sc-o1">—</span></div>
+        <div class="stat"><span class="k">평평한 색인의 한계 페이지 수</span><span class="v" id="sc-o2">—</span></div>
+        <div class="stat"><span class="k">분류 색인의 한계 페이지 수</span><span class="v" id="sc-o3">—</span></div>
+        <div class="stat"><span class="k">이 규모의 권장</span><span class="v" id="sc-o4">—</span></div>
+      </div>
+      <div class="sim-note">해볼 것: ① 기본값(창 20만, 색인 몫 10%)에서 평평한 색인은 페이지 800개 근처까지 버틴다. “원천 백여 개, 페이지 수백 개”와 맞아떨어진다. ② 창을 100만으로 늘려도 한계는 4천 페이지다. 창이 커져도 색인을 통째로 읽는 방식은 언젠가 무너진다. 그리고 긴 색인의 가운데 줄은 덜 읽힌다(MarathonBook 3장의 컨텍스트 부패). ③ 분류 색인은 한계를 몇 배로 늘리지만 분류 하나가 너무 커지면 다시 무너진다. 분류 수를 바꿔 보자. ④ 검색 도구는 페이지 수와 거의 무관하게 평평하다. 대신 정확한 단어가 없으면 놓친다. 그래서 큰 위키는 색인과 검색을 함께 쓴다.</div>
+    </div>
+  </section>
+
+  <section class="keypoints" id="summary">
+    <h2>핵심 정리</h2>
+    <ol>
+      <li>위키의 검색은 <b>색인 → grep → BM25 → 임베딩 → 하이브리드·재순위화</b>로 필요한 만큼만 올라간다.</li>
+      <li>BM25는 정확한 용어, 고유명사, 숫자에 강하고, 임베딩은 바꿔 말한 표현과 뜻의 방향에 강하다.</li>
+      <li>두 결과는 점수가 아니라 순위로 합친다. 역순위 융합 1/(k + r), k = 60이 출발점이다.</li>
+      <li>평평한 색인은 수백 페이지에서 한계에 닿는다. 분류 색인으로 늘리고, 그 너머는 검색 도구를 붙인다.</li>
+    </ol>
+  </section>
+
+  <section class="quiz-sec" id="quiz">
+    <h2>확인 퀴즈</h2>
+    <div class="quiz">
+      <div class="quiz-q"><p>1. 오류 코드 “E-4012”가 나온 페이지를 찾을 때 가장 믿을 만한 것은?</p><div class="opts">
+        <button class="opt" data-correct>grep이나 BM25 같은 키워드 검색</button>
+        <button class="opt">임베딩 검색</button>
+        <button class="opt">색인의 한 줄 요약</button>
+      </div><div class="quiz-exp">숫자와 기호는 뜻의 방향이 거의 없다. 정확한 문자열 일치가 이긴다.</div></div>
+      <div class="quiz-q"><p>2. BM25의 b를 0으로 두면 생기는 일은?</p><div class="opts">
+        <button class="opt">드문 단어의 가중치가 사라진다</button>
+        <button class="opt" data-correct>문서 길이 보정이 꺼져 긴 문서가 유리해진다</button>
+        <button class="opt">반복 출현이 무한히 점수를 올린다</button>
+      </div><div class="quiz-exp">b는 길이 정규화의 세기다. 0이면 긴 문서가 단어를 많이 담는 만큼 그대로 점수를 받는다.</div></div>
+      <div class="quiz-q"><p>3. 역순위 융합이 점수 합보다 나은 주된 이유는?</p><div class="opts">
+        <button class="opt">계산이 더 정확해서</button>
+        <button class="opt" data-correct>서로 눈금이 다른 점수를 정규화할 필요 없이 순위만으로 합칠 수 있어서</button>
+        <button class="opt">항상 BM25 결과를 따라서</button>
+      </div><div class="quiz-exp">BM25와 코사인 유사도는 눈금이 다르다. 순위만 쓰면 그 문제가 사라진다.</div></div>
+      <div class="quiz-q"><p>4. 컨텍스트 창이 다섯 배 커지면 평평한 색인의 한계 페이지 수는?</p><div class="opts">
+        <button class="opt">변하지 않는다</button>
+        <button class="opt" data-correct>대략 다섯 배가 되지만 결국 다시 한계에 닿는다</button>
+        <button class="opt">무한해진다</button>
+      </div><div class="quiz-exp">색인 토큰은 페이지 수에 비례하므로 한계도 창 크기에 비례한다. 위키는 계속 자라고, 긴 입력의 가운데는 덜 읽힌다.</div></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+/* ---------------- 1. 검색 실험실 ---------------- */
+(function () {
+  const W = WK.wiki, P = W.pages, ids = W.order;
+  /* 토큰화: 한글은 겹치는 바이그램, 나머지는 소문자 단어 */
+  const tok = (s) => {
+    const out = [];
+    String(s).toLowerCase().split(/[^0-9a-z가-힣]+/).forEach((w) => {
+      if (!w) return;
+      if (/[가-힣]/.test(w)) { if (w.length === 1) out.push(w); for (let i = 0; i + 1 < w.length; i++) out.push(w.slice(i, i + 2)); }
+      else out.push(w);
+    });
+    return out;
+  };
+  const docs = ids.map((id) => tok(W.plain(id)));
+  const avgdl = docs.reduce((a, d) => a + d.length, 0) / docs.length;
+  const df = {}; docs.forEach((d) => new Set(d).forEach((t) => (df[t] = (df[t] || 0) + 1)));
+  const tfs = docs.map((d) => { const m = {}; d.forEach((t) => (m[t] = (m[t] || 0) + 1)); return m; });
+  function bm25(q, k1, b) {
+    const qt = [...new Set(tok(q))], N = docs.length;
+    return ids.map((id, i) => {
+      let s = 0;
+      qt.forEach((t) => { const f = tfs[i][t] || 0; if (!f) return; const idf = Math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5)); s += idf * (f * (k1 + 1)) / (f + k1 * (1 - b + (b * docs[i].length) / avgdl)); });
+      return { id, s };
+    }).sort((a, c) => c.s - a.s);
+  }
+  /* 장난감 임베딩: 동의어 사전 → 8차원 주제 */
+  const LEX = [
+    [0, ["검색", "찾", "조회", "retriev", "search", "조각", "질의"]], [1, ["위키", "지식", "정리", "베이스", "노트", "wiki", "보관", "장치", "기계"]],
+    [2, ["컨텍스트", "문맥", "창", "길이", "긴", "가운데", "정확도", "곡선", "위치"]], [3, ["순위", "점수", "합치", "융합", "랭킹", "정렬", "결과"]],
+    [4, ["옛날", "역사", "1945", "과거", "뿌리", "기원", "조상", "오래"]], [5, ["도구", "앱", "프로그램", "플러그인", "옵시디언", "소프트웨어"]],
+    [6, ["사람", "인물", "누구", "연구자", "저자", "학자"]], [7, ["메모", "카드", "글쓰기", "기록", "생각"]],
+  ];
+  const qvec = (q) => { const v = new Array(8).fill(0); const s = q.toLowerCase(); LEX.forEach(([d, ws]) => ws.forEach((w) => { if (s.includes(w)) v[d] += 1; })); return v; };
+  const cos = (a, b) => { let x = 0, y = 0, z = 0; a.forEach((v, i) => { x += v * b[i]; y += v * v; z += b[i] * b[i]; }); return y && z ? x / Math.sqrt(y * z) : 0; };
+  function emb(q) { const v = qvec(q); return ids.filter((id) => P[id].topic.some((x) => x > 0)).map((id) => ({ id, s: cos(v, P[id].topic) })).sort((a, c) => c.s - a.s); }
+  function fuse(A, B, k) {
+    const m = {};
+    A.filter((x) => x.s > 0).forEach((x, r) => (m[x.id] = (m[x.id] || 0) + 1 / (k + r + 1)));
+    B.filter((x) => x.s > 0).forEach((x, r) => (m[x.id] = (m[x.id] || 0) + 1 / (k + r + 1)));
+    return Object.entries(m).map(([id, s]) => ({ id, s })).sort((a, c) => c.s - a.s);
+  }
+  WK.searchLab = { bm25, emb, fuse, tok };
+  const name = (id) => P[id].title.replace(/ · .*/, "");
+  const list = (el, R, fmt) => {
+    const top = R.slice(0, 6), mx = Math.max(1e-9, top[0] ? top[0].s : 1);
+    el.innerHTML = top.length && top[0].s > 0 ? top.map((x, i) => `<div class="h" style="--k:var(--${W.typeCol[P[x.id].type]})"><span class="r">${i + 1}</span><span>${WK.esc(name(x.id))}<small>${P[x.id].path}</small></span><span class="s">${fmt(x.s)}</span></div>`).join("") : `<div class="h"><span class="r">—</span><span>일치하는 문서 없음</span><span class="s"></span></div>`;
+  };
+  function run() {
+    const q = WK.el("sr-q").value, k1 = WK.val("sr-k1"), b = WK.val("sr-b2"), rk = WK.val("sr-rk");
+    const B = bm25(q, k1, b), E = emb(q), F = fuse(B, E, rk);
+    WK.el("sr-kk").textContent = rk;
+    list(WK.el("sr-b"), B, (s) => s.toFixed(2));
+    list(WK.el("sr-e"), E, (s) => s.toFixed(2));
+    list(WK.el("sr-f"), F, (s) => s.toFixed(4));
+    WK.set("sr-o1", B[0] && B[0].s > 0 ? name(B[0].id) : "없음");
+    WK.set("sr-o2", E[0] && E[0].s > 0 ? name(E[0].id) : "없음");
+    WK.set("sr-o3", F[0] ? name(F[0].id) : "없음");
+    const v = qvec(q);
+    WK.set("sr-o4", v.some((x) => x) ? W.TOPICS.filter((_, i) => v[i]).join(" · ") : "주제 없음 (단어가 사전에 없음)");
+  }
+  WK.el("sr-q").addEventListener("input", run);
+  WK.$$("#sr-pre button").forEach((bt) => bt.addEventListener("click", () => { WK.el("sr-q").value = bt.dataset.q; run(); }));
+  WK.wire(["sr-k1", "sr-b2", "sr-rk"], run, { "sr-k1": (v) => v.toFixed(1), "sr-b2": (v) => v.toFixed(2) });
+})();
+
+/* ---------------- 2. 순위 융합 계산기 ---------------- */
+(function () {
+  const D = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const BM = { A: 17.8, B: 14.1, C: 11.5, D: 10.9, E: 6.2, F: 4.4, G: 2.1, H: 0.8 };
+  const EM = { F: 0.91, D: 0.88, G: 0.84, H: 0.79, B: 0.62, A: 0.41, E: 0.33, C: 0.30 };
+  const mode = WK.seg("rf-m", () => cv.redraw());
+  const rank = (S) => { const r = {}; Object.entries(S).sort((a, b) => b[1] - a[1]).forEach(([d], i) => (r[d] = i + 1)); return r; };
+  const RB = rank(BM), RE = rank(EM);
+  const norm = (S) => { const v = Object.values(S), lo = Math.min(...v), hi = Math.max(...v); const o = {}; Object.entries(S).forEach(([d, x]) => (o[d] = (x - lo) / (hi - lo))); return o; };
+  const NB = norm(BM), NE = norm(EM);
+  const cv = WK.canvas("rf-cv", { aspect: 0.7, draw });
+  function draw(c, w, h) {
+    const m = mode(), k = WK.val("rf-k"), wt = WK.val("rf-w");
+    const part = (d) => m === "raw" ? [BM[d], wt * EM[d]] : m === "norm" ? [NB[d], wt * NE[d]] : [1 / (k + RB[d]), wt / (k + RE[d])];
+    const R = D.map((d) => ({ d, p: part(d), s: part(d)[0] + part(d)[1] })).sort((a, b) => b.s - a.s);
+    const mx = R[0].s;
+    const l = 130, rr = w - 16, top = 16, rh = (h - 40) / D.length;
+    R.forEach((x, i) => {
+      const y = top + i * rh;
+      WK.text(c, `${i + 1}. 문서 ${x.d}`, 10, y + rh / 2, { size: 12.5, weight: 700, color: x.d === "D" ? WK.col("env") : WK.col("text") });
+      WK.text(c, `B${RB[x.d]}·E${RE[x.d]}`, l - 8, y + rh / 2, { size: 10.5, mono: true, align: "right", color: WK.col("text-faint") });
+      const W1 = ((rr - l) * x.p[0]) / mx, W2 = ((rr - l) * x.p[1]) / mx;
+      c.fillStyle = WK.alpha(WK.col("tool"), 0.8); c.fillRect(l, y + 5, W1, rh - 10);
+      c.fillStyle = WK.alpha(WK.col("ctx"), 0.8); c.fillRect(l + W1, y + 5, W2, rh - 10);
+    });
+    WK.text(c, "B = BM25 순위 · E = 임베딩 순위", 10, h - 10, { size: 10.5, color: WK.col("text-faint") });
+    const t3 = R.slice(0, 3).map((x) => x.d), both = t3.filter((d) => RB[d] <= 4 && RE[d] <= 4);
+    WK.set("rf-o1", "문서 " + R[0].d, R[0].d === "D" ? "good" : "");
+    WK.set("rf-o2", `${both.length}개 (${both.join(", ") || "없음"})`);
+    WK.set("rf-o3", R[0].d === "A" ? "같다 (BM25가 지배)" : "다르다", R[0].d === "A" ? "warn" : "");
+  }
+  WK.wire(["rf-k", "rf-w"], () => cv.redraw(), { "rf-w": (v) => v.toFixed(1) });
+})();
+
+/* ---------------- 3. 색인 규모 계산기 ---------------- */
+(function () {
+  const PER = 25, SEARCH = 10 * 150 + 200;
+  const nOf = (v) => Math.round(Math.pow(10, v));
+  const cv = WK.canvas("sc-cv", { aspect: 0.64, draw });
+  function draw(c, w, h) {
+    const n = nOf(WK.val("sc-n")), Wn = WK.val("sc-w"), f = WK.val("sc-f"), C = WK.val("sc-c");
+    const lim = Wn * f;
+    const flat = (x) => x * PER, cat = (x) => C * PER + (x / C) * PER;
+    const box = { l: 56, t: 14, r: w - 14, b: h - 42 };
+    const A = WK.axes(c, { box, x: [10, 100000], y: [100, 3000000], logx: true, logy: true, xt: [10, 100, 1000, 10000, 100000], xf: (v) => WK.si(v), yt: [100, 1000, 10000, 100000, 1000000], yf: (v) => WK.si(v), xl: "페이지 수 (로그)", yl: "질의마다 읽는 색인 토큰 (로그)" });
+    const xs = Array.from({ length: 80 }, (_, i) => Math.pow(10, 1 + (i / 79) * 4));
+    c.save(); c.beginPath(); c.rect(box.l, box.t, box.r - box.l, box.b - box.t); c.clip();
+    c.fillStyle = WK.alpha(WK.col("guard"), 0.07); c.fillRect(box.l, box.t, box.r - box.l, A.Y(lim) - box.t);
+    c.strokeStyle = WK.col("guard"); c.setLineDash([5, 4]); c.beginPath(); c.moveTo(box.l, A.Y(lim)); c.lineTo(box.r, A.Y(lim)); c.stroke(); c.setLineDash([]);
+    WK.line(c, xs.map((x) => [A.X(x), A.Y(flat(x))]), WK.col("state"), 2.6);
+    WK.line(c, xs.map((x) => [A.X(x), A.Y(cat(x))]), WK.col("accent"), 2.4);
+    WK.line(c, xs.map((x) => [A.X(x), A.Y(SEARCH)]), WK.col("ctx"), 2.2);
+    c.restore();
+    WK.text(c, "색인 허용 한도 " + WK.si(lim), box.l + 6, A.Y(lim) - 9, { size: 10.5, color: WK.col("guard") });
+    const x = A.X(n);
+    c.strokeStyle = WK.col("text-dim"); c.lineWidth = 1.4; c.beginPath(); c.moveTo(x, box.t); c.lineTo(x, box.b); c.stroke();
+    [[flat(n), "state"], [cat(n), "accent"], [SEARCH, "ctx"]].forEach(([v, k]) => { c.fillStyle = WK.col(k); c.beginPath(); c.arc(x, A.Y(v), 4.5, 0, 7); c.fill(); });
+    const nFlat = lim / PER, nCat = Math.max(0, (lim - C * PER) * C / PER);
+    WK.set("sc-o1", WK.si(flat(n)) + ` (${WK.pct(flat(n) / Wn, 1)})`, flat(n) > lim ? "bad" : "");
+    WK.set("sc-o2", Math.round(nFlat).toLocaleString("ko-KR") + "페이지");
+    WK.set("sc-o3", Math.round(nCat).toLocaleString("ko-KR") + "페이지");
+    WK.set("sc-o4", n <= nFlat ? "평평한 색인" : n <= nCat ? "분류 색인" : "검색 도구 + 분류 색인", n <= nFlat ? "good" : n <= nCat ? "warn" : "bad");
+  }
+  WK.wire(["sc-n", "sc-w", "sc-f", "sc-c"], () => cv.redraw(), { "sc-n": (v) => nOf(v).toLocaleString("ko-KR"), "sc-w": (v) => WK.si(v), "sc-f": (v) => WK.pct(v) });
+})();
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 그림과 실험으로 배우는 한국어 책을 주제별로 출간하는 프로젝트입니다. 첫 책은 AI 에이전트의 과제와 채점 방식을 다룹니다. 각 책은 고유한 주소, 목차, 본문과 시각 자료를 가지며 루트 서가에서 발견할 수 있습니다.
 
-**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/) · [코딩 에이전트 교과서](https://jsg1504.github.io/books/coding-agents/) · [에이전트 메모리 교과서](https://jsg1504.github.io/books/agent-memory/) · [에이전트 하네스 교과서](https://jsg1504.github.io/books/agent-harness/) · [멀티에이전트 시스템 설계 교과서](https://jsg1504.github.io/books/multi-agent/) · [바이브 코딩과 에이전틱 엔지니어링 전략 교과서](https://jsg1504.github.io/books/vibe-coding/) · [장기 실행 에이전트 교과서](https://jsg1504.github.io/books/long-running/)
+**[전체 서가](https://jsg1504.github.io/books/)** · [첫 책 펼치기](https://jsg1504.github.io/books/agent-benchmarks/) · [코딩 에이전트 교과서](https://jsg1504.github.io/books/coding-agents/) · [에이전트 메모리 교과서](https://jsg1504.github.io/books/agent-memory/) · [에이전트 하네스 교과서](https://jsg1504.github.io/books/agent-harness/) · [멀티에이전트 시스템 설계 교과서](https://jsg1504.github.io/books/multi-agent/) · [바이브 코딩과 에이전틱 엔지니어링 전략 교과서](https://jsg1504.github.io/books/vibe-coding/) · [장기 실행 에이전트 교과서](https://jsg1504.github.io/books/long-running/) · [LLM 위키와 에이전트 지식 교과서](https://jsg1504.github.io/books/llm-wiki/)
 
 ## 서가와 책
 
@@ -18,6 +18,7 @@
 | `books/multi-agent/` | 12개 장과 36개 실험으로 구성된 멀티에이전트 시스템 설계 교과서(ChorusBook). HarnessBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `MA.*`(그래프 노드·화살표·레이더 차트 도우미 포함), 장 목록은 `MA.CHAPTERS`, 용어집은 `MA.GLOSSARY` |
 | `books/vibe-coding/` | 12개 장과 36개 실험으로 구성된 바이브 코딩과 에이전틱 엔지니어링 전략 교과서(VibeBook). ChorusBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `VB.*`, 장 목록은 `VB.CHAPTERS`, 용어집은 `VB.GLOSSARY`. 리뷰 diff·체크리스트용 스타일은 `css/style.css` 끝의 VibeBook 전용 요소 |
 | `books/long-running/` | 12개 장과 36개 실험으로 구성된 장기 실행 에이전트 교과서(MarathonBook). VibeBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `LR.*`(분류 게임 `LR.sortGame`, 재생 버튼 `LR.player` 포함), 장 목록은 `LR.CHAPTERS`, 용어집은 `LR.GLOSSARY`. 트레이스·JSON·기록 발췌용 스타일은 `css/style.css` 끝의 MarathonBook 전용 요소 |
+| `books/llm-wiki/` | 12개 장과 36개 실험으로 구성된 LLM 위키와 에이전트 지식 교과서(WikiBook). MarathonBook의 틀을 이어받아 공통 도우미는 `js/common.js`의 `WK.*`, 장 목록은 `WK.CHAPTERS`, 용어집은 `WK.GLOSSARY`. 여러 장이 함께 쓰는 예제 위키(18페이지, 위키링크·백링크·주제 벡터)는 `js/wiki.js`의 `WK.wiki`. 위키 페이지 뷰어·파일 트리·검색 결과용 스타일은 `css/style.css` 끝의 WikiBook 전용 요소 |
 | `templates/`, `shared/` | 서가와 기본 책의 공통 레이아웃·스타일 |
 | `tools/shelf.py` | 초안 생성과 정적 사이트 빌드 |
 
